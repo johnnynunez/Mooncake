@@ -209,22 +209,30 @@ int RdmaEndPoint::perform_post_send()
     if (slice_queue_size_.load(std::memory_order_acquire) == 0)
         return 0;
 
-    RWSpinlock::WriteGuard guard(lock_);
     int posted_slice_count = 0;
     int qp_index = lrand48() % qp_list_.size();
-    while (!slice_queue_.empty() && qp_depth_list_[qp_index] < max_qp_depth_)
+    while (qp_depth_list_[qp_index] < max_qp_depth_)
     {
         std::vector<TransferEngine::Slice *> slice_list;
-        int wr_count = std::min(max_qp_depth_ - qp_depth_list_[qp_index], (int)slice_queue_.size());
-        ibv_send_wr wr_list[wr_count], *bad_wr = nullptr;
-        ibv_sge sge_list[wr_count];
 
-        memset(wr_list, 0, sizeof(ibv_send_wr) * wr_count);
+        lock_.WLock();
+        int wr_count = std::min(max_qp_depth_ - qp_depth_list_[qp_index], (int)slice_queue_.size());
         for (int i = 0; i < wr_count; ++i)
         {
             auto slice = slice_queue_.front();
             slice_queue_.pop();
             slice_list.push_back(slice);
+        }
+        lock_.WUnlock();
+        if (wr_count == 0)
+            break;
+
+        ibv_send_wr wr_list[wr_count], *bad_wr = nullptr;
+        ibv_sge sge_list[wr_count];
+        memset(wr_list, 0, sizeof(ibv_send_wr) * wr_count);
+        for (int i = 0; i < wr_count; ++i)
+        {
+            auto slice = slice_list[i];
             posted_slice_count++;
 
             auto &sge = sge_list[i];
