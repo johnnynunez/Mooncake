@@ -208,64 +208,24 @@ int RdmaEndPoint::perform_post_send()
 {
     if (slice_queue_size_.load(std::memory_order_acquire) == 0)
         return 0;
+
     RWSpinlock::WriteGuard guard(lock_);
     int posted_slice_count = 0;
     int qp_index = lrand48() % qp_list_.size();
     while (!slice_queue_.empty() && qp_depth_list_[qp_index] < max_qp_depth_)
     {
-        auto slice = slice_queue_.front();
-        slice_queue_.pop();
-        posted_slice_count++;
-
-        ibv_send_wr wr, *bad_wr = nullptr;
-        ibv_sge sge;
-
-        sge.addr = (uint64_t)slice->source_addr;
-        sge.length = slice->length;
-        sge.lkey = slice->rdma.source_lkey;
-
-        wr.wr_id = (uint64_t)slice;
-        wr.opcode = slice->opcode == TransferEngine::TransferRequest::READ ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
-        wr.num_sge = 1;
-        wr.sg_list = &sge;
-        wr.send_flags = IBV_SEND_SIGNALED;
-        wr.next = nullptr;
-        wr.imm_data = 0;
-        wr.wr.rdma.remote_addr = slice->rdma.dest_addr;
-        wr.wr.rdma.rkey = slice->rdma.dest_rkey;
-        slice->status.store(TransferEngine::Slice::POSTED, std::memory_order_release);
-        slice->rdma.qp_depth = &qp_depth_list_[qp_index];
-        qp_depth_list_[qp_index]++;
-        std::atomic_thread_fence(std::memory_order_seq_cst);
-        int rc = post_send(qp_index, &wr, &bad_wr);
-        if (rc)
-        {
-            PLOG(ERROR) << "post send failed";
-            slice->status = TransferEngine::Slice::FAILED;
-        }
-    }
-    slice_queue_size_.fetch_sub(posted_slice_count, std::memory_order_relaxed);
-    return 0;
-}
-
-/*
-
-    RWSpinlock::WriteGuard guard(lock_);
-    std::vector<TransferEngine::Slice *> slice_list;
-    while (!slice_queue_.empty())
-    {
-        int qp_index = lrand48() % qp_list_.size();
-        int wr_count = std::min(1, (int)slice_queue_.size());
-        if (wr_count == 0)
-            break;
+        std::vector<TransferEngine::Slice *> slice_list;
+        int wr_count = std::min(max_qp_depth_ - qp_depth_list_[qp_index], (int)slice_queue_.size());
         ibv_send_wr wr_list[wr_count], *bad_wr = nullptr;
         ibv_sge sge_list[wr_count];
 
+        memset(wr_list, 0, sizeof(ibv_send_wr) * wr_count);
         for (int i = 0; i < wr_count; ++i)
         {
             auto slice = slice_queue_.front();
             slice_queue_.pop();
             slice_list.push_back(slice);
+            posted_slice_count++;
 
             auto &sge = sge_list[i];
             sge.addr = (uint64_t)slice->source_addr;
@@ -278,7 +238,7 @@ int RdmaEndPoint::perform_post_send()
             wr.num_sge = 1;
             wr.sg_list = &sge;
             wr.send_flags = IBV_SEND_SIGNALED;
-            wr.next = i + 1 == wr_count ? nullptr : &wr_list[i + 1];
+            wr.next = (i + 1 == wr_count) ? nullptr : &wr_list[i + 1];
             wr.imm_data = 0;
             wr.wr.rdma.remote_addr = slice->rdma.dest_addr;
             wr.wr.rdma.rkey = slice->rdma.dest_rkey;
@@ -295,7 +255,8 @@ int RdmaEndPoint::perform_post_send()
                 slice_list[i]->status = TransferEngine::Slice::FAILED;
             exit(-1);
         }
-
-        slice_queue_size_.fetch_sub(wr_count, std::memory_order_relaxed);
     }
-*/
+
+    slice_queue_size_.fetch_sub(posted_slice_count, std::memory_order_relaxed);
+    return 0;
+}
