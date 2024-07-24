@@ -1,4 +1,4 @@
-#include "CacheAllocator.h"
+#include "allocator/CacheAllocator.h"
 
 #include <cassert>
 #include <iostream>
@@ -72,12 +72,14 @@ void runTests()
         ObjectKey key = "test_object_1";
         ReplicateConfig new_config{3}; // 增加到 3 个副本
         ReplicaDiff diff;
-        
+
         TaskID task_id = allocator.AsyncReplicate(key, new_config, diff);
         assert(task_id > 0);
         assert(diff.change_status == ReplicaChangeStatus::ADDED);
-        for (const auto &replica : diff.added_replicas) {
-            for (auto& handle : replica.handles) {
+        for (const auto &replica : diff.added_replicas)
+        {
+            for (auto &handle : replica.handles)
+            {
                 std::cout << "handele segment_id: " << handle.segment_id << " offset: " << handle.offset << std::endl;
             }
             std::cout << std::endl;
@@ -96,8 +98,10 @@ void runTests()
         TaskID task_id = allocator.AsyncReplicate(key, new_config, diff);
         assert(task_id > 0);
         assert(diff.change_status == ReplicaChangeStatus::REMOVED);
-        for (auto &replica : diff.removed_replicas) {
-            for (auto& handle : replica.handles) {
+        for (auto &replica : diff.removed_replicas)
+        {
+            for (auto &handle : replica.handles)
+            {
                 std::cout << "handele segment_id: " << handle.segment_id << " offset: " << handle.offset << std::endl;
             }
             std::cout << std::endl;

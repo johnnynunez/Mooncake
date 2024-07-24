@@ -1,1 +1,5 @@
-add_subdirectory(transfer_engine)
+add_executable(transfer_engine_test transfer_engine_test.cpp)
+target_link_libraries(transfer_engine_test PUBLIC transfer_engine)
+
+add_executable(allocator_test allocator_test.cpp)
+target_link_libraries(allocator_test PUBLIC allocator)

@@ -1,5 +1,9 @@
 # Mooncake
 
+## Allocator
+
+TBD
+
 ## TransferEngine subsystem
 
 ### Quickstart
@@ -9,13 +13,13 @@
 - Target node (optane21):
 
   ```
-  ./example/transfer_engine/example --mode=target --metadata_server=optane21:12345
+  ./example/transfer_engine_test --mode=target --metadata_server=optane21:12345
   ```
 
 - Initiator node (optane20):
 
   ```
-  ./example/transfer_engine/example --mode=initiator \
+  ./example/transfer_engine_test --mode=initiator \
                              --threads=8 \
                              --metadata_server=optane21:12345 \
                              --operation=read|write \
