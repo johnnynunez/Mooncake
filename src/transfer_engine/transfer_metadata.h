@@ -47,11 +47,9 @@ namespace mooncake
         节点之间两两互传的 QP_NUM 信息
 
         value = {
-            'server_name': 'optane20',
-            'devices': [
-                { 'name': 'mlx5_2', 'qp_num': [xxx, yyy] },
-                { 'name': 'mlx5_3', 'qp_num': [xxx, yyy] },
-            ]
+            'local_nic_path': 'optane20@mlx5_2',
+            'peer_nic_path': 'optane21@mlx5_2',
+            'qp_num': [xxx, yyy]
         }
     */
 
@@ -85,16 +83,11 @@ namespace mooncake
             std::vector<SegmentDesc> segments;
         };
 
-        struct HandShakeDescImpl
-        {
-            std::string name;
-            std::vector<uint32_t> qp_num;
-        };
-
         struct HandShakeDesc
         {
-            std::string server_name;
-            std::vector<HandShakeDescImpl> devices;
+            std::string local_nic_path;
+            std::string peer_nic_path;
+            std::vector<uint32_t> qp_num;
         };
 
     public:
@@ -102,9 +95,9 @@ namespace mooncake
 
         ~TransferMetadata();
 
-        int broadcastServerDesc(const std::string &server_name, const ServerDesc &desc);
+        int updateServerDesc(const std::string &server_name, const ServerDesc &desc);
 
-        std::shared_ptr<ServerDesc> getServerDesc(const std::string &server_name);
+        std::shared_ptr<ServerDesc> getServerDesc(const std::string &server_name, bool force_update = false);
 
         int removeServerDesc(const std::string &server_name);
 

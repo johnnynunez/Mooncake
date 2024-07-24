@@ -19,11 +19,12 @@ namespace mooncake
 {
 
     class RdmaEndPoint;
+    class TransferEngine;
 
     class RdmaContext
     {
     public:
-        RdmaContext();
+        RdmaContext(TransferEngine *engine);
 
         ~RdmaContext();
 
@@ -48,9 +49,9 @@ namespace mooncake
 
         // endpoint management
 
-        RdmaEndPoint *endpoint(const std::string &remote_server_name);
+        RdmaEndPoint *endpoint(const std::string &peer_nic_path);
 
-        int deleteEndpoint(const std::string &remote_server_name);
+        int deleteEndpoint(const std::string &peer_nic_path);
 
         // misc
         bool ready() const { return context_; }
@@ -65,6 +66,8 @@ namespace mooncake
         int gidIndex() const { return gid_index_; }
 
         ibv_context *context() const { return context_; }
+
+        TransferEngine *engine() const { return engine_; }
 
         ibv_pd *pd() const { return pd_; }
 
@@ -93,6 +96,7 @@ namespace mooncake
 
     private:
         std::string device_name_;
+        TransferEngine *engine_;
 
         ibv_context *context_ = nullptr;
         ibv_pd *pd_ = nullptr;

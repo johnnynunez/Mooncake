@@ -5,13 +5,15 @@
 
 namespace mooncake
 {
-
     const static uint8_t MAX_HOP_LIMIT = 16;
     const static uint8_t TIMEOUT = 14;
     const static uint8_t RETRY_CNT = 7;
 
-    RdmaEndPoint::RdmaEndPoint(RdmaContext *context, const std::string &server_name)
-        : server_name_(server_name),
+    RdmaEndPoint::RdmaEndPoint(RdmaContext *context,
+                               const std::string &local_nic_path,
+                               const std::string &peer_nic_path)
+        : local_nic_path_(local_nic_path),
+          peer_nic_path_(peer_nic_path),
           context_(context),
           slice_queue_size_(0),
           post_slice_count_(0),
@@ -55,6 +57,9 @@ namespace mooncake
                 return -1;
             }
         }
+
+        LOG(INFO) << "Constructed new EndPoint: local " << local_nic_path_
+                  << ", peer " << peer_nic_path_;
         return 0;
     }
 
@@ -66,24 +71,25 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaEndPoint::setupConnection(const std::string &peer_gid, uint16_t peer_lid, std::vector<uint32_t> peer_qp_num_list)
+    int RdmaEndPoint::doSetupConnection(const std::string &peer_gid, uint16_t peer_lid, std::vector<uint32_t> peer_qp_num_list)
     {
-        if (connected_)
+        if (qp_list_.size() != peer_qp_num_list.size())
         {
-            LOG(INFO) << "Endpoint has been connected";
+            LOG(ERROR) << "Invalid argument";
             return -1;
         }
-        RWSpinlock::WriteGuard guard(lock_);
-        if (qp_list_.size() != peer_qp_num_list.size())
-            return -1;
+
+        int ret = 0;
         for (int qp_index = 0; qp_index < (int)qp_list_.size(); ++qp_index)
-            if (setupConnection(qp_index, peer_gid, peer_lid, peer_qp_num_list[qp_index]))
-                return -1;
-        connected_ = true;
-        return 0;
+            if (doSetupConnection(qp_index, peer_gid, peer_lid, peer_qp_num_list[qp_index]))
+                ret = -1;
+            else
+                connected_ = true;
+
+        return ret;
     }
 
-    int RdmaEndPoint::setupConnection(int qp_index, const std::string &peer_gid, uint16_t peer_lid, uint32_t peer_qp_num)
+    int RdmaEndPoint::doSetupConnection(int qp_index, const std::string &peer_gid, uint16_t peer_lid, uint32_t peer_qp_num)
     {
         if (qp_index < 0 || qp_index > (int)qp_list_.size())
             return -1;
@@ -273,5 +279,75 @@ namespace mooncake
 
         slice_queue_size_.fetch_sub(posted_slice_count, std::memory_order_relaxed);
         return 0;
+    }
+
+    bool RdmaEndPoint::connected()
+    {
+        RWSpinlock::ReadGuard guard(lock_);
+        return connected_;
+    }
+
+    void RdmaEndPoint::reset()
+    {
+        RWSpinlock::WriteGuard guard(lock_);
+        connected_ = false;
+    }
+
+    int RdmaEndPoint::setupConnectionsByActive()
+    {
+        RWSpinlock::WriteGuard guard(lock_);
+        HandShakeDesc local_desc, peer_desc;
+
+        local_desc.local_nic_path = local_nic_path_;
+        local_desc.peer_nic_path = peer_nic_path_;
+        local_desc.qp_num = qpNum();
+
+        auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
+        auto &metadata = context_->engine()->metadata();
+
+        int rc = metadata.sendHandshake(peer_server_name, local_desc, peer_desc);
+        if (rc)
+            return rc;
+
+        if (peer_desc.local_nic_path != peer_nic_path_ || peer_desc.peer_nic_path != local_nic_path_)
+        {
+            LOG(ERROR) << "Invalid argument";
+            return -1;
+        }
+
+        auto &nic_list = metadata.getServerDesc(peer_server_name)->devices;
+        auto nic_name = getNicNameFromNicPath(local_nic_path_);
+        for (auto &nic : nic_list)
+            if (nic.name == nic_name)
+                return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
+
+        LOG(INFO) << "NIC " << nic_name << " not found";
+        return -1;
+    }
+
+    int RdmaEndPoint::setupConnectionsByPassive(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)
+    {
+        RWSpinlock::WriteGuard guard(lock_);
+        if (peer_desc.local_nic_path != peer_nic_path_ || peer_desc.peer_nic_path != local_nic_path_)
+        {
+            LOG(ERROR) << "Invalid argument";
+            return -1;
+        }
+
+        auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
+        auto &metadata = context_->engine()->metadata();
+
+        local_desc.local_nic_path = local_nic_path_;
+        local_desc.peer_nic_path = peer_nic_path_;
+        local_desc.qp_num = qpNum();
+
+        auto &nic_list = metadata.getServerDesc(peer_server_name)->devices;
+        auto nic_name = getNicNameFromNicPath(local_nic_path_);
+        for (auto &nic : nic_list)
+            if (nic.name == nic_name)
+                return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
+
+        LOG(INFO) << "NIC " << nic_name << " not found";
+        return -1;
     }
 }
