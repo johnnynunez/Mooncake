@@ -1,9 +1,11 @@
-#include "allocator/CacheAllocator.h"
+#include "allocator/cache_allocator.h"
 
 #include <cassert>
 #include <iostream>
 #include <memory>
 #include <vector>
+
+using namespace mooncake;
 
 void printSeparator()
 {
@@ -29,10 +31,10 @@ void runTests()
     const size_t SHARD_SIZE = 1024 * 64; // 1KB
     CacheAllocator allocator(SHARD_SIZE, std::move(nodes), std::move(strategy));
 
-    // 测试用例 1: AsyncPut with multiple input blocks
+    // 测试用例 1: asyncPut with multiple input blocks
     {
         printSeparator();
-        std::cout << "Test case 1: AsyncPut with multiple input blocks" << std::endl;
+        std::cout << "Test case 1: asyncPut with multiple input blocks" << std::endl;
         ObjectKey key = "test_object_1";
         std::vector<char> data1(1024, 'A');
         std::vector<char> data2(512, 'B');
@@ -40,40 +42,40 @@ void runTests()
         std::vector<void *> ptrs = {data1.data(), data2.data(), data3.data()};
         std::vector<void *> sizes = {(void *)1024, (void *)512, (void *)1536};
         ReplicateConfig config{2}; // 2 replicas
-        TaskID task_id = allocator.AsyncPut(key, PtrType::HOST, ptrs, sizes, config);
+        TaskID task_id = allocator.asyncPut(key, PtrType::HOST, ptrs, sizes, config);
         assert(task_id > 0);
-        std::cout << "AsyncPut with multiple input blocks test passed." << std::endl;
+        std::cout << "asyncPut with multiple input blocks test passed." << std::endl;
         printSeparator();
     }
 
-    // 测试用例 2: AsyncGet
+    // 测试用例 2: asyncGet
     {
         printSeparator();
-        std::cout << "Test case 2: AsyncGet" << std::endl;
+        std::cout << "Test case 2: asyncGet" << std::endl;
 
         ObjectKey key = "test_object_1";
         std::vector<char> buffer(1024, 0); // 1KB buffer
         std::vector<void *> ptrs = {buffer.data()};
         std::vector<void *> sizes = {reinterpret_cast<void *>(buffer.size())};
 
-        TaskID task_id = allocator.AsyncGet(key, PtrType::HOST, ptrs, sizes);
+        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes);
         assert(task_id > 0);
 
         // TODO: 验证数据是否被正确读取
 
-        std::cout << "AsyncGet test passed." << std::endl;
+        std::cout << "asyncGet test passed." << std::endl;
         printSeparator();
     }
 
-    // 测试用例 3: AsyncReplicate (增加副本数)
+    // 测试用例 3: asyncReplicate (增加副本数)
     {
         printSeparator();
-        std::cout << "Test case 3: AsyncReplicate (increase replicas)" << std::endl;
+        std::cout << "Test case 3: asyncReplicate (increase replicas)" << std::endl;
         ObjectKey key = "test_object_1";
         ReplicateConfig new_config{3}; // 增加到 3 个副本
         ReplicaDiff diff;
 
-        TaskID task_id = allocator.AsyncReplicate(key, new_config, diff);
+        TaskID task_id = allocator.asyncReplicate(key, new_config, diff);
         assert(task_id > 0);
         assert(diff.change_status == ReplicaChangeStatus::ADDED);
         for (const auto &replica : diff.added_replicas)
@@ -84,18 +86,18 @@ void runTests()
             }
             std::cout << std::endl;
         }
-        std::cout << "AsyncReplicate (increase) test passed." << std::endl;
+        std::cout << "asyncReplicate (increase) test passed." << std::endl;
         printSeparator();
     }
 
-    // 测试用例 4: AsyncReplicate (减少副本数)
+    // 测试用例 4: asyncReplicate (减少副本数)
     {
         printSeparator();
-        std::cout << "Test case 4: AsyncReplicate (decrease replicas)" << std::endl;
+        std::cout << "Test case 4: asyncReplicate (decrease replicas)" << std::endl;
         ObjectKey key = "test_object_1";
         ReplicateConfig new_config{1}; // 减少到 1 个副本
         ReplicaDiff diff;
-        TaskID task_id = allocator.AsyncReplicate(key, new_config, diff);
+        TaskID task_id = allocator.asyncReplicate(key, new_config, diff);
         assert(task_id > 0);
         assert(diff.change_status == ReplicaChangeStatus::REMOVED);
         for (auto &replica : diff.removed_replicas)
@@ -106,14 +108,14 @@ void runTests()
             }
             std::cout << std::endl;
         }
-        std::cout << "AsyncReplicate (decrease) test passed." << std::endl;
+        std::cout << "asyncReplicate (decrease) test passed." << std::endl;
         printSeparator();
     }
 
-    // 测试用例 5: AsyncPut 大对象
+    // 测试用例 5: asyncPut 大对象
     {
         printSeparator();
-        std::cout << "Test case 5: AsyncPut large object" << std::endl;
+        std::cout << "Test case 5: asyncPut large object" << std::endl;
         ObjectKey key = "large_object";
         size_t obj_size = 10 * 1024 * 1024; // 10MB
         ReplicateConfig config{2};          // 2 replicas
@@ -129,9 +131,9 @@ void runTests()
         std::vector<void *> ptrs = {large_data.data(), large_data.data() + part1_size};
         std::vector<void *> sizes = {reinterpret_cast<void *>(part1_size), reinterpret_cast<void *>(part2_size)};
 
-        TaskID task_id = allocator.AsyncPut(key, PtrType::HOST, ptrs, sizes, config);
+        TaskID task_id = allocator.asyncPut(key, PtrType::HOST, ptrs, sizes, config);
         assert(task_id > 0);
-        std::cout << "AsyncPut large object test passed." << std::endl;
+        std::cout << "asyncPut large object test passed." << std::endl;
 
         // todo: 验证数据是否正确写入
 
@@ -139,10 +141,10 @@ void runTests()
         printSeparator();
     }
 
-    // 测试用例 6: AsyncGet 带版本和偏移
+    // 测试用例 6: asyncGet 带版本和偏移
     {
         printSeparator();
-        std::cout << "Test case 6: AsyncGet with version and offset" << std::endl;
+        std::cout << "Test case 6: asyncGet with version and offset" << std::endl;
 
         ObjectKey key = "large_object";
         Version min_version = 1;
@@ -151,20 +153,20 @@ void runTests()
         std::vector<void *> ptrs = {buffer.data()};
         std::vector<void *> sizes = {reinterpret_cast<void *>(buffer.size())};
 
-        TaskID task_id = allocator.AsyncGet(key, PtrType::HOST, ptrs, sizes, min_version, offset);
+        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes, min_version, offset);
         assert(task_id > 0);
 
         // TODO: 验证数据是否被正确读取
         // assert(memcmp(buffer.data(), expected_data + offset, buffer.size()) == 0);
 
-        std::cout << "AsyncGet with version and offset test passed." << std::endl;
+        std::cout << "asyncGet with version and offset test passed." << std::endl;
         printSeparator();
     }
 
-    // 测试用例 7: AsyncGet with multiple output buffers
+    // 测试用例 7: asyncGet with multiple output buffers
     {
         printSeparator();
-        std::cout << "Test case 7: AsyncGet with multiple output buffers" << std::endl;
+        std::cout << "Test case 7: asyncGet with multiple output buffers" << std::endl;
 
         ObjectKey key = "large_object";
 
@@ -179,8 +181,8 @@ void runTests()
             reinterpret_cast<void *>(buffer2.size()),
             reinterpret_cast<void *>(buffer3.size())};
 
-        // 调用 AsyncGet
-        TaskID task_id = allocator.AsyncGet(key, PtrType::HOST, ptrs, sizes);
+        // 调用 asyncGet
+        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes);
         assert(task_id > 0);
 
         // TODO 验证数据是否被正确读取 需要比较读取的数据与预期的数据
@@ -194,7 +196,7 @@ void runTests()
         // assert(memcmp(buffer2.data(), expected_data + buffer1.size(), buffer2.size()) == 0);
         // assert(memcmp(buffer3.data(), expected_data + buffer1.size() + buffer2.size(), buffer3.size()) == 0);
 
-        std::cout << "AsyncGet with multiple output buffers test passed." << std::endl;
+        std::cout << "asyncGet with multiple output buffers test passed." << std::endl;
         printSeparator();
     }
 
@@ -210,7 +212,7 @@ void runTests()
 
         try
         {
-            allocator.AsyncGet(key, PtrType::HOST, ptrs, sizes);
+            allocator.asyncGet(key, PtrType::HOST, ptrs, sizes);
             assert(false); // 应该抛出异常
         }
         catch (const std::runtime_error &e)
@@ -231,7 +233,7 @@ void runTests()
         try
         {
             ReplicaDiff diff;
-            allocator.AsyncReplicate(key, config, diff);
+            allocator.asyncReplicate(key, config, diff);
             assert(false); // 应该抛出异常
         }
         catch (const std::runtime_error &e)

@@ -1,34 +1,35 @@
 #include <string.h>
+#include "cache_allocator.h"
 
-#include "CacheAllocator.h"
+namespace mooncake {
 
 CacheAllocator::CacheAllocator(size_t shard_size, std::vector<std::unique_ptr<VirtualNode>> nodes, std::unique_ptr<AllocationStrategy> strategy)
-    : shard_size(shard_size), virtual_nodes(std::move(nodes)), allocation_strategy(std::move(strategy)), global_version(0) {}
+    : shard_size_(shard_size), virtual_nodes_(std::move(nodes)), allocation_strategy_(std::move(strategy)), global_version_(0) {}
 
 ReplicaList CacheAllocator::allocateReplicas(size_t obj_size, int num_replicas) {
     std::cout << "Allocating replicas for object size: " << obj_size << ", num replicas: " << num_replicas << std::endl;
-    
-    int num_shards = (obj_size + shard_size - 1) / shard_size;
-    std::vector<int> selected_nodes = allocation_strategy->selectNodes(num_shards * num_replicas, num_replicas, virtual_nodes);
-    
+
+    int num_shards = (obj_size + shard_size_ - 1) / shard_size_;
+    std::vector<int> selected_nodes = allocation_strategy_->selectNodes(num_shards * num_replicas, num_replicas, virtual_nodes_);
+
     std::cout << "Selected nodes: " << std::endl;
     for (int i = 0; i < num_replicas; ++i) {
-        std::cout << "replicate " << i << " : " ;
+        std::cout << "replicate " << i << " : ";
         for (int j = 0; j < num_shards; ++j) {
-            std::cout  << selected_nodes[i * num_shards + j] << " ";
+            std::cout << selected_nodes[i * num_shards + j] << " ";
         }
         std::cout << std::endl;
     }
     std::cout << std::endl;
-    
+
     ReplicaList replicas(num_replicas);
     int node_index = 0;
     for (int i = 0; i < num_replicas; ++i) {
         std::cout << "Allocating replica " << i + 1 << ":" << std::endl;
         size_t remaining_size = obj_size;
         for (int j = 0; j < num_shards; ++j) {
-            size_t shard_size = std::min(remaining_size, this->shard_size);
-            BufHandle handle = virtual_nodes[selected_nodes[node_index]]->allocate(shard_size);
+            size_t shard_size = std::min(remaining_size, shard_size_);
+            BufHandle handle = virtual_nodes_[selected_nodes[node_index]]->allocate(shard_size);
             replicas[i].handles.push_back(handle);
             std::cout << "  Shard " << j + 1 << ": Node " << selected_nodes[node_index] 
                       << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
@@ -37,18 +38,18 @@ ReplicaList CacheAllocator::allocateReplicas(size_t obj_size, int num_replicas) 
         }
         replicas[i].status = ReplicaStatus::INITIALIZED;
     }
-    
+
     return replicas;
 }
 
-void CacheAllocator::writeDataToReplicas(ReplicaList& replicas, const std::vector<void*>& ptrs, const std::vector<void*>& sizes, int num_replicas) {
+void CacheAllocator::writeDataToReplicas(ReplicaList &replicas, const std::vector<void *> &ptrs, const std::vector<void *> &sizes, int num_replicas) {
     for (int replica_idx = 0; replica_idx < num_replicas; ++replica_idx) {
         size_t written = 0;
         size_t input_offset = 0;
         size_t input_idx = 0;
 
-        for (const auto& shard : replicas[replica_idx].handles) {
-            char* dest = reinterpret_cast<char*>(virtual_nodes[shard.segment_id]->getBuffer(shard));
+        for (const auto &shard : replicas[replica_idx].handles) {
+            char *dest = reinterpret_cast<char *>(virtual_nodes_[shard.segment_id]->getBuffer(shard));
             size_t shard_offset = 0;
 
             while (shard_offset < shard.size && input_idx < ptrs.size()) {
@@ -57,8 +58,8 @@ void CacheAllocator::writeDataToReplicas(ReplicaList& replicas, const std::vecto
                 size_t remaining_shard = shard.size - shard_offset;
                 size_t to_write = std::min(remaining_input, remaining_shard);
 
-                // 拷贝数据
-                memcpy(dest + shard_offset, static_cast<char*>(ptrs[input_idx]) + input_offset, to_write);
+                // Copy data
+                memcpy(dest + shard_offset, static_cast<char *>(ptrs[input_idx]) + input_offset, to_write);
 
                 shard_offset += to_write;
                 input_offset += to_write;
@@ -73,8 +74,8 @@ void CacheAllocator::writeDataToReplicas(ReplicaList& replicas, const std::vecto
             std::cout << "Written " << shard_offset << " bytes to shard in node " << shard.segment_id << std::endl;
         }
 
-        for (auto& shard : replicas[replica_idx].handles) {
-            // 更新状态
+        for (auto &shard : replicas[replica_idx].handles) {
+            // Update status
             shard.status = BufStatus::COMPLETE;
         }
         replicas[replica_idx].status = ReplicaStatus::COMPLETED;
@@ -82,47 +83,46 @@ void CacheAllocator::writeDataToReplicas(ReplicaList& replicas, const std::vecto
     }
 }
 
-
-void CacheAllocator::updateObjectMeta(const ObjectKey& key, const ReplicaList& replicas, const ReplicateConfig& config) {
-    Version new_version = ++global_version;
-    auto& version_list = object_meta[key];
+void CacheAllocator::updateObjectMeta(const ObjectKey &key, const ReplicaList &replicas, const ReplicateConfig &config) {
+    Version new_version = ++global_version_;
+    auto &version_list = object_meta_[key];
     version_list.versions[new_version] = replicas;
     version_list.flushed_version = new_version;
     version_list.config = config;
-    
+
     std::cout << "Updated object meta for key: " << key << ", new version: " << new_version 
               << ", num replicas: " << config.num_replicas << std::endl;
 }
 
-std::pair<Version, ReplicaList> CacheAllocator::getReplicas(const ObjectKey& key, Version min_version) {
+std::pair<Version, ReplicaList> CacheAllocator::getReplicas(const ObjectKey &key, Version min_version) {
     std::cout << "Getting replicas for key: " << key << ", minimum version: " << min_version << std::endl;
-    
-    auto it = object_meta.find(key);
-    if (it == object_meta.end()) {
+
+    auto it = object_meta_.find(key);
+    if (it == object_meta_.end()) {
         std::cout << "Object not found: " << key << std::endl;
         throw std::runtime_error("Object not found");
     }
-    
-    const auto& version_list = it->second;
-    
-    // 找到大于等于min_version的最新版本
+
+    const auto &version_list = it->second;
+
+    // Find the latest version greater than or equal to min_version
     auto version_it = version_list.versions.lower_bound(min_version);
     if (version_it == version_list.versions.end()) {
         std::cout << "No version found greater than or equal to: " << min_version << std::endl;
         throw std::runtime_error("No suitable version found");
     }
-    
+
     Version selected_version = version_it->first;
     std::cout << "Found replicas for version: " << selected_version << std::endl;
     return std::make_pair(version_it->first, version_it->second);
 }
 
-size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle>& replica, 
+size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle> &replica, 
                                        size_t offset, 
-                                       std::vector<void*>& ptrs, 
-                                       const std::vector<void*>& sizes) {
+                                       std::vector<void *> &ptrs, 
+                                       const std::vector<void *> &sizes) {
     size_t total_size = 0;
-    for (const auto& size : sizes) {
+    for (const auto &size : sizes) {
         total_size += reinterpret_cast<size_t>(size);
     }
 
@@ -132,7 +132,7 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle>& replica,
     size_t output_index = 0; // ptrs index
     size_t output_offset = 0; // offset in one ptr
 
-    for (const auto& shard : replica) {
+    for (const auto &shard : replica) {
         if (current_offset + shard.size <= offset) {
             current_offset += shard.size;
             continue;
@@ -141,7 +141,7 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle>& replica,
         size_t shard_start = (remaining_offset > shard.size) ? 0 : remaining_offset;
         remaining_offset = (remaining_offset > shard.size) ? remaining_offset - shard.size : 0;
 
-        char* shard_buffer = reinterpret_cast<char*>(virtual_nodes[shard.segment_id]->getBuffer(shard));
+        char *shard_buffer = reinterpret_cast<char *>(virtual_nodes_[shard.segment_id]->getBuffer(shard));
 
         while (shard_start < shard.size && bytes_read < total_size) {
             size_t bytes_to_read = std::min({
@@ -150,13 +150,12 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle>& replica,
                 total_size - bytes_read
             });
 
-            memcpy(static_cast<char*>(ptrs[output_index]) + output_offset,
-                   shard_buffer + shard_start,
-                   bytes_to_read);
+            memcpy(static_cast<char *>(ptrs[output_index]) + output_offset, 
+                   shard_buffer + shard_start, bytes_to_read);
 
             shard_start += bytes_to_read;
-            bytes_read += bytes_to_read;
             output_offset += bytes_to_read;
+            bytes_read += bytes_to_read;
 
             if (output_offset == reinterpret_cast<size_t>(sizes[output_index])) {
                 output_index++;
@@ -164,15 +163,13 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle>& replica,
             }
         }
 
-        if (bytes_read >= total_size) {
-            break;
-        }
+        current_offset += shard.size;
     }
+
     return bytes_read;
 }
 
-
-TaskID CacheAllocator::AsyncPut(ObjectKey key, PtrType type, std::vector<void*> ptrs, std::vector<void*> sizes, ReplicateConfig config) {
+TaskID CacheAllocator::asyncPut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config) {
     if (ptrs.size() != sizes.size()) {
         throw std::invalid_argument("ptrs and sizes vectors must have the same length");
     }
@@ -187,19 +184,15 @@ TaskID CacheAllocator::AsyncPut(ObjectKey key, PtrType type, std::vector<void*> 
     writeDataToReplicas(replicas, ptrs, sizes, config.num_replicas);
     updateObjectMeta(key, replicas, config);
     
-    std::cout << "AsyncPut completed, TaskID: " << global_version.load() << std::endl;
-    return global_version.load();
+    std::cout << "AsyncPut completed, TaskID: " << global_version_.load() << std::endl;
+    return global_version_.load();
 }
 
-TaskID CacheAllocator::AsyncReplicate(
-    ObjectKey key, 
-    ReplicateConfig new_config, 
-    ReplicaDiff& replica_diff
-) {
+TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff) {
     std::cout << "AsyncReplicate: key=" << key << ", new_num_replicas=" << new_config.num_replicas << std::endl;
     
-    auto it = object_meta.find(key);
-    if (it == object_meta.end()) {
+    auto it = object_meta_.find(key);
+    if (it == object_meta_.end()) {
         std::cout << "Object not found: " << key << std::endl;
         throw std::runtime_error("Object not found");
     }
@@ -231,7 +224,7 @@ TaskID CacheAllocator::AsyncReplicate(
         );
         for (int i = new_config.num_replicas; i < old_config.num_replicas; ++i) {
             for (const auto& handle : current_replicas[i].handles) {
-                virtual_nodes[handle.segment_id]->deallocate(handle);
+                virtual_nodes_[handle.segment_id]->deallocate(handle);
                 std::cout << "Deallocated: Node " << handle.segment_id << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
             }
         }
@@ -243,11 +236,11 @@ TaskID CacheAllocator::AsyncReplicate(
     
     updateObjectMeta(key, current_replicas, new_config);
     
-    std::cout << "AsyncReplicate completed, TaskID: " << global_version.load() << std::endl;
-    return global_version.load();
+    std::cout << "AsyncReplicate completed, TaskID: " << global_version_.load() << std::endl;
+    return global_version_.load();
 }
 
-TaskID CacheAllocator::AsyncGet(ObjectKey key, PtrType type, std::vector<void*> ptrs, std::vector<void*> sizes, Version min_version, size_t offset) {
+TaskID CacheAllocator::asyncGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset) {
     std::cout << "AsyncGet: key=" << key << ", min_version=" << min_version << ", offset=" << offset << std::endl;
 
     const std::pair<Version, ReplicaList>& replicas = getReplicas(key, min_version);
@@ -271,3 +264,4 @@ TaskID CacheAllocator::AsyncGet(ObjectKey key, PtrType type, std::vector<void*> 
     std::cout << "AsyncGet completed, read " << bytes_read << " bytes" << std::endl;
     return replicas.first; // version
 }
+} // namespace mooncake
