@@ -9,13 +9,13 @@
 - Target node (optane21):
 
   ```
-  ./example/net/example --mode=target --metadata_server=optane21:12345
+  ./example/transfer_engine/example --mode=target --metadata_server=optane21:12345
   ```
 
 - Initiator node (optane20):
 
   ```
-  ./example/net/example --mode=initiator \
+  ./example/transfer_engine/example --mode=initiator \
                              --threads=8 \
                              --metadata_server=optane21:12345 \
                              --operation=read|write \

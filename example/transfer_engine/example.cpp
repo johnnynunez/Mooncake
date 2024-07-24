@@ -1,4 +1,4 @@
-#include "net/transfer_engine.h"
+#include "transfer_engine/transfer_engine.h"
 
 #include <iomanip>
 #include <sys/time.h>
@@ -20,7 +20,9 @@ DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");
 DEFINE_int32(threads, 4, "Task submission threads");
 
-static std::string get_hostname()
+using namespace mooncake;
+
+static std::string getHostname()
 {
     char hostname[256];
     if (gethostname(hostname, 256))
@@ -34,7 +36,7 @@ static std::string get_hostname()
 volatile bool running = true;
 std::atomic<size_t> total_batch_count(0);
 
-int initiator_worker(TransferEngine *engine, SegmentID segment_id, int thread_id)
+int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id)
 {
     TransferRequest::OpCode opcode;
     if (FLAGS_operation == "read")
@@ -50,7 +52,7 @@ int initiator_worker(TransferEngine *engine, SegmentID segment_id, int thread_id
     size_t batch_count = 0;
     while (running)
     {
-        auto batch_id = engine->allocate_batch_id(FLAGS_batch_size);
+        auto batch_id = engine->allocateBatchID(FLAGS_batch_size);
         LOG_ASSERT(batch_id >= 0);
         int ret = 0;
         std::vector<TransferRequest> requests;
@@ -65,12 +67,12 @@ int initiator_worker(TransferEngine *engine, SegmentID segment_id, int thread_id
             requests.emplace_back(entry);
         }
 
-        ret = engine->submit_transfer(batch_id, requests);
+        ret = engine->submitTransfer(batch_id, requests);
         LOG_ASSERT(!ret);
         while (true)
         {
             std::vector<TransferStatus> status;
-            ret = engine->get_transfer_status(batch_id, status);
+            ret = engine->getTransferStatus(batch_id, status);
             LOG_ASSERT(!ret);
             int completed = 0, failed = 0;
             for (int i = 0; i < FLAGS_batch_size; ++i)
@@ -86,7 +88,7 @@ int initiator_worker(TransferEngine *engine, SegmentID segment_id, int thread_id
             }
         }
 
-        ret = engine->free_batch_id(batch_id);
+        ret = engine->freeBatchID(batch_id);
         LOG_ASSERT(!ret);
         batch_count++;
     }
@@ -102,14 +104,14 @@ int initiator()
 
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   get_hostname(),
+                                                   getHostname(),
                                                    dram_buffer_size,
                                                    0,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
-    engine->update_rnic_prob({200, 100});
+    engine->UpdateRnicLinkSpeed({200, 100});
 
-    auto segment_id = engine->get_segment_id(FLAGS_segment_id);
+    auto segment_id = engine->getSegmentID(FLAGS_segment_id);
     LOG_ASSERT(segment_id >= 0);
 
     std::thread workers[FLAGS_threads];
@@ -118,7 +120,7 @@ int initiator()
     gettimeofday(&start_tv, nullptr);
 
     for (int i = 0; i < FLAGS_threads; ++i)
-        workers[i] = std::thread(initiator_worker, engine.get(), segment_id, i);
+        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i);
 
     sleep(FLAGS_duration);
     running = false;
@@ -148,12 +150,12 @@ int target()
 
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   get_hostname(),
+                                                   getHostname(),
                                                    dram_buffer_size,
                                                    0,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
-    engine->update_rnic_prob({200, 100});
+    engine->UpdateRnicLinkSpeed({200, 100});
 
     while (true)
         sleep(1);

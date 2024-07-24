@@ -6,10 +6,10 @@ set(CMAKE_CXX_FLAGS "-O3 -g -Wall")
 
 include_directories(include)
 
-add_library(mooncake src/net/transfer_engine.cpp
-                     src/net/transfer_metadata.cpp
-                     src/net/rdma_context.cpp
-                     src/net/rdma_endpoint.cpp)
+add_library(mooncake src/transfer_engine/transfer_engine.cpp
+                     src/transfer_engine/transfer_metadata.cpp
+                     src/transfer_engine/rdma_context.cpp
+                     src/transfer_engine/rdma_endpoint.cpp)
 target_link_libraries(mooncake PUBLIC ibverbs glog gflags pthread memcached jsoncpp)
 
 add_subdirectory(example)

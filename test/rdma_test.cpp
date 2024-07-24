@@ -1,10 +1,12 @@
 // rdma_test.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "net/transfer_engine.h"
+#include "transfer_engine/transfer_engine.h"
 
 #include <thread>
 #include <gtest/gtest.h>
+
+using namespace mooncake;
 
 TEST(transfer_engine, basic_test)
 {
