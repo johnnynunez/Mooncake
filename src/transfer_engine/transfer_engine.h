@@ -30,12 +30,11 @@ namespace mooncake
         friend class RdmaEndPoint;
 
     public:
-        enum DeviceType
-        {
-            DRAM = 1,
-            VRAM = 2,
-            NVMEOF = 10,
-        };
+        // 通过 getSegmentID(segment_path) 分配取得，其中
+        //   segment_path := server_name/segment_name
+        // server_name 和 segment_name 只需要避免出现 / 和 @ 字符即可，推荐的格式是
+        //   server_name := hostname[:port]     如 optane21
+        //   segment_name := device_type:id     如 dram:0, vram:1 等
         using SegmentID = int32_t;
         using BatchID = uint64_t;
         const static BatchID INVALID_BATCH_ID = UINT64_MAX;
@@ -49,9 +48,8 @@ namespace mooncake
             };
 
             OpCode opcode;
-            void *source;        // 应当是当前 TransferEngine 管理的 DRAM/VRAM buffer，
-                                 // 或者由 allocate_local_memory 或 register_local_memory 分配
-            SegmentID target_id; // 形如 *server_name*/vram:X 或 *server_name*/dram
+            void *source;
+            SegmentID target_id;
             size_t target_offset;
             size_t length;
         };
@@ -144,12 +142,13 @@ namespace mooncake
 
         SegmentID getSegmentID(const std::string &segment_path);
 
-        int UpdateRnicLinkSpeed(const std::vector<int> &rnic_speed);
+        // 更新每张卡的最大带宽，用以控制分发 Slice 到不同网卡的概率，后期准备优化掉
+        int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
 
     public:
-        int joinCluster();
+        int updateServerDesc();
 
-        int leaveCluster();
+        int removeServerDesc();
 
         // 在执行 subscribe_segment() 期间，为实现 RDMA 通联，需要将新 Segment 所属 CLIENT 与集群内原有 CLIENT 之间建立
         // QP 配对，以建立点对点可靠连接。subscribe_segment() 调用方将发出 RPC 请求至新 Segment 所属 CLIENT
@@ -161,6 +160,8 @@ namespace mooncake
         // - 返回值：若成功，返回 0；否则返回负数值。
         int onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc);
 
+        TransferMetadata &metadata() { return *metadata_.get(); }
+
     private:
         int allocateInternalBuffer();
 
@@ -171,8 +172,6 @@ namespace mooncake
         int initializeRdmaResources();
 
         int startHandshakeDaemon();
-
-        int connectServer(const std::string &remote_server_name);
 
     private:
         struct TransferTask;
@@ -252,9 +251,6 @@ namespace mooncake
         std::vector<std::string> rnic_list_;
         std::vector<uint8_t> rnic_prob_list_; // possibility to use this rnic
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
-
-        RWSpinlock connected_server_lock_;
-        std::unordered_set<std::string> connected_server_set_;
 
         RWSpinlock segment_lock_;
         std::unordered_map<SegmentID, SegmentDesc *> segment_desc_map_;

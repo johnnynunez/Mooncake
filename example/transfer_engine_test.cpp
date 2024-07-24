@@ -109,7 +109,7 @@ int initiator()
                                                    0,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
-    engine->UpdateRnicLinkSpeed({200, 100});
+    engine->updateRnicLinkSpeed({200, 100});
 
     auto segment_id = engine->getSegmentID(FLAGS_segment_id);
     LOG_ASSERT(segment_id >= 0);
@@ -155,7 +155,7 @@ int target()
                                                    0,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
-    engine->UpdateRnicLinkSpeed({200, 100});
+    engine->updateRnicLinkSpeed({200, 100});
 
     while (true)
         sleep(1);

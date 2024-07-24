@@ -72,7 +72,7 @@ namespace mooncake
             exit(EXIT_FAILURE);
         }
 
-        ret = joinCluster();
+        ret = updateServerDesc();
         if (ret)
         {
             LOG(ERROR) << "Transfer engine cannot be initialized: cannot publish segments";
@@ -82,8 +82,7 @@ namespace mooncake
 
     TransferEngine::~TransferEngine()
     {
-        leaveCluster();
-        connected_server_set_.clear();
+        removeServerDesc();
         segment_desc_map_.clear();
         segment_lookup_map_.clear();
         batch_desc_set_.clear();
@@ -91,7 +90,7 @@ namespace mooncake
         freeInternalBuffer();
     }
 
-    int TransferEngine::joinCluster()
+    int TransferEngine::updateServerDesc()
     {
         TransferMetadata::ServerDesc desc;
         desc.name = local_server_name_;
@@ -119,10 +118,10 @@ namespace mooncake
 
         // TODO VRAM
 
-        return metadata_->broadcastServerDesc(local_server_name_, desc);
+        return metadata_->updateServerDesc(local_server_name_, desc);
     }
 
-    int TransferEngine::leaveCluster()
+    int TransferEngine::removeServerDesc()
     {
         return metadata_->removeServerDesc(local_server_name_);
     }
@@ -229,10 +228,6 @@ namespace mooncake
             info.desc = segment_desc_map_[request.target_id];
             segment_lock_.RUnlock();
             info.server_name = get_server_name(info.desc->name);
-
-            // Start handshake if needed
-            if (connectServer(info.server_name))
-                return -1;
         }
 
         size_t task_id = batch_desc.task_list.size();
@@ -249,7 +244,11 @@ namespace mooncake
                 auto context = context_list_[rnic_index];
                 auto &endpoint = segment_info.endpoint_map[context.get()];
                 if (!endpoint)
-                    endpoint = context->endpoint(segment_info.server_name);
+                {
+                    endpoint = context->endpoint(MakeNicPath(segment_info.server_name, context->deviceName()));
+                    if (!endpoint->connected())
+                        endpoint->setupConnectionsByActive();
+                }
 
                 auto slice = new Slice();
                 slice->source_addr = (char *)request.source + offset;
@@ -301,48 +300,32 @@ namespace mooncake
     {
         RWSpinlock::WriteGuard guard(batch_desc_lock_);
         auto batch_desc_ptr = ((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc_ptr->task_list.size();
+        for (size_t task_id = 0; task_id < task_count; task_id++)
+        {
+            auto &task = batch_desc_ptr->task_list[task_id];
+            if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
+            {
+                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
+                return -1;
+            }
+        }
         batch_desc_set_.erase(batch_desc_ptr);
-        delete batch_desc_ptr; // TODO 在任务没有完全结束前不能实际 delete 操作
+        delete batch_desc_ptr;
         return 0;
     }
 
     int TransferEngine::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)
     {
-        int device_index = 0;
-        local_desc.server_name = local_server_name_;
-        auto server_desc = metadata_->getServerDesc(peer_desc.server_name);
-        if (server_desc->devices.size() != peer_desc.devices.size())
+        auto local_nic_name = getNicNameFromNicPath(peer_desc.peer_nic_path);
+        for (auto &context : context_list_)
         {
-            LOG(ERROR) << "NICs in local/remote server must be the same";
-            return -1;
-        }
-        for (auto &entry : context_list_)
-        {
-            TransferMetadata::HandShakeDescImpl local_device_desc;
-            local_device_desc.name = entry->deviceName();
-            auto &peer_device_desc = peer_desc.devices[device_index];
-            auto endpoint = entry->endpoint(peer_desc.server_name);
-            if (endpoint == nullptr)
+            if (context->deviceName() == local_nic_name)
             {
-                LOG(ERROR) << "Cannot allocate endpoint objects";
-                return -1;
+                auto endpoint = context->endpoint(peer_desc.local_nic_path);
+                endpoint->setupConnectionsByPassive(peer_desc, local_desc);
+                break;
             }
-
-            if (endpoint->connected())
-            {
-                LOG(WARNING) << "Endpoint to " << endpoint->serverName() << " will be reconnected";
-                endpoint->reset();
-            }
-
-            auto peer_gid = server_desc->devices[device_index].gid;
-            auto peer_lid = server_desc->devices[device_index].lid;
-            int ret = endpoint->setupConnection(peer_gid, peer_lid, peer_device_desc.qp_num);
-            if (ret)
-                return -1; // TODO handle errors gracefully
-            for (int qp_index = 0; qp_index < (int)peer_device_desc.qp_num.size(); ++qp_index)
-                local_device_desc.qp_num.push_back(endpoint->qpNum(qp_index));
-            device_index++;
-            local_desc.devices.push_back(local_device_desc);
         }
         return 0;
     }
@@ -362,7 +345,7 @@ namespace mooncake
 
         for (auto &rnic : rnic_list_)
         {
-            auto context = std::make_shared<RdmaContext>();
+            auto context = std::make_shared<RdmaContext>(this);
             if (context->construct(rnic))
                 return -1;
 
@@ -398,53 +381,6 @@ namespace mooncake
                       std::placeholders::_2));
     }
 
-    int TransferEngine::connectServer(const std::string &peer_server_name)
-    {
-        {
-            RWSpinlock::ReadGuard guard(connected_server_lock_);
-            if (connected_server_set_.count(peer_server_name))
-                return 0;
-        }
-
-        RWSpinlock::WriteGuard guard(connected_server_lock_);
-        if (connected_server_set_.count(peer_server_name))
-            return 0;
-
-        TransferMetadata::HandShakeDesc local_desc, peer_desc;
-        local_desc.server_name = local_server_name_;
-        for (auto &context : context_list_)
-        {
-            TransferMetadata::HandShakeDescImpl entry;
-            entry.name = context->deviceName();
-            auto endpoint = context->endpoint(peer_server_name);
-            entry.qp_num = endpoint->qpNum();
-            local_desc.devices.push_back(entry);
-        }
-
-        int rc = metadata_->sendHandshake(peer_server_name, local_desc, peer_desc);
-        if (rc)
-            return rc;
-
-        int device_index = 0;
-        auto server_desc = metadata_->getServerDesc(peer_desc.server_name);
-        for (auto &context : context_list_)
-        {
-            auto peer_gid = server_desc->devices[device_index].gid;
-            auto peer_lid = server_desc->devices[device_index].lid;
-            auto &entry = peer_desc.devices[device_index];
-
-            entry.name = context->deviceName();
-            auto endpoint = context->endpoint(peer_server_name);
-            rc = endpoint->setupConnection(peer_gid, peer_lid, entry.qp_num);
-            if (rc)
-                return rc;
-            device_index++;
-        }
-
-        connected_server_set_.insert(peer_server_name);
-        return 0;
-    }
-
     int TransferEngine::allocateInternalBuffer()
     {
         for (int socket_id = 0; socket_id < 1; ++socket_id)
@@ -468,7 +404,7 @@ namespace mooncake
         return 0;
     }
 
-    int TransferEngine::UpdateRnicLinkSpeed(const std::vector<int> &rnic_speed)
+    int TransferEngine::updateRnicLinkSpeed(const std::vector<int> &rnic_speed)
     {
         if (rnic_speed.size() != rnic_list_.size())
             return -1;

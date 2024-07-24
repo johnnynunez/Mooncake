@@ -38,7 +38,7 @@ namespace mooncake
             char *json_file = memcached_get(client_, key.c_str(), key.length(), &length, &flags, &rc);
             if (!json_file || !reader.parse(json_file, json_file + length, value))
                 return false;
-            LOG(INFO) << "GET key=" << key << ", value=" << json_file;
+            LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
             free(json_file);
             return true;
         }
@@ -47,7 +47,7 @@ namespace mooncake
         {
             Json::FastWriter writer;
             const std::string json_file = writer.write(value);
-            LOG(INFO) << "SET key=" << key << ", value=" << json_file;
+            LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
             memcached_return_t rc = memcached_set(client_, key.c_str(), key.length(), &json_file[0], json_file.size(), 0, 0);
             return memcached_success(rc);
         }
@@ -75,7 +75,7 @@ namespace mooncake
         }
     }
 
-    int TransferMetadata::broadcastServerDesc(const std::string &server_name, const ServerDesc &desc)
+    int TransferMetadata::updateServerDesc(const std::string &server_name, const ServerDesc &desc)
     {
         Json::Value serverJSON;
         serverJSON["name"] = desc.name;
@@ -132,8 +132,9 @@ namespace mooncake
         return ret;
     }
 
-    std::shared_ptr<TransferMetadata::ServerDesc> TransferMetadata::getServerDesc(const std::string &server_name)
+    std::shared_ptr<TransferMetadata::ServerDesc> TransferMetadata::getServerDesc(const std::string &server_name, bool force_update)
     {
+        if (!force_update)
         {
             RWSpinlock::ReadGuard guard(server_desc_lock_);
             if (server_desc_map_.count(server_name))
@@ -180,41 +181,31 @@ namespace mooncake
     std::string TransferMetadata::encode(const HandShakeDesc &desc)
     {
         Json::Value root;
-        Json::Value devices(Json::arrayValue);
-        for (const auto &device : desc.devices)
-        {
-            Json::Value deviceJSON;
-            deviceJSON["name"] = device.name;
-            Json::Value qpNums(Json::arrayValue);
-            for (const auto &qp : device.qp_num)
-                qpNums.append(qp);
-            deviceJSON["qp_num"] = qpNums;
-            devices.append(deviceJSON);
-        }
-        root["devices"] = devices;
-        root["server_name"] = desc.server_name;
+        root["local_nic_path"] = desc.local_nic_path;
+        root["peer_nic_path"] = desc.peer_nic_path;
+        Json::Value qpNums(Json::arrayValue);
+        for (const auto &qp : desc.qp_num)
+            qpNums.append(qp);
+        root["qp_num"] = qpNums;
         Json::FastWriter writer;
-
-        return writer.write(root);
+        auto serialized = writer.write(root);
+        LOG(INFO) << "Send Endpoint Handshake Info: " << serialized;
+        return serialized;
     }
 
-    int TransferMetadata::decode(const std::string &ser, HandShakeDesc &desc)
+    int TransferMetadata::decode(const std::string &serialized, HandShakeDesc &desc)
     {
         Json::Value root;
         Json::Reader reader;
 
-        if (ser.empty() || !reader.parse(ser, root))
+        if (serialized.empty() || !reader.parse(serialized, root))
             return -1;
 
-        desc.server_name = root["server_name"].asString();
-        for (const auto &deviceJSON : root["devices"])
-        {
-            HandShakeDescImpl device;
-            device.name = deviceJSON["name"].asString();
-            for (const auto &qp : deviceJSON["qp_num"])
-                device.qp_num.push_back(qp.asUInt());
-            desc.devices.push_back(device);
-        }
+        LOG(INFO) << "Receive Endpoint Handshake Info: " << serialized;
+        desc.local_nic_path = root["local_nic_path"].asString();
+        desc.peer_nic_path = root["peer_nic_path"].asString();
+        for (const auto &qp : root["qp_num"])
+            desc.qp_num.push_back(qp.asUInt());
 
         return 0;
     }

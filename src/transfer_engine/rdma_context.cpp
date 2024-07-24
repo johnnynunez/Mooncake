@@ -14,8 +14,9 @@
 namespace mooncake
 {
 
-    RdmaContext::RdmaContext()
-        : endpoint_map_version_(0),
+    RdmaContext::RdmaContext(TransferEngine *engine)
+        : engine_(engine),
+          endpoint_map_version_(0),
           threads_running_(false),
           next_comp_channel_index_(0),
           next_comp_vector_index_(0),
@@ -355,39 +356,40 @@ namespace mooncake
         return 0;
     }
 
-    RdmaEndPoint *RdmaContext::endpoint(const std::string &remote_server_name)
+    RdmaEndPoint *RdmaContext::endpoint(const std::string &peer_nic_path)
     {
         if (!ready())
         {
             LOG(ERROR) << "Context for " << deviceName() << " not ready";
             return nullptr;
         }
-        if (remote_server_name.empty())
+        if (peer_nic_path.empty())
         {
-            LOG(ERROR) << "Invalid server name";
+            LOG(ERROR) << "Invalid peer nic path";
             return nullptr;
         }
         {
             RWSpinlock::ReadGuard guard(endpoint_map_lock_);
-            auto iter = endpoint_map_.find(remote_server_name);
+            auto iter = endpoint_map_.find(peer_nic_path);
             if (iter != endpoint_map_.end())
                 return iter->second.get();
         }
 
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
-        auto iter = endpoint_map_.find(remote_server_name);
+        auto iter = endpoint_map_.find(peer_nic_path);
         if (iter != endpoint_map_.end())
             return iter->second.get();
-        auto endpoint = std::make_shared<RdmaEndPoint>(this, remote_server_name);
+        auto local_nic_path = MakeNicPath(engine_->local_server_name_, device_name_);
+        auto endpoint = std::make_shared<RdmaEndPoint>(this, local_nic_path, peer_nic_path);
         int ret = endpoint->construct(cq());
         if (ret)
             return nullptr;
         endpoint_map_version_++;
-        endpoint_map_[remote_server_name] = endpoint;
+        endpoint_map_[peer_nic_path] = endpoint;
         return endpoint.get();
     }
 
-    int RdmaContext::deleteEndpoint(const std::string &remote_server_name)
+    int RdmaContext::deleteEndpoint(const std::string &peer_nic_path)
     {
         if (!ready())
         {
@@ -396,7 +398,7 @@ namespace mooncake
         }
 
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
-        auto iter = endpoint_map_.find(remote_server_name);
+        auto iter = endpoint_map_.find(peer_nic_path);
         if (iter != endpoint_map_.end())
         {
             endpoint_map_version_++;
