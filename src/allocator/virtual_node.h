@@ -1,6 +1,6 @@
 #pragma once
 
-#include "CommonTypes.h"
+#include "common_types.h"
 
 class VirtualNode
 {

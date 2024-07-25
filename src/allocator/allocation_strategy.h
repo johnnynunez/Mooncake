@@ -1,6 +1,6 @@
 #pragma once
 
-#include "VirtualNode.h"
+#include "virtual_node.h"
 #include <vector>
 #include <memory>
 

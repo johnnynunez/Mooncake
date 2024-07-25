@@ -1,11 +1,13 @@
-#include "RandomAllocationStrategy.h"
+#include "random_allocation_strategy.h"
 #include <iostream>
 #include <stdexcept>
+
+namespace mooncake {
 
 RandomAllocationStrategy::RandomAllocationStrategy()
 {
     std::random_device rd;
-    rng = std::mt19937(rd());
+    rng_ = std::mt19937(rd());
 }
 
 std::vector<int> RandomAllocationStrategy::selectNodes(int num_shards, int num_replicas, const std::vector<std::unique_ptr<VirtualNode>> &nodes)
@@ -38,7 +40,7 @@ std::vector<int> RandomAllocationStrategy::selectNodes(int num_shards, int num_r
             }
 
             std::uniform_int_distribution<> dis(0, available_nodes.size() - 1);
-            int index = dis(rng);
+            int index = dis(rng_);
             int selected_node = available_nodes[index];
 
             selected_nodes.push_back(selected_node);
@@ -49,3 +51,5 @@ std::vector<int> RandomAllocationStrategy::selectNodes(int num_shards, int num_r
 
     return selected_nodes;
 }
+
+} // end namespace mooncake
