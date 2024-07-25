@@ -14,7 +14,7 @@ DEFINE_string(operation, "read", "Operation type: read or write");
 //     "cuda:0": [["mlx5_2"], ["mlx5_3"]],
 // }
 DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
-DEFINE_string(segment_id, "optane20/cpu:0", "Segment ID to access data");
+DEFINE_string(segment_id, "optane20", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");
@@ -33,10 +33,29 @@ static std::string getHostname()
     return hostname;
 }
 
+static void *allocateMemoryPool(size_t size)
+{
+    void *start_addr;
+    start_addr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
+                      MAP_ANON | MAP_PRIVATE,
+                      -1, 0);
+    if (start_addr == MAP_FAILED)
+    {
+        PLOG(ERROR) << "Failed to allocate memory";
+        return nullptr;
+    }
+    return start_addr;
+}
+
+static void freeMemoryPool(void *addr, size_t size)
+{
+    munmap(addr, size);
+}
+
 volatile bool running = true;
 std::atomic<size_t> total_batch_count(0);
 
-int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id)
+int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id, void *addr)
 {
     TransferRequest::OpCode opcode;
     if (FLAGS_operation == "read")
@@ -48,6 +67,9 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id)
         LOG(ERROR) << "Unsupported operation: must be 'read' or 'write'";
         exit(EXIT_FAILURE);
     }
+
+    auto segment_desc = engine->getSegmentDescByID(segment_id);
+    uint64_t remote_base = (uint64_t)segment_desc->buffers[0].addr;
 
     size_t batch_count = 0;
     while (running)
@@ -61,9 +83,9 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id)
             TransferRequest entry;
             entry.opcode = opcode;
             entry.length = FLAGS_block_size;
-            entry.source = (uint8_t *)engine->get_dram_buffer() + FLAGS_block_size * (i * FLAGS_threads + thread_id);
+            entry.source = (uint8_t *)(addr) + FLAGS_block_size * (i * FLAGS_threads + thread_id);
             entry.target_id = segment_id;
-            entry.target_offset = FLAGS_block_size * (i * FLAGS_threads + thread_id);
+            entry.target_offset = remote_base + FLAGS_block_size * (i * FLAGS_threads + thread_id);
             requests.emplace_back(entry);
         }
 
@@ -105,11 +127,12 @@ int initiator()
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
                                                    getHostname(),
-                                                   dram_buffer_size,
-                                                   0,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
     engine->updateRnicLinkSpeed({200, 100});
+
+    void *addr = allocateMemoryPool(dram_buffer_size);
+    engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
 
     auto segment_id = engine->getSegmentID(FLAGS_segment_id);
     LOG_ASSERT(segment_id >= 0);
@@ -120,7 +143,7 @@ int initiator()
     gettimeofday(&start_tv, nullptr);
 
     for (int i = 0; i < FLAGS_threads; ++i)
-        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i);
+        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i, addr);
 
     sleep(FLAGS_duration);
     running = false;
@@ -140,6 +163,9 @@ int initiator()
               << ", throughput "
               << (batch_count * FLAGS_batch_size * FLAGS_block_size) / duration / 1000000000.0;
 
+    engine->unregisterLocalMemory(addr);
+    freeMemoryPool(addr, dram_buffer_size);
+
     return 0;
 }
 
@@ -151,14 +177,18 @@ int target()
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
                                                    getHostname(),
-                                                   dram_buffer_size,
-                                                   0,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
     engine->updateRnicLinkSpeed({200, 100});
 
+    void *addr = allocateMemoryPool(dram_buffer_size);
+    engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
+
     while (true)
         sleep(1);
+
+    engine->unregisterLocalMemory(addr);
+    freeMemoryPool(addr, dram_buffer_size);
 
     return 0;
 }

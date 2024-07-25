@@ -30,11 +30,6 @@ namespace mooncake
         friend class RdmaEndPoint;
 
     public:
-        // 通过 getSegmentID(segment_path) 分配取得，其中
-        //   segment_path := server_name/segment_name
-        // server_name 和 segment_name 只需要避免出现 / 和 @ 字符即可，推荐的格式是
-        //   server_name := hostname[:port]     如 optane21
-        //   segment_name := device_type:id     如 dram:0, vram:1 等
         using SegmentID = int32_t;
         using BatchID = uint64_t;
         const static BatchID INVALID_BATCH_ID = UINT64_MAX;
@@ -50,7 +45,7 @@ namespace mooncake
             OpCode opcode;
             void *source;
             SegmentID target_id;
-            size_t target_offset;
+            uint64_t target_offset;
             size_t length;
         };
 
@@ -71,6 +66,7 @@ namespace mooncake
             size_t transferred_bytes;
         };
 
+        using BufferDesc = TransferMetadata::BufferDesc;
         using SegmentDesc = TransferMetadata::SegmentDesc;
         using HandShakeDesc = TransferMetadata::HandShakeDesc;
 
@@ -87,25 +83,24 @@ namespace mooncake
         // - nic_priority_matrix：是一个 JSON 字符串，表示使用的存储介质名称及优先使用的网卡列表
         TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                        const std::string &local_server_name,
-                       size_t dram_buffer_size,
-                       size_t vram_buffer_size,
                        const std::string &nic_priority_matrix);
 
         // 回收分配的所有类型资源。
         ~TransferEngine();
 
-        // 本地用户内存管理
+        // 本地用户缓冲区管理
         //
-        // 本地用户内存可以在 Transfer 操作期间被用作读写缓冲区（位于本地）使用，也可作为数据源（即 Segment）
+        // 可以在 Transfer 操作期间被用作读写缓冲区（位于本地）使用，也可作为数据源（即 Segment）
         // 被其他 CLIENT 利用。
 
         // 在本地 DRAM/VRAM 上注册起始地址为 addr，长度为 size 的空间。
         // - addr: 注册空间起始地址；
-        // - size：注册空间长度；
+        // - length：注册空间长度；
+        // - location：这块内存所处的位置提示，如 cpu:0 等，将用于和 PriorityMatrix 匹配可用的 RNIC 列表
         // - 返回值：若成功，返回 0；否则返回负数值。
-        int registerLocalMemory(void *addr, size_t size);
+        int registerLocalMemory(void *addr, size_t length, const std::string &location);
 
-        // 解注册区域。若该区域是由 allocate_local_memory() 分配的，则同时回收内存空间。
+        // 解注册区域。
         // - addr: 注册空间起始地址；
         // - 返回值：若成功，返回 0；否则返回负数值。
         int unregisterLocalMemory(void *addr);
@@ -137,20 +132,22 @@ namespace mooncake
         // - 返回值：若成功，返回 0；否则返回负数值。
         int freeBatchID(BatchID batch_id);
 
-        // Helper functions
-        void *get_dram_buffer() const { return dram_buffer_list_[0]; }
-
-        SegmentID getSegmentID(const std::string &segment_path);
+        // 获取 segment_name 对应的 SegmentID，其中 segment_name 在 RDMA 语义中表示目标服务器的名称 (与 server_name 相同)
+        SegmentID getSegmentID(const std::string &segment_name);
 
         // 更新每张卡的最大带宽，用以控制分发 Slice 到不同网卡的概率，后期准备优化掉
         int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
 
     public:
-        int updateServerDesc();
+        std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
 
-        int removeServerDesc();
+        std::shared_ptr<SegmentDesc> getSegmentDescByID(SegmentID segment_id, bool force_update = false);
 
-        // 在执行 subscribe_segment() 期间，为实现 RDMA 通联，需要将新 Segment 所属 CLIENT 与集群内原有 CLIENT 之间建立
+        int updateLocalSegmentDesc();
+
+        int removeLocalSegmentDesc();
+
+        // 为实现 RDMA 通联，需要将新 Segment 所属 CLIENT 与集群内原有 CLIENT 之间建立
         // QP 配对，以建立点对点可靠连接。subscribe_segment() 调用方将发出 RPC 请求至新 Segment 所属 CLIENT
         // （即 owner_server_name），后者调用此接口推进连接的建立操作。该接口不应被最终用户主动调用。
         // 1. 在简化部署模式下，该功能通过一个特别简单的 TCP-based RPC 服务实现。
@@ -160,15 +157,14 @@ namespace mooncake
         // - 返回值：若成功，返回 0；否则返回负数值。
         int onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc);
 
-        TransferMetadata &metadata() { return *metadata_.get(); }
+        int sendHandshake(const std::string &peer_server_name,
+                          const HandShakeDesc &local_desc,
+                          HandShakeDesc &peer_desc)
+        {
+            return metadata_->sendHandshake(peer_server_name, local_desc, peer_desc);
+        }
 
     private:
-        int allocateInternalBuffer();
-
-        int freeInternalBuffer();
-
-        int parseNicPriorityMatrix(const std::string &nic_priority_matrix);
-
         int initializeRdmaResources();
 
         int startHandshakeDaemon();
@@ -243,28 +239,36 @@ namespace mooncake
             std::vector<TransferTask> task_list;
         };
 
+        struct LocalBufferDesc
+        {
+            std::string name;
+            void *addr;
+            size_t length;
+            std::vector<uint32_t> lkey;
+            std::vector<uint32_t> rkey;
+        };
+
     private:
         std::unique_ptr<TransferMetadata> metadata_;
 
-        using PriorityMap = TransferMetadata::PriorityMap;
-        PriorityMap priority_map_;
+        using PriorityMatrix = TransferMetadata::PriorityMatrix;
+        PriorityMatrix local_priority_matrix_;
         std::vector<std::string> rnic_list_;
         std::vector<uint8_t> rnic_prob_list_; // possibility to use this rnic
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
 
         RWSpinlock segment_lock_;
-        std::unordered_map<SegmentID, SegmentDesc *> segment_desc_map_;
-        std::unordered_map<std::string, SegmentID> segment_lookup_map_;
+        std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
+        std::unordered_map<std::string, SegmentID> segment_name_to_id_map_;
         std::atomic<SegmentID> next_segment_id_;
 
         RWSpinlock batch_desc_lock_;
         std::unordered_set<BatchDesc *> batch_desc_set_;
 
-        std::vector<void *> dram_buffer_list_;
-        std::vector<void *> vram_buffer_list_;
+        RWSpinlock registered_buffer_lock_;
+        std::vector<LocalBufferDesc> registered_buffer_list_;
 
         const std::string local_server_name_;
-        const size_t dram_buffer_size_, vram_buffer_size_;
     };
 
     using TransferRequest = TransferEngine::TransferRequest;

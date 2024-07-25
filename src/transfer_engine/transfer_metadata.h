@@ -24,7 +24,7 @@ namespace mooncake
     // 参数等， 相关逻辑由被此类抽象，便于与既有系统的集成。 当前基于 memcached/etcd 实现。
 
     /*
-        ETCD/MEMCACHED 存放的节点元数据信息
+        ETCD/MEMCACHED 存放的 Segment 元数据信息
 
         key = mooncake/[server_name]
         value = {
@@ -33,14 +33,18 @@ namespace mooncake
                 { 'name': 'mlx5_2', 'lid': 17, 'gid': 'fe:00:...' },
                 { 'name': 'mlx5_3', 'lid': 22, 'gid': 'fe:00:...' }
             ],
-            'segments': [
+            'priority_matrix': {
+                "cpu:0": [["mlx5_2"], ["mlx5_3"]],
+                "cpu:1": [["mlx5_3"], ["mlx5_2"]],
+                "cuda:0": [["mlx5_2"], ["mlx5_3"]],
+            },
+            'buffers': [
                 {
-                    'name': 'optane20/cpu:0',
-                    'preferred_rnic': [0],
+                    'name': 'cpu:0',
                     'addr': 0x7fa16bdf5000,
                     'length': 1073741824,
                     'rkey': [1fe000, 1fdf00, ...],
-                }
+                },
             ],
         }
 
@@ -67,20 +71,28 @@ namespace mooncake
             std::string gid;
         };
 
-        struct SegmentDesc
+        struct BufferDesc
         {
             std::string name;
             uint64_t addr;
             uint64_t length;
             std::vector<uint32_t> rkey;
-            std::vector<int> preferred_rnic;
         };
 
-        struct ServerDesc
+        struct PriorityItem
+        {
+            std::vector<std::string> preferred_rnic_list;
+            std::vector<std::string> available_rnic_list;
+        };
+
+        using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;
+
+        struct SegmentDesc
         {
             std::string name;
             std::vector<DeviceDesc> devices;
-            std::vector<SegmentDesc> segments;
+            PriorityMatrix priority_matrix;
+            std::vector<BufferDesc> buffers;
         };
 
         struct HandShakeDesc
@@ -95,11 +107,11 @@ namespace mooncake
 
         ~TransferMetadata();
 
-        int updateServerDesc(const std::string &server_name, const ServerDesc &desc);
+        int updateSegmentDesc(const std::string &server_name, const SegmentDesc &desc);
 
-        std::shared_ptr<ServerDesc> getServerDesc(const std::string &server_name, bool force_update = false);
+        std::shared_ptr<SegmentDesc> getSegmentDesc(const std::string &server_name);
 
-        int removeServerDesc(const std::string &server_name);
+        int removeSegmentDesc(const std::string &server_name);
 
         using OnReceiveHandShake = std::function<int(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)>;
         int startHandshakeDaemon(OnReceiveHandShake on_receive_handshake,
@@ -109,15 +121,8 @@ namespace mooncake
                           const HandShakeDesc &local_desc,
                           HandShakeDesc &peer_desc);
 
-        struct PriorityItem
-        {
-            std::vector<std::string> preferred_rnic_list;
-            std::vector<std::string> available_rnic_list;
-        };
-
-        using PriorityMap = std::unordered_map<std::string, PriorityItem>;
         static int parseNicPriorityMatrix(const std::string &nic_priority_matrix,
-                                          PriorityMap &priority_map,
+                                          PriorityMatrix &priority_map,
                                           std::vector<std::string> &rnic_list);
 
     private:
@@ -131,9 +136,6 @@ namespace mooncake
         OnReceiveHandShake on_receive_handshake_;
 
         std::shared_ptr<TransferMetadataImpl> impl_;
-
-        RWSpinlock server_desc_lock_;
-        std::unordered_map<std::string, std::shared_ptr<ServerDesc>> server_desc_map_;
     };
 
 }
