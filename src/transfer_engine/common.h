@@ -108,8 +108,6 @@ namespace mooncake
     }
 
     const static std::string NIC_PATH_DELIM = "@";
-    const static std::string SEGMENT_PATH_DELIM = "/";
-
     static inline const std::string getServerNameFromNicPath(const std::string &nic_path)
     {
         size_t pos = nic_path.find(NIC_PATH_DELIM);
@@ -126,30 +124,9 @@ namespace mooncake
         return nic_path.substr(pos + 1);
     }
 
-    static inline std::string MakeNicPath(const std::string &server_name, const std::string &nic_name)
+    static inline const std::string MakeNicPath(const std::string &server_name, const std::string &nic_name)
     {
         return server_name + NIC_PATH_DELIM + nic_name;
-    }
-
-    static inline const std::string getServerNameFromSegmentPath(const std::string &segment_path)
-    {
-        size_t pos = segment_path.find(SEGMENT_PATH_DELIM);
-        if (pos == segment_path.npos)
-            return "";
-        return segment_path.substr(0, pos);
-    }
-
-    static inline const std::string getSegmentNameFromSegmentPath(const std::string &segment_path)
-    {
-        size_t pos = segment_path.find(SEGMENT_PATH_DELIM);
-        if (pos == segment_path.npos)
-            return "";
-        return segment_path.substr(pos + 1);
-    }
-
-    static inline std::string MakeSegmentPath(const std::string &server_name, const std::string &segment_name)
-    {
-        return server_name + SEGMENT_PATH_DELIM + segment_name;
     }
 
     class RWSpinlock

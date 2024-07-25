@@ -91,24 +91,36 @@ namespace mooncake
         }
         serverJSON["devices"] = devicesJSON;
 
-        Json::Value segmentsJSON(Json::arrayValue);
-        for (const auto &segment : desc.segments)
+        Json::Value buffersJSON(Json::arrayValue);
+        for (const auto &buffer : desc.buffers)
         {
-            Json::Value segmentJSON;
-            segmentJSON["name"] = segment.name;
-            segmentJSON["addr"] = static_cast<Json::UInt64>(segment.addr);
-            segmentJSON["length"] = static_cast<Json::UInt64>(segment.length);
+            Json::Value bufferJSON;
+            bufferJSON["name"] = buffer.name;
+            bufferJSON["addr"] = static_cast<Json::UInt64>(buffer.addr);
+            bufferJSON["length"] = static_cast<Json::UInt64>(buffer.length);
             Json::Value rkeyJSON(Json::arrayValue);
-            for (auto &entry : segment.rkey)
+            for (auto &entry : buffer.rkey)
                 rkeyJSON.append(entry);
-            segmentJSON["rkey"] = rkeyJSON;
-            Json::Value preferredRNICJSON(Json::arrayValue);
-            for (auto &entry : segment.preferred_rnic)
-                preferredRNICJSON.append(entry);
-            segmentJSON["preferred_rnic"] = preferredRNICJSON;
-            segmentsJSON.append(segmentJSON);
+            bufferJSON["rkey"] = rkeyJSON;
+            buffersJSON.append(bufferJSON);
         }
-        serverJSON["segments"] = segmentsJSON;
+        serverJSON["buffers"] = buffersJSON;
+
+        Json::Value priorityMatrixJSON;
+        for (auto &entry : desc.priority_matrix)
+        {
+            Json::Value priorityItemJSON(Json::arrayValue);
+            Json::Value preferredRnicListJSON(Json::arrayValue);
+            for (auto &device_name : entry.second.preferred_rnic_list)
+                preferredRnicListJSON.append(device_name);
+            priorityItemJSON.append(preferredRnicListJSON);
+            Json::Value availableRnicListJSON(Json::arrayValue);
+            for (auto &device_name : entry.second.available_rnic_list)
+                availableRnicListJSON.append(device_name);
+            priorityItemJSON.append(availableRnicListJSON);
+            priorityMatrixJSON[entry.first] = priorityItemJSON;
+        }
+        serverJSON["priority_matrix"] = priorityMatrixJSON;
 
         if (!impl_->set(ServerDescPrefix + server_name, serverJSON))
         {
@@ -121,26 +133,16 @@ namespace mooncake
 
     int TransferMetadata::removeServerDesc(const std::string &server_name)
     {
-        int ret = 0;
         if (!impl_->remove(ServerDescPrefix + server_name))
         {
             LOG(ERROR) << "Failed to remove description of " << server_name;
-            ret = -1;
+            return -1;
         }
-        RWSpinlock::WriteGuard guard(server_desc_lock_);
-        server_desc_map_.erase(server_name);
-        return ret;
+        return 0;
     }
 
-    std::shared_ptr<TransferMetadata::ServerDesc> TransferMetadata::getServerDesc(const std::string &server_name, bool force_update)
+    std::shared_ptr<TransferMetadata::ServerDesc> TransferMetadata::getServerDesc(const std::string &server_name)
     {
-        if (!force_update)
-        {
-            RWSpinlock::ReadGuard guard(server_desc_lock_);
-            if (server_desc_map_.count(server_name))
-                return server_desc_map_[server_name];
-        }
-
         Json::Value serverJSON;
         if (!impl_->get(ServerDescPrefix + server_name, serverJSON))
         {
@@ -160,21 +162,32 @@ namespace mooncake
             desc->devices.push_back(device);
         }
 
-        for (const auto &segmentJSON : serverJSON["segments"])
+        for (const auto &bufferJSON : serverJSON["buffers"])
         {
-            SegmentDesc segment;
-            segment.name = segmentJSON["name"].asString();
-            segment.addr = segmentJSON["addr"].asUInt64();
-            segment.length = segmentJSON["length"].asUInt64();
-            for (const auto &rkeyJSON : segmentJSON["rkey"])
-                segment.rkey.push_back(rkeyJSON.asUInt());
-            for (const auto &preferredRNICJSON : segmentJSON["preferred_rnic"])
-                segment.preferred_rnic.push_back(preferredRNICJSON.asUInt());
-            desc->segments.push_back(segment);
+            BufferDesc buffer;
+            buffer.name = bufferJSON["name"].asString();
+            buffer.addr = bufferJSON["addr"].asUInt64();
+            buffer.length = bufferJSON["length"].asUInt64();
+            for (const auto &rkeyJSON : bufferJSON["rkey"])
+                buffer.rkey.push_back(rkeyJSON.asUInt());
+            desc->buffers.push_back(buffer);
         }
 
-        RWSpinlock::WriteGuard guard(server_desc_lock_);
-        server_desc_map_[server_name] = desc;
+        auto priorityMatrixJSON = serverJSON["priority_matrix"];
+        for (const auto &key : priorityMatrixJSON.getMemberNames())
+        {
+            const Json::Value &value = priorityMatrixJSON[key];
+            if (value.isArray() && value.size() == 2)
+            {
+                PriorityItem item;
+                for (const auto &array : value[0])
+                    item.preferred_rnic_list.push_back(array.asString());
+                for (const auto &array : value[1])
+                    item.available_rnic_list.push_back(array.asString());
+                desc->priority_matrix[key] = item;
+            }
+        }
+
         return desc;
     }
 
@@ -426,7 +439,7 @@ namespace mooncake
     }
 
     int TransferMetadata::parseNicPriorityMatrix(const std::string &nic_priority_matrix,
-                                                 PriorityMap &priority_map,
+                                                 PriorityMatrix &priority_map,
                                                  std::vector<std::string> &rnic_list)
     {
         std::set<std::string> rnic_set;
