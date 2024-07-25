@@ -315,7 +315,7 @@ namespace mooncake
             return -1;
         }
 
-        auto &nic_list = context_->engine()->getServerDesc(peer_server_name)->devices;
+        auto &nic_list = context_->engine()->getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
             if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
@@ -340,7 +340,7 @@ namespace mooncake
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
 
-        auto &nic_list = context_->engine()->getServerDesc(peer_server_name)->devices;
+        auto &nic_list = context_->engine()->getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
             if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);

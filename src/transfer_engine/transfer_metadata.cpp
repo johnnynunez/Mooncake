@@ -75,7 +75,7 @@ namespace mooncake
         }
     }
 
-    int TransferMetadata::updateServerDesc(const std::string &server_name, const ServerDesc &desc)
+    int TransferMetadata::updateSegmentDesc(const std::string &server_name, const SegmentDesc &desc)
     {
         Json::Value serverJSON;
         serverJSON["name"] = desc.name;
@@ -131,7 +131,7 @@ namespace mooncake
         return 0;
     }
 
-    int TransferMetadata::removeServerDesc(const std::string &server_name)
+    int TransferMetadata::removeSegmentDesc(const std::string &server_name)
     {
         if (!impl_->remove(ServerDescPrefix + server_name))
         {
@@ -141,7 +141,7 @@ namespace mooncake
         return 0;
     }
 
-    std::shared_ptr<TransferMetadata::ServerDesc> TransferMetadata::getServerDesc(const std::string &server_name)
+    std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(const std::string &server_name)
     {
         Json::Value serverJSON;
         if (!impl_->get(ServerDescPrefix + server_name, serverJSON))
@@ -150,7 +150,7 @@ namespace mooncake
             return nullptr;
         }
 
-        auto desc = std::make_shared<ServerDesc>();
+        auto desc = std::make_shared<SegmentDesc>();
         desc->name = serverJSON["name"].asString();
 
         for (const auto &deviceJSON : serverJSON["devices"])

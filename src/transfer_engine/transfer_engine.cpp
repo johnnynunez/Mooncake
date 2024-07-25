@@ -41,7 +41,7 @@ namespace mooncake
             exit(EXIT_FAILURE);
         }
 
-        ret = updateLocalServerDesc();
+        ret = updateLocalSegmentDesc();
         if (ret)
         {
             LOG(ERROR) << "Transfer engine cannot be initialized: cannot publish segments";
@@ -51,17 +51,16 @@ namespace mooncake
 
     TransferEngine::~TransferEngine()
     {
-        removeLocalServerDesc();
-        server_desc_cache_.clear();
+        removeLocalSegmentDesc();
         segment_id_to_desc_map_.clear();
         segment_name_to_id_map_.clear();
         batch_desc_set_.clear();
         context_list_.clear();
     }
 
-    int TransferEngine::updateLocalServerDesc()
+    int TransferEngine::updateLocalSegmentDesc()
     {
-        TransferMetadata::ServerDesc desc;
+        TransferMetadata::SegmentDesc desc;
         desc.name = local_server_name_;
         for (auto &entry : context_list_)
         {
@@ -86,12 +85,12 @@ namespace mooncake
         }
 
         desc.priority_matrix = local_priority_matrix_;
-        return metadata_->updateServerDesc(local_server_name_, desc);
+        return metadata_->updateSegmentDesc(local_server_name_, desc);
     }
 
-    int TransferEngine::removeLocalServerDesc()
+    int TransferEngine::removeLocalSegmentDesc()
     {
-        return metadata_->removeServerDesc(local_server_name_);
+        return metadata_->removeSegmentDesc(local_server_name_);
     }
 
     TransferEngine::SegmentID TransferEngine::getSegmentID(const std::string &segment_name)
@@ -105,42 +104,48 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(segment_lock_);
         if (segment_name_to_id_map_.count(segment_name))
             return segment_name_to_id_map_[segment_name];
-        auto server_desc = getServerDesc(segment_name);
+        auto server_desc = metadata_->getSegmentDesc(segment_name);
         if (!server_desc)
             return -1;
-
         SegmentID id = next_segment_id_.fetch_add(1);
         segment_id_to_desc_map_[id] = server_desc;
         segment_name_to_id_map_[segment_name] = id;
         return id;
     }
 
-    std::shared_ptr<TransferEngine::ServerDesc> TransferEngine::getServerDesc(const std::string &server_name, bool force_update)
+    std::shared_ptr<TransferEngine::SegmentDesc> TransferEngine::getSegmentDescByName(const std::string &segment_name, bool force_update)
     {
         if (!force_update)
         {
-            RWSpinlock::ReadGuard guard(server_desc_cache_lock_);
-            auto iter = server_desc_cache_.find(server_name);
-            if (iter != server_desc_cache_.end())
-                return iter->second;
+            RWSpinlock::ReadGuard guard(segment_lock_);
+            auto iter = segment_name_to_id_map_.find(segment_name);
+            if (iter != segment_name_to_id_map_.end())
+                return segment_id_to_desc_map_[iter->second];
         }
 
-        RWSpinlock::WriteGuard guard(server_desc_cache_lock_);
-        auto server_desc = metadata_->getServerDesc(server_name);
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        auto iter = segment_name_to_id_map_.find(segment_name);
+        SegmentID segment_id;
+        if (iter != segment_name_to_id_map_.end())
+            segment_id = iter->second;
+        else
+            segment_id = next_segment_id_.fetch_add(1);
+        auto server_desc = metadata_->getSegmentDesc(segment_name);
         if (!server_desc)
             return nullptr;
-        server_desc_cache_[server_name] = server_desc;
+        segment_id_to_desc_map_[segment_id] = server_desc;
+        segment_name_to_id_map_[segment_name] = segment_id;
         return server_desc;
     }
 
-    std::shared_ptr<TransferEngine::ServerDesc> TransferEngine::getServerDescBySegmentID(SegmentID segment_id, bool force_update)
+    std::shared_ptr<TransferEngine::SegmentDesc> TransferEngine::getSegmentDescByID(SegmentID segment_id, bool force_update)
     {
         if (force_update)
         {
             RWSpinlock::WriteGuard guard(segment_lock_);
             if (!segment_id_to_desc_map_.count(segment_id))
                 return nullptr;
-            auto server_desc = getServerDesc(segment_id_to_desc_map_[segment_id]->name);
+            auto server_desc = metadata_->getSegmentDesc(segment_id_to_desc_map_[segment_id]->name);
             if (!server_desc)
                 return nullptr;
             segment_id_to_desc_map_[segment_id] = server_desc;
@@ -176,7 +181,7 @@ namespace mooncake
             RWSpinlock::WriteGuard guard(registered_buffer_lock_);
             registered_buffer_list_.push_back(desc);
         }
-        return updateLocalServerDesc();
+        return updateLocalSegmentDesc();
     }
 
     int TransferEngine::unregisterLocalMemory(void *addr)
@@ -197,7 +202,7 @@ namespace mooncake
             }
         }
 
-        return updateLocalServerDesc();
+        return updateLocalSegmentDesc();
     }
 
     TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
@@ -226,7 +231,7 @@ namespace mooncake
         struct SegmentCache
         {
             std::vector<RdmaEndPoint *> endpoints;
-            std::shared_ptr<ServerDesc> desc;
+            std::shared_ptr<SegmentDesc> desc;
         };
 
         std::unordered_map<SegmentID, SegmentCache> segment_cache;
@@ -235,7 +240,7 @@ namespace mooncake
             if (segment_cache.count(request.target_id) == 0)
             {
                 auto &item = segment_cache[request.target_id];
-                item.desc = getServerDescBySegmentID(request.target_id);
+                item.desc = getSegmentDescByID(request.target_id);
                 for (auto &context : context_list_)
                 {
                     auto endpoint = context->endpoint(MakeNicPath(item.desc->name, context->deviceName()));

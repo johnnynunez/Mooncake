@@ -68,7 +68,7 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
         exit(EXIT_FAILURE);
     }
 
-    auto segment_desc = engine->getServerDesc(FLAGS_segment_id);
+    auto segment_desc = engine->getSegmentDescByID(segment_id);
     uint64_t remote_base = (uint64_t)segment_desc->buffers[0].addr;
 
     size_t batch_count = 0;

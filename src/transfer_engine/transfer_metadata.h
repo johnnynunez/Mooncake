@@ -24,7 +24,7 @@ namespace mooncake
     // 参数等， 相关逻辑由被此类抽象，便于与既有系统的集成。 当前基于 memcached/etcd 实现。
 
     /*
-        ETCD/MEMCACHED 存放的节点元数据信息
+        ETCD/MEMCACHED 存放的 Segment 元数据信息
 
         key = mooncake/[server_name]
         value = {
@@ -87,7 +87,7 @@ namespace mooncake
 
         using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;
 
-        struct ServerDesc
+        struct SegmentDesc
         {
             std::string name;
             std::vector<DeviceDesc> devices;
@@ -107,11 +107,11 @@ namespace mooncake
 
         ~TransferMetadata();
 
-        int updateServerDesc(const std::string &server_name, const ServerDesc &desc);
+        int updateSegmentDesc(const std::string &server_name, const SegmentDesc &desc);
 
-        std::shared_ptr<ServerDesc> getServerDesc(const std::string &server_name);
+        std::shared_ptr<SegmentDesc> getSegmentDesc(const std::string &server_name);
 
-        int removeServerDesc(const std::string &server_name);
+        int removeSegmentDesc(const std::string &server_name);
 
         using OnReceiveHandShake = std::function<int(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)>;
         int startHandshakeDaemon(OnReceiveHandShake on_receive_handshake,

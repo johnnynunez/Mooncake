@@ -67,7 +67,7 @@ namespace mooncake
         };
 
         using BufferDesc = TransferMetadata::BufferDesc;
-        using ServerDesc = TransferMetadata::ServerDesc;
+        using SegmentDesc = TransferMetadata::SegmentDesc;
         using HandShakeDesc = TransferMetadata::HandShakeDesc;
 
     public:
@@ -96,9 +96,9 @@ namespace mooncake
         // 在本地 DRAM/VRAM 上注册起始地址为 addr，长度为 size 的空间。
         // - addr: 注册空间起始地址；
         // - length：注册空间长度；
-        // - name：对应 segment 的名称，如 cpu:0 等，将用于和 PriorityMatrix 匹配可用的 RNIC 列表
+        // - location：这块内存所处的位置提示，如 cpu:0 等，将用于和 PriorityMatrix 匹配可用的 RNIC 列表
         // - 返回值：若成功，返回 0；否则返回负数值。
-        int registerLocalMemory(void *addr, size_t length, const std::string &name);
+        int registerLocalMemory(void *addr, size_t length, const std::string &location);
 
         // 解注册区域。
         // - addr: 注册空间起始地址；
@@ -132,20 +132,20 @@ namespace mooncake
         // - 返回值：若成功，返回 0；否则返回负数值。
         int freeBatchID(BatchID batch_id);
 
-        // Helper functions
+        // 获取 segment_name 对应的 SegmentID，其中 segment_name 在 RDMA 语义中表示目标服务器的名称 (与 server_name 相同)
         SegmentID getSegmentID(const std::string &segment_name);
 
         // 更新每张卡的最大带宽，用以控制分发 Slice 到不同网卡的概率，后期准备优化掉
         int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
 
     public:
-        std::shared_ptr<ServerDesc> getServerDesc(const std::string &server_name, bool force_update = false);
+        std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
 
-        std::shared_ptr<ServerDesc> getServerDescBySegmentID(SegmentID segment_id, bool force_update = false);
+        std::shared_ptr<SegmentDesc> getSegmentDescByID(SegmentID segment_id, bool force_update = false);
 
-        int updateLocalServerDesc();
+        int updateLocalSegmentDesc();
 
-        int removeLocalServerDesc();
+        int removeLocalSegmentDesc();
 
         // 为实现 RDMA 通联，需要将新 Segment 所属 CLIENT 与集群内原有 CLIENT 之间建立
         // QP 配对，以建立点对点可靠连接。subscribe_segment() 调用方将发出 RPC 请求至新 Segment 所属 CLIENT
@@ -257,11 +257,8 @@ namespace mooncake
         std::vector<uint8_t> rnic_prob_list_; // possibility to use this rnic
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
 
-        RWSpinlock server_desc_cache_lock_;
-        std::unordered_map<std::string, std::shared_ptr<ServerDesc>> server_desc_cache_;
-
         RWSpinlock segment_lock_;
-        std::unordered_map<SegmentID, std::shared_ptr<ServerDesc>> segment_id_to_desc_map_;
+        std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
         std::unordered_map<std::string, SegmentID> segment_name_to_id_map_;
         std::atomic<SegmentID> next_segment_id_;
 
