@@ -247,7 +247,7 @@ namespace mooncake
                 selectPeerContext(request.target_id, request.target_offset, peer_nic_path, slice->rdma.dest_rkey);
                 auto endpoint = context->endpoint(peer_nic_path);
                 if (!endpoint->connected())
-                    endpoint->setupConnectionsByActive();
+                    endpoint->setupConnectionsByActive(peer_nic_path);
                 slices_to_post[endpoint].push_back(slice);
                 task.slices.push_back(slice);
                 task.total_bytes += slice->length;

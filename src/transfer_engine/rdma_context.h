@@ -83,6 +83,8 @@ namespace mooncake
 
         void notifySenderThread();
 
+        std::string nicPath() const;
+
     private:
         int openRdmaDevice(const std::string &device_name, uint8_t port, int gid_index);
 

@@ -380,8 +380,7 @@ namespace mooncake
         auto iter = endpoint_map_.find(peer_nic_path);
         if (iter != endpoint_map_.end())
             return iter->second.get();
-        auto local_nic_path = MakeNicPath(engine_->local_server_name_, device_name_);
-        auto endpoint = std::make_shared<RdmaEndPoint>(this, local_nic_path, peer_nic_path);
+        auto endpoint = std::make_shared<RdmaEndPoint>(*this);
         int ret = endpoint->construct(cq());
         if (ret)
             return nullptr;
@@ -466,7 +465,7 @@ namespace mooncake
 
             uint64_t post_slice_count = 0;
             for (auto &entry : endpoint_list)
-                post_slice_count += entry->postSliceCount();
+                post_slice_count += entry->submittedSliceCount();
             if (post_slice_count == ack_slice_count)
             {
                 std::unique_lock<std::mutex> lock(cond_mutex_);
@@ -492,19 +491,19 @@ namespace mooncake
                     TransferEngine::Slice *slice = (TransferEngine::Slice *)wc[i].wr_id;
                     if (wc[i].status != IBV_WC_SUCCESS)
                     {
-                        slice->status.store(TransferEngine::Slice::FAILED, std::memory_order_relaxed);
                         __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
                         LOG(ERROR) << "Process failed for slice (opcode: " << slice->opcode
                                    << ", source_addr: " << slice->source_addr
                                    << ", length: " << slice->length
                                    << ", dest_addr: " << slice->rdma.dest_addr
                                    << "): " << ibv_wc_status_str(wc[i].status);
+                        slice->status.store(TransferEngine::Slice::FAILED);
                     }
                     else
                     {
-                        slice->status.store(TransferEngine::Slice::SUCCESS, std::memory_order_relaxed);
                         __sync_fetch_and_add(&slice->task->success_slice_count, 1);
                         __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
+                        slice->status.store(TransferEngine::Slice::SUCCESS);
                     }
                     if (slice->rdma.qp_depth)
                         (*slice->rdma.qp_depth)--;
@@ -574,6 +573,11 @@ namespace mooncake
                 }
             }
         }
+    }
+
+    std::string RdmaContext::nicPath() const
+    {
+        return MakeNicPath(engine_->local_server_name_, device_name_);
     }
 
 }
