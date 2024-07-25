@@ -83,7 +83,7 @@ namespace mooncake
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
 
-        int rc = context_.engine()->sendHandshake(peer_server_name, local_desc, peer_desc);
+        int rc = context_.engine().sendHandshake(peer_server_name, local_desc, peer_desc);
         if (rc)
             return rc;
 
@@ -93,7 +93,7 @@ namespace mooncake
             return -1;
         }
 
-        auto &nic_list = context_.engine()->getSegmentDescByName(peer_server_name)->devices;
+        auto &nic_list = context_.engine().getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
             if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
@@ -122,7 +122,7 @@ namespace mooncake
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
 
-        auto &nic_list = context_.engine()->getSegmentDescByName(peer_server_name)->devices;
+        auto &nic_list = context_.engine().getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
             if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
@@ -170,7 +170,7 @@ namespace mooncake
         for (auto &slice : slice_list)
             slice_queue_.emplace(slice);
         submitted_slice_count_.fetch_add(slice_list.size(), std::memory_order_relaxed);
-        context_.notifySenderThread();
+        context_.notifyWorker();
         return 0;
     }
 

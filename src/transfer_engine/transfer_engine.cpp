@@ -20,7 +20,7 @@ namespace mooncake
           next_segment_id_(0),
           local_server_name_(local_server_name)
     {
-        int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix_, rnic_list_);
+        int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix_, device_name_list_);
         if (ret)
         {
             LOG(ERROR) << "Transfer engine cannot be initialized: cannot parse nic priority matrix";
@@ -58,39 +58,146 @@ namespace mooncake
         context_list_.clear();
     }
 
-    int TransferEngine::updateLocalSegmentDesc()
+    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name)
     {
-        TransferMetadata::SegmentDesc desc;
-        desc.name = local_server_name_;
-        for (auto &entry : context_list_)
+        BufferDesc desc;
+        desc.name = name;
+        desc.addr = (uint64_t)addr;
+        desc.length = length;
+        const static int access_rights = IBV_ACCESS_LOCAL_WRITE |
+                                         IBV_ACCESS_REMOTE_WRITE |
+                                         IBV_ACCESS_REMOTE_READ;
+        for (auto &context : context_list_)
         {
-            TransferMetadata::DeviceDesc device_desc;
-            device_desc.name = entry->deviceName();
-            device_desc.lid = entry->lid();
-            device_desc.gid = entry->gid();
-            desc.devices.push_back(device_desc);
+            int ret = context->registerMemoryRegion(addr, length, access_rights);
+            if (ret)
+                return -1;
+            desc.rkey.push_back(context->rkey(addr));
         }
-
         {
-            RWSpinlock::ReadGuard guard(registered_buffer_lock_);
-            for (auto &entry : registered_buffer_list_)
+            RWSpinlock::WriteGuard guard(registered_buffer_lock_);
+            registered_buffer_list_.push_back(desc);
+        }
+        return updateLocalSegmentDesc();
+    }
+
+    int TransferEngine::unregisterLocalMemory(void *addr)
+    {
+        {
+            RWSpinlock::WriteGuard guard(registered_buffer_lock_);
+            for (auto iter = registered_buffer_list_.begin();
+                 iter != registered_buffer_list_.end();
+                 ++iter)
             {
-                TransferMetadata::BufferDesc buffer_desc;
-                buffer_desc.name = entry.name;
-                buffer_desc.addr = (uint64_t)entry.addr;
-                buffer_desc.length = entry.length;
-                buffer_desc.rkey = entry.rkey;
-                desc.buffers.push_back(buffer_desc);
+                if (iter->addr == (uint64_t)addr)
+                {
+                    for (auto &entry : context_list_)
+                        entry->unregisterMemoryRegion(addr);
+                    registered_buffer_list_.erase(iter);
+                    break;
+                }
             }
         }
 
-        desc.priority_matrix = local_priority_matrix_;
-        return metadata_->updateSegmentDesc(local_server_name_, desc);
+        return updateLocalSegmentDesc();
     }
 
-    int TransferEngine::removeLocalSegmentDesc()
+    TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
     {
-        return metadata_->removeSegmentDesc(local_server_name_);
+        auto batch_desc = std::make_shared<BatchDesc>();
+        batch_desc->id = BatchID(batch_desc.get());
+        batch_desc->batch_size = batch_size;
+        batch_desc->task_list.reserve(batch_size);
+        batch_desc_lock_.WLock();
+        batch_desc_set_[batch_desc->id] = batch_desc;
+        batch_desc_lock_.WUnlock();
+        return batch_desc->id;
+    }
+
+    int TransferEngine::submitTransfer(BatchID batch_id,
+                                       const std::vector<TransferRequest> &entries)
+    {
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
+            return -1;
+
+        std::unordered_map<std::shared_ptr<RdmaEndPoint>, std::vector<Slice *>> slices_to_post;
+        size_t task_id = batch_desc.task_list.size();
+        batch_desc.task_list.resize(task_id + entries.size());
+
+        for (auto &request : entries)
+        {
+            TransferTask &task = batch_desc.task_list[task_id];
+            ++task_id;
+            const static size_t kBlockSize = 65536;
+            for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
+            {
+                auto slice = std::make_shared<Slice>();
+                slice->source_addr = (char *)request.source + offset;
+                slice->length = std::min(request.length - offset, kBlockSize);
+                slice->opcode = request.opcode;
+                slice->rdma.dest_addr = request.target_offset + offset;
+                auto context = selectLocalContext(slice->source_addr, slice->rdma.source_lkey);
+                slice->task = &task;
+                slice->status.store(Slice::PENDING, std::memory_order_relaxed);
+                std::string peer_nic_path;
+                selectPeerContext(request.target_id, request.target_offset, peer_nic_path, slice->rdma.dest_rkey);
+                auto endpoint = context->endpoint(peer_nic_path);
+                if (!endpoint->connected())
+                    endpoint->setupConnectionsByActive(peer_nic_path);
+                slices_to_post[endpoint].push_back(slice.get());
+                task.slices.push_back(slice);
+                task.total_bytes += slice->length;
+            }
+        }
+        for (auto &entry : slices_to_post)
+            entry.first->submitPostSend(entry.second);
+        return 0;
+    }
+
+    int TransferEngine::getTransferStatus(BatchID batch_id,
+                                          std::vector<TransferStatus> &status)
+    {
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc.task_list.size();
+        status.resize(task_count);
+        for (size_t task_id = 0; task_id < task_count; task_id++)
+        {
+            auto &task = batch_desc.task_list[task_id];
+            status[task_id].transferred_bytes = task.transferred_bytes;
+            uint64_t success_slice_count = task.success_slice_count;
+            uint64_t failed_slice_count = task.failed_slice_count;
+            if (success_slice_count + failed_slice_count == (uint64_t)task.slices.size())
+            {
+                if (failed_slice_count)
+                    status[task_id].s = TransferStatusEnum::FAILED;
+                else
+                    status[task_id].s = TransferStatusEnum::COMPLETED;
+            }
+            else
+            {
+                status[task_id].s = TransferStatusEnum::WAITING;
+            }
+        }
+        return 0;
+    }
+
+    int TransferEngine::freeBatchID(BatchID batch_id)
+    {
+        RWSpinlock::WriteGuard guard(batch_desc_lock_);
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc.task_list.size();
+        for (size_t task_id = 0; task_id < task_count; task_id++)
+        {
+            auto &task = batch_desc.task_list[task_id];
+            if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
+            {
+                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
+                return -1;
+            }
+        }
+        batch_desc_set_.erase(batch_id);
+        return 0;
     }
 
     TransferEngine::SegmentID TransferEngine::getSegmentID(const std::string &segment_name)
@@ -160,148 +267,31 @@ namespace mooncake
         }
     }
 
-    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name)
+    int TransferEngine::updateLocalSegmentDesc()
     {
-        LocalBufferDesc desc;
-        desc.name = name;
-        desc.addr = addr;
-        desc.length = length;
-        const static int access_rights = IBV_ACCESS_LOCAL_WRITE |
-                                         IBV_ACCESS_REMOTE_WRITE |
-                                         IBV_ACCESS_REMOTE_READ;
+        TransferMetadata::SegmentDesc desc;
+        desc.name = local_server_name_;
         for (auto &entry : context_list_)
         {
-            int ret = entry->registerMemoryRegion(addr, length, access_rights);
-            if (ret)
-                return -1;
-            desc.lkey.push_back(entry->lkey(addr));
-            desc.rkey.push_back(entry->rkey(addr));
+            TransferMetadata::DeviceDesc device_desc;
+            device_desc.name = entry->deviceName();
+            device_desc.lid = entry->lid();
+            device_desc.gid = entry->gid();
+            desc.devices.push_back(device_desc);
         }
+
         {
-            RWSpinlock::WriteGuard guard(registered_buffer_lock_);
-            registered_buffer_list_.push_back(desc);
+            RWSpinlock::ReadGuard guard(registered_buffer_lock_);
+            desc.buffers = registered_buffer_list_;
         }
-        return updateLocalSegmentDesc();
+
+        desc.priority_matrix = local_priority_matrix_;
+        return metadata_->updateSegmentDesc(local_server_name_, desc);
     }
 
-    int TransferEngine::unregisterLocalMemory(void *addr)
+    int TransferEngine::removeLocalSegmentDesc()
     {
-        {
-            RWSpinlock::WriteGuard guard(registered_buffer_lock_);
-            for (auto iter = registered_buffer_list_.begin();
-                 iter != registered_buffer_list_.end();
-                 ++iter)
-            {
-                if (iter->addr == addr)
-                {
-                    for (auto &entry : context_list_)
-                        entry->unregisterMemoryRegion(addr);
-                    registered_buffer_list_.erase(iter);
-                    break;
-                }
-            }
-        }
-
-        return updateLocalSegmentDesc();
-    }
-
-    TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
-    {
-        auto batch_desc = new BatchDesc();
-        batch_desc->id = BatchID(batch_desc);
-        batch_desc->batch_size = batch_size;
-        batch_desc->task_list.reserve(batch_size);
-        batch_desc_lock_.WLock();
-        batch_desc_set_.insert(batch_desc);
-        batch_desc_lock_.WUnlock();
-        return BatchID(batch_desc);
-    }
-
-    int TransferEngine::submitTransfer(BatchID batch_id,
-                                       const std::vector<TransferRequest> &entries)
-    {
-        auto &batch_desc = *((BatchDesc *)(batch_id));
-        if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
-            return -1;
-
-        std::unordered_map<RdmaEndPoint *, std::vector<Slice *>> slices_to_post;
-        size_t task_id = batch_desc.task_list.size();
-        batch_desc.task_list.resize(task_id + entries.size());
-
-        for (auto &request : entries)
-        {
-            TransferTask &task = batch_desc.task_list[task_id];
-            ++task_id;
-            const static size_t kBlockSize = 65536;
-            for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
-            {
-                auto slice = new Slice();
-                slice->source_addr = (char *)request.source + offset;
-                slice->length = std::min(request.length - offset, kBlockSize);
-                slice->opcode = request.opcode;
-                slice->rdma.dest_addr = request.target_offset + offset;
-                auto context = selectLocalContext(slice->source_addr, slice->rdma.source_lkey);
-                slice->task = &task;
-                slice->status.store(Slice::PENDING, std::memory_order_relaxed);
-                std::string peer_nic_path;
-                selectPeerContext(request.target_id, request.target_offset, peer_nic_path, slice->rdma.dest_rkey);
-                auto endpoint = context->endpoint(peer_nic_path);
-                if (!endpoint->connected())
-                    endpoint->setupConnectionsByActive(peer_nic_path);
-                slices_to_post[endpoint].push_back(slice);
-                task.slices.push_back(slice);
-                task.total_bytes += slice->length;
-            }
-        }
-        for (auto &entry : slices_to_post)
-            entry.first->submitPostSend(entry.second);
-        return 0;
-    }
-
-    int TransferEngine::getTransferStatus(BatchID batch_id,
-                                          std::vector<TransferStatus> &status)
-    {
-        auto &batch_desc = *((BatchDesc *)(batch_id));
-        const size_t task_count = batch_desc.task_list.size();
-        status.resize(task_count);
-        for (size_t task_id = 0; task_id < task_count; task_id++)
-        {
-            auto &task = batch_desc.task_list[task_id];
-            status[task_id].transferred_bytes = task.transferred_bytes;
-            uint64_t success_slice_count = task.success_slice_count;
-            uint64_t failed_slice_count = task.failed_slice_count;
-            if (success_slice_count + failed_slice_count == (uint64_t)task.slices.size())
-            {
-                if (failed_slice_count)
-                    status[task_id].s = TransferStatusEnum::FAILED;
-                else
-                    status[task_id].s = TransferStatusEnum::COMPLETED;
-            }
-            else
-            {
-                status[task_id].s = TransferStatusEnum::WAITING;
-            }
-        }
-        return 0;
-    }
-
-    int TransferEngine::freeBatchID(BatchID batch_id)
-    {
-        RWSpinlock::WriteGuard guard(batch_desc_lock_);
-        auto batch_desc_ptr = ((BatchDesc *)(batch_id));
-        const size_t task_count = batch_desc_ptr->task_list.size();
-        for (size_t task_id = 0; task_id < task_count; task_id++)
-        {
-            auto &task = batch_desc_ptr->task_list[task_id];
-            if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
-            {
-                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
-                return -1;
-            }
-        }
-        batch_desc_set_.erase(batch_desc_ptr);
-        delete batch_desc_ptr;
-        return 0;
+        return metadata_->removeSegmentDesc(local_server_name_);
     }
 
     int TransferEngine::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)
@@ -321,23 +311,23 @@ namespace mooncake
 
     int TransferEngine::initializeRdmaResources()
     {
-        if (rnic_list_.empty())
+        if (device_name_list_.empty())
         {
             LOG(ERROR) << "No available RNIC!";
             return -1;
         }
 
-        std::vector<int> rnic_speed_list;
-        for (auto &rnic : rnic_list_)
+        std::vector<int> device_speed_list;
+        for (auto &device_name : device_name_list_)
         {
-            auto context = std::make_shared<RdmaContext>(this);
-            if (context->construct(rnic))
+            auto context = std::make_shared<RdmaContext>(*this, device_name);
+            if (context->construct())
                 return -1;
-            rnic_speed_list.push_back(context->activeSpeed());
+            device_speed_list.push_back(context->activeSpeed());
             context_list_.push_back(context);
         }
 
-        return updateRnicLinkSpeed(rnic_speed_list);
+        return 0;
     }
 
     int TransferEngine::startHandshakeDaemon()
@@ -349,30 +339,6 @@ namespace mooncake
                       std::placeholders::_2));
     }
 
-    int TransferEngine::updateRnicLinkSpeed(const std::vector<int> &rnic_speed)
-    {
-        if (rnic_speed.size() != rnic_list_.size())
-            return -1;
-
-        std::vector<double> cdf;
-        double sum = 0;
-        for (int value : rnic_speed)
-            sum += value;
-
-        cdf.push_back(rnic_speed[0] / sum);
-        for (size_t i = 1; i < rnic_speed.size(); ++i)
-            cdf.push_back(cdf[i - 1] + rnic_speed[i] / sum);
-
-        for (size_t i = 0; i < rnic_prob_list_.size(); ++i)
-        {
-            double ratio = (lrand48() % 100) / 100.0;
-            auto it = std::lower_bound(cdf.begin(), cdf.end(), ratio);
-            rnic_prob_list_[i] = it - cdf.begin();
-        }
-
-        return 0;
-    }
-
     RdmaContext *TransferEngine::selectLocalContext(void *source_addr, uint32_t &lkey)
     {
         RWSpinlock::ReadGuard guard(registered_buffer_lock_);
@@ -382,21 +348,21 @@ namespace mooncake
                 if (!local_priority_matrix_.count(item.name))
                     continue;
                 auto &priority = local_priority_matrix_[item.name];
-                std::string rnic_name;
+                std::string device_name;
                 if (!priority.preferred_rnic_list.empty())
-                    rnic_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
+                    device_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
                 if (!priority.available_rnic_list.empty())
-                    rnic_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
+                    device_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
 
-                int rnic_index = 0;
+                int device_index = 0;
                 for (auto context : context_list_)
                 {
-                    if (context->deviceName() == rnic_name)
+                    if (context->deviceName() == device_name)
                     {
-                        lkey = item.lkey[rnic_index];
-                        return context_list_[rnic_index].get();
+                        lkey = context->lkey(source_addr);
+                        return context_list_[device_index].get();
                     }
-                    rnic_index++;
+                    device_index++;
                 }
             }
         return nullptr;
@@ -409,21 +375,21 @@ namespace mooncake
             if (item.addr <= target_offset && target_offset < item.addr + item.length)
             {
                 auto &priority = desc->priority_matrix[item.name];
-                std::string rnic_name;
+                std::string device_name;
                 if (!priority.preferred_rnic_list.empty())
-                    rnic_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
+                    device_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
                 if (!priority.available_rnic_list.empty())
-                    rnic_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
-                peer_device_name = MakeNicPath(desc->name, rnic_name);
-                int rnic_index = 0;
+                    device_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
+                peer_device_name = MakeNicPath(desc->name, device_name);
+                int device_index = 0;
                 for (auto context : desc->devices)
                 {
-                    if (context.name == rnic_name)
+                    if (context.name == device_name)
                     {
-                        dest_rkey = item.rkey[rnic_index];
+                        dest_rkey = item.rkey[device_index];
                         return 0;
                     }
-                    rnic_index++;
+                    device_index++;
                 }
             }
         return -1;

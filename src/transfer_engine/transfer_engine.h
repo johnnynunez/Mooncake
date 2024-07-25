@@ -22,12 +22,14 @@ namespace mooncake
     class RdmaContext;
     class RdmaEndPoint;
     class TransferMetadata;
+    class WorkerPool;
 
     // TransferEngine
     class TransferEngine
     {
         friend class RdmaContext;
         friend class RdmaEndPoint;
+        friend class WorkerPool;
 
     public:
         using SegmentID = int32_t;
@@ -171,8 +173,6 @@ namespace mooncake
 
         int selectPeerContext(uint64_t target_id, uint64_t target_offset, std::string &peer_device_name, uint32_t &dest_rkey);
 
-        int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
-
     private:
         struct TransferTask;
 
@@ -217,23 +217,11 @@ namespace mooncake
 
         struct TransferTask
         {
-            TransferTask()
-                : success_slice_count(0),
-                  failed_slice_count(0),
-                  transferred_bytes(0),
-                  total_bytes(0) {}
-
-            ~TransferTask()
-            {
-                for (auto item : slices)
-                    delete item;
-            }
-
-            std::vector<Slice *> slices;
-            volatile uint64_t success_slice_count;
-            volatile uint64_t failed_slice_count;
-            volatile uint64_t transferred_bytes;
-            uint64_t total_bytes;
+            std::vector<std::shared_ptr<Slice>> slices;
+            volatile uint64_t success_slice_count = 0;
+            volatile uint64_t failed_slice_count = 0;
+            volatile uint64_t transferred_bytes = 0;
+            uint64_t total_bytes = 0;
         };
 
         struct BatchDesc
@@ -243,22 +231,13 @@ namespace mooncake
             std::vector<TransferTask> task_list;
         };
 
-        struct LocalBufferDesc
-        {
-            std::string name;
-            void *addr;
-            size_t length;
-            std::vector<uint32_t> lkey;
-            std::vector<uint32_t> rkey;
-        };
-
     private:
         std::unique_ptr<TransferMetadata> metadata_;
 
         using PriorityMatrix = TransferMetadata::PriorityMatrix;
         PriorityMatrix local_priority_matrix_;
-        std::vector<std::string> rnic_list_;
-        std::vector<uint8_t> rnic_prob_list_; // possibility to use this rnic
+
+        std::vector<std::string> device_name_list_;
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
 
         RWSpinlock segment_lock_;
@@ -267,10 +246,10 @@ namespace mooncake
         std::atomic<SegmentID> next_segment_id_;
 
         RWSpinlock batch_desc_lock_;
-        std::unordered_set<BatchDesc *> batch_desc_set_;
+        std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
 
         RWSpinlock registered_buffer_lock_;
-        std::vector<LocalBufferDesc> registered_buffer_list_;
+        std::vector<BufferDesc> registered_buffer_list_;
 
         const std::string local_server_name_;
     };
