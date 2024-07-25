@@ -28,12 +28,25 @@ void runTests()
     auto strategy = std::make_unique<RandomAllocationStrategy>();
 
     // 创建 CacheAllocator
-    const size_t SHARD_SIZE = 1024 * 64; // 1KB
+    const size_t SHARD_SIZE = 1024 * 1024; // 1m
     CacheAllocator allocator(SHARD_SIZE, std::move(nodes), std::move(strategy));
+    allocator.RegisterBuffer("RAM", 1, 0, SHARD_SIZE);
+    allocator.RegisterBuffer("RAM", 1, SHARD_SIZE * 2, SHARD_SIZE * 20);
+     allocator.RegisterBuffer("RAM", 2, 0, SHARD_SIZE);
+    allocator.RegisterBuffer("RAM", 2, SHARD_SIZE * 2, SHARD_SIZE * 20);
+     allocator.RegisterBuffer("RAM", 3, 0, SHARD_SIZE);
+    allocator.RegisterBuffer("RAM", 3, SHARD_SIZE * 2, SHARD_SIZE * 20);
 
+    for (int i = 0; i < 4; ++i) {
+        for (int j = 0; j < 20; ++j) {
+            allocator.RegisterBuffer("RAM", 1, SHARD_SIZE * (i + 1) * (10 + j), SHARD_SIZE * 20);
+        }
+    }
+    
     // 测试用例 1: asyncPut with multiple input blocks
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
         std::cout << "Test case 1: asyncPut with multiple input blocks" << std::endl;
         ObjectKey key = "test_object_1";
         std::vector<char> data1(1024, 'A');
@@ -42,7 +55,7 @@ void runTests()
         std::vector<void *> ptrs = {data1.data(), data2.data(), data3.data()};
         std::vector<void *> sizes = {(void *)1024, (void *)512, (void *)1536};
         ReplicateConfig config{2}; // 2 replicas
-        TaskID task_id = allocator.asyncPut(key, PtrType::HOST, ptrs, sizes, config);
+        TaskID task_id = allocator.asyncPut(key, PtrType::HOST, ptrs, sizes, config, transfer_tasks);
         assert(task_id > 0);
         std::cout << "asyncPut with multiple input blocks test passed." << std::endl;
         printSeparator();
@@ -52,13 +65,14 @@ void runTests()
     {
         printSeparator();
         std::cout << "Test case 2: asyncGet" << std::endl;
+        std::vector<TransferRequest> transfer_tasks;
 
         ObjectKey key = "test_object_1";
         std::vector<char> buffer(1024, 0); // 1KB buffer
         std::vector<void *> ptrs = {buffer.data()};
         std::vector<void *> sizes = {reinterpret_cast<void *>(buffer.size())};
 
-        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes);
+        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes, 0, 0,  transfer_tasks);
         assert(task_id > 0);
 
         // TODO: 验证数据是否被正确读取
@@ -70,12 +84,14 @@ void runTests()
     // 测试用例 3: asyncReplicate (增加副本数)
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 3: asyncReplicate (increase replicas)" << std::endl;
         ObjectKey key = "test_object_1";
         ReplicateConfig new_config{3}; // 增加到 3 个副本
         ReplicaDiff diff;
 
-        TaskID task_id = allocator.asyncReplicate(key, new_config, diff);
+        TaskID task_id = allocator.asyncReplicate(key, new_config, diff, transfer_tasks);
         assert(task_id > 0);
         assert(diff.change_status == ReplicaChangeStatus::ADDED);
         for (const auto &replica : diff.added_replicas)
@@ -93,11 +109,13 @@ void runTests()
     // 测试用例 4: asyncReplicate (减少副本数)
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 4: asyncReplicate (decrease replicas)" << std::endl;
         ObjectKey key = "test_object_1";
         ReplicateConfig new_config{1}; // 减少到 1 个副本
         ReplicaDiff diff;
-        TaskID task_id = allocator.asyncReplicate(key, new_config, diff);
+        TaskID task_id = allocator.asyncReplicate(key, new_config, diff, transfer_tasks);
         assert(task_id > 0);
         assert(diff.change_status == ReplicaChangeStatus::REMOVED);
         for (auto &replica : diff.removed_replicas)
@@ -115,6 +133,8 @@ void runTests()
     // 测试用例 5: asyncPut 大对象
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 5: asyncPut large object" << std::endl;
         ObjectKey key = "large_object";
         size_t obj_size = 10 * 1024 * 1024; // 10MB
@@ -131,7 +151,7 @@ void runTests()
         std::vector<void *> ptrs = {large_data.data(), large_data.data() + part1_size};
         std::vector<void *> sizes = {reinterpret_cast<void *>(part1_size), reinterpret_cast<void *>(part2_size)};
 
-        TaskID task_id = allocator.asyncPut(key, PtrType::HOST, ptrs, sizes, config);
+        TaskID task_id = allocator.asyncPut(key, PtrType::HOST, ptrs, sizes, config, transfer_tasks);
         assert(task_id > 0);
         std::cout << "asyncPut large object test passed." << std::endl;
 
@@ -144,6 +164,8 @@ void runTests()
     // 测试用例 6: asyncGet 带版本和偏移
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 6: asyncGet with version and offset" << std::endl;
 
         ObjectKey key = "large_object";
@@ -153,7 +175,7 @@ void runTests()
         std::vector<void *> ptrs = {buffer.data()};
         std::vector<void *> sizes = {reinterpret_cast<void *>(buffer.size())};
 
-        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes, min_version, offset);
+        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes, min_version, offset, transfer_tasks);
         assert(task_id > 0);
 
         // TODO: 验证数据是否被正确读取
@@ -166,6 +188,8 @@ void runTests()
     // 测试用例 7: asyncGet with multiple output buffers
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 7: asyncGet with multiple output buffers" << std::endl;
 
         ObjectKey key = "large_object";
@@ -182,7 +206,7 @@ void runTests()
             reinterpret_cast<void *>(buffer3.size())};
 
         // 调用 asyncGet
-        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes);
+        TaskID task_id = allocator.asyncGet(key, PtrType::HOST, ptrs, sizes, 0, 0, transfer_tasks);
         assert(task_id > 0);
 
         // TODO 验证数据是否被正确读取 需要比较读取的数据与预期的数据
@@ -203,6 +227,8 @@ void runTests()
     // 测试用例 8: 错误处理 - 获取不存在的对象
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 8: Error handling - Get non-existent object" << std::endl;
 
         ObjectKey key = "non_existent_object";
@@ -212,7 +238,7 @@ void runTests()
 
         try
         {
-            allocator.asyncGet(key, PtrType::HOST, ptrs, sizes);
+            allocator.asyncGet(key, PtrType::HOST, ptrs, sizes, 0, 0, transfer_tasks);
             assert(false); // 应该抛出异常
         }
         catch (const std::runtime_error &e)
@@ -227,13 +253,15 @@ void runTests()
     // 测试用例 9: 错误处理 - 复制不存在的对象
     {
         printSeparator();
+        std::vector<TransferRequest> transfer_tasks;
+
         std::cout << "Test case 9: Error handling - Replicate non-existent object" << std::endl;
         ObjectKey key = "non_existent_object";
         ReplicateConfig config{2};
         try
         {
             ReplicaDiff diff;
-            allocator.asyncReplicate(key, config, diff);
+            allocator.asyncReplicate(key, config, diff, transfer_tasks);
             assert(false); // 应该抛出异常
         }
         catch (const std::runtime_error &e)
