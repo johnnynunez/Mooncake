@@ -13,7 +13,7 @@ DEFINE_string(operation, "read", "Operation type: read or write");
 //     "cpu:1": [["mlx5_3"], ["mlx5_2"]],
 //     "cuda:0": [["mlx5_2"], ["mlx5_3"]],
 // }
-DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
+DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\", \"mlx5_3\"], []], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
 DEFINE_string(segment_id, "optane20", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
@@ -129,7 +129,6 @@ int initiator()
                                                    getHostname(),
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
-    engine->updateRnicLinkSpeed({200, 100});
 
     void *addr = allocateMemoryPool(dram_buffer_size);
     engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
@@ -179,7 +178,6 @@ int target()
                                                    getHostname(),
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
-    engine->updateRnicLinkSpeed({200, 100});
 
     void *addr = allocateMemoryPool(dram_buffer_size);
     engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");

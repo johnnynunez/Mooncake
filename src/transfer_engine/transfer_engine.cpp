@@ -228,58 +228,29 @@ namespace mooncake
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
 
-        struct SegmentCache
-        {
-            std::vector<RdmaEndPoint *> endpoints;
-            std::shared_ptr<SegmentDesc> desc;
-        };
-
-        std::unordered_map<SegmentID, SegmentCache> segment_cache;
-        for (auto &request : entries)
-        {
-            if (segment_cache.count(request.target_id) == 0)
-            {
-                auto &item = segment_cache[request.target_id];
-                item.desc = getSegmentDescByID(request.target_id);
-                for (auto &context : context_list_)
-                {
-                    auto endpoint = context->endpoint(MakeNicPath(item.desc->name, context->deviceName()));
-                    if (!endpoint->connected())
-                        endpoint->setupConnectionsByActive();
-                    item.endpoints.push_back(endpoint);
-                }
-            }
-        }
-
         for (auto &request : entries)
         {
             TransferTask &task = batch_desc.task_list[task_id];
             ++task_id;
-            auto &cache = segment_cache[request.target_id];
             const static size_t kBlockSize = 65536;
             for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
             {
-                int rnic_index = rnic_prob_list_[lrand48() % 64];
-                auto context = context_list_[rnic_index];
                 auto slice = new Slice();
                 slice->source_addr = (char *)request.source + offset;
                 slice->length = std::min(request.length - offset, kBlockSize);
                 slice->opcode = request.opcode;
                 slice->rdma.dest_addr = request.target_offset + offset;
-                for (auto &item : cache.desc->buffers)
-                {
-                    if (slice->rdma.dest_addr >= item.addr && slice->rdma.dest_addr < item.addr + item.length)
-                    {
-                        slice->rdma.dest_rkey = item.rkey[rnic_index];
-                        break;
-                    }
-                }
-                slice->rdma.source_lkey = context->lkey(slice->source_addr);
+                auto context = selectLocalContext(slice->source_addr, slice->rdma.source_lkey);
                 slice->task = &task;
                 slice->status.store(Slice::PENDING, std::memory_order_relaxed);
-                task.total_bytes += slice->length;
+                std::string peer_nic_path;
+                selectPeerContext(request.target_id, request.target_offset, peer_nic_path, slice->rdma.dest_rkey);
+                auto endpoint = context->endpoint(peer_nic_path);
+                if (!endpoint->connected())
+                    endpoint->setupConnectionsByActive();
+                slices_to_post[endpoint].push_back(slice);
                 task.slices.push_back(slice);
-                slices_to_post[cache.endpoints[rnic_index]].push_back(slice);
+                task.total_bytes += slice->length;
             }
         }
         for (auto &entry : slices_to_post)
@@ -356,19 +327,17 @@ namespace mooncake
             return -1;
         }
 
+        std::vector<int> rnic_speed_list;
         for (auto &rnic : rnic_list_)
         {
             auto context = std::make_shared<RdmaContext>(this);
             if (context->construct(rnic))
                 return -1;
+            rnic_speed_list.push_back(context->activeSpeed());
             context_list_.push_back(context);
         }
 
-        rnic_prob_list_.resize(64, 0);
-        for (size_t i = 0; i < rnic_prob_list_.size(); ++i)
-            rnic_prob_list_[i] = i % rnic_list_.size();
-
-        return 0;
+        return updateRnicLinkSpeed(rnic_speed_list);
     }
 
     int TransferEngine::startHandshakeDaemon()
@@ -402,5 +371,61 @@ namespace mooncake
         }
 
         return 0;
+    }
+
+    RdmaContext *TransferEngine::selectLocalContext(void *source_addr, uint32_t &lkey)
+    {
+        RWSpinlock::ReadGuard guard(registered_buffer_lock_);
+        for (auto &item : registered_buffer_list_)
+            if ((char *)item.addr <= (char *)source_addr && (char *)source_addr < (char *)item.addr + item.length)
+            {
+                if (!local_priority_matrix_.count(item.name))
+                    continue;
+                auto &priority = local_priority_matrix_[item.name];
+                std::string rnic_name;
+                if (!priority.preferred_rnic_list.empty())
+                    rnic_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
+                if (!priority.available_rnic_list.empty())
+                    rnic_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
+
+                int rnic_index = 0;
+                for (auto context : context_list_)
+                {
+                    if (context->deviceName() == rnic_name)
+                    {
+                        lkey = item.lkey[rnic_index];
+                        return context_list_[rnic_index].get();
+                    }
+                    rnic_index++;
+                }
+            }
+        return nullptr;
+    }
+
+    int TransferEngine::selectPeerContext(uint64_t target_id, uint64_t target_offset, std::string &peer_device_name, uint32_t &dest_rkey)
+    {
+        auto desc = getSegmentDescByID(target_id);
+        for (auto &item : desc->buffers)
+            if (item.addr <= target_offset && target_offset < item.addr + item.length)
+            {
+                auto &priority = desc->priority_matrix[item.name];
+                std::string rnic_name;
+                if (!priority.preferred_rnic_list.empty())
+                    rnic_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
+                if (!priority.available_rnic_list.empty())
+                    rnic_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
+                peer_device_name = MakeNicPath(desc->name, rnic_name);
+                int rnic_index = 0;
+                for (auto context : desc->devices)
+                {
+                    if (context.name == rnic_name)
+                    {
+                        dest_rkey = item.rkey[rnic_index];
+                        return 0;
+                    }
+                    rnic_index++;
+                }
+            }
+        return -1;
     }
 }

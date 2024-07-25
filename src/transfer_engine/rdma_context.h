@@ -73,6 +73,8 @@ namespace mooncake
 
         uint8_t portNum() const { return port_; }
 
+        int activeSpeed() const { return active_speed_; }
+
         ibv_comp_channel *compChannel();
 
         int compVector();
@@ -108,6 +110,7 @@ namespace mooncake
         uint8_t port_ = 0;
         uint16_t lid_ = 0;
         int gid_index_ = -1;
+        int active_speed_ = -1;
         ibv_gid gid_;
 
         RWSpinlock memory_regions_lock_;

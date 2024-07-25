@@ -88,6 +88,7 @@ namespace mooncake
             context_ = context;
             port_ = port;
             lid_ = attr.lid;
+            active_speed_ = attr.active_speed;
             gid_index_ = gid_index;
 
             ibv_free_device_list(devices);

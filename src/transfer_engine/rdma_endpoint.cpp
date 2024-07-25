@@ -132,6 +132,7 @@ namespace mooncake
                 iss.ignore(1, ':');
         }
         attr.ah_attr.grh.dgid = peer_gid_raw;
+        // TODO gidIndex and portNum must fetch from REMOTE
         attr.ah_attr.grh.sgid_index = context_->gidIndex();
         attr.ah_attr.grh.hop_limit = MAX_HOP_LIMIT;
         attr.ah_attr.dlid = peer_lid;
@@ -334,7 +335,7 @@ namespace mooncake
         }
 
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
-        auto peer_nic_name = getNicNameFromNicPath(local_nic_path_);
+        auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
 
         local_desc.local_nic_path = local_nic_path_;
         local_desc.peer_nic_path = peer_nic_path_;

@@ -135,9 +135,6 @@ namespace mooncake
         // 获取 segment_name 对应的 SegmentID，其中 segment_name 在 RDMA 语义中表示目标服务器的名称 (与 server_name 相同)
         SegmentID getSegmentID(const std::string &segment_name);
 
-        // 更新每张卡的最大带宽，用以控制分发 Slice 到不同网卡的概率，后期准备优化掉
-        int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
-
     public:
         std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
 
@@ -168,6 +165,13 @@ namespace mooncake
         int initializeRdmaResources();
 
         int startHandshakeDaemon();
+
+    private:
+        RdmaContext *selectLocalContext(void *source_addr, uint32_t &lkey);
+
+        int selectPeerContext(uint64_t target_id, uint64_t target_offset, std::string &peer_device_name, uint32_t &dest_rkey);
+
+        int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
 
     private:
         struct TransferTask;
