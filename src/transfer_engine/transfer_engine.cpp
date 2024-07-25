@@ -13,45 +13,14 @@
 
 namespace mooncake
 {
-
-    static void *allocate_memory_pool(size_t size)
-    {
-        void *start_addr;
-        start_addr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
-                          MAP_ANON | MAP_PRIVATE,
-                          -1, 0);
-        if (start_addr == MAP_FAILED)
-        {
-            PLOG(ERROR) << "Failed to allocate memory";
-            return nullptr;
-        }
-        return start_addr;
-    }
-
-    static void free_memory_pool(void *addr, size_t size)
-    {
-        munmap(addr, size);
-    }
-
     TransferEngine::TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                                    const std::string &local_server_name,
-                                   size_t dram_buffer_size,
-                                   size_t vram_buffer_size,
                                    const std::string &nic_priority_matrix)
-
         : metadata_(std::move(metadata)),
           next_segment_id_(0),
-          local_server_name_(local_server_name),
-          dram_buffer_size_(dram_buffer_size),
-          vram_buffer_size_(vram_buffer_size)
+          local_server_name_(local_server_name)
     {
-        if (allocateInternalBuffer())
-        {
-            LOG(ERROR) << "Transfer engine cannot be initialized: memory pool allocation failure";
-            exit(EXIT_FAILURE);
-        }
-
-        int ret = parseNicPriorityMatrix(nic_priority_matrix);
+        int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix_, rnic_list_);
         if (ret)
         {
             LOG(ERROR) << "Transfer engine cannot be initialized: cannot parse nic priority matrix";
@@ -72,7 +41,7 @@ namespace mooncake
             exit(EXIT_FAILURE);
         }
 
-        ret = updateServerDesc();
+        ret = updateLocalSegmentDesc();
         if (ret)
         {
             LOG(ERROR) << "Transfer engine cannot be initialized: cannot publish segments";
@@ -82,17 +51,16 @@ namespace mooncake
 
     TransferEngine::~TransferEngine()
     {
-        removeServerDesc();
-        segment_desc_map_.clear();
-        segment_lookup_map_.clear();
+        removeLocalSegmentDesc();
+        segment_id_to_desc_map_.clear();
+        segment_name_to_id_map_.clear();
         batch_desc_set_.clear();
         context_list_.clear();
-        freeInternalBuffer();
     }
 
-    int TransferEngine::updateServerDesc()
+    int TransferEngine::updateLocalSegmentDesc()
     {
-        TransferMetadata::ServerDesc desc;
+        TransferMetadata::SegmentDesc desc;
         desc.name = local_server_name_;
         for (auto &entry : context_list_)
         {
@@ -103,85 +71,138 @@ namespace mooncake
             desc.devices.push_back(device_desc);
         }
 
-        int dram_buffer_index = 0;
-        for (auto &dram_buffer : dram_buffer_list_)
         {
-            TransferMetadata::SegmentDesc segment_desc;
-            segment_desc.name = local_server_name_ + "/cpu:" + std::to_string(dram_buffer_index);
-            segment_desc.addr = (uint64_t)dram_buffer;
-            segment_desc.length = dram_buffer_size_;
-            for (auto &entry : context_list_)
-                segment_desc.rkey.push_back(entry->rkey(dram_buffer));
-            desc.segments.push_back(segment_desc);
-            ++dram_buffer_index;
-        }
-
-        // TODO VRAM
-
-        return metadata_->updateServerDesc(local_server_name_, desc);
-    }
-
-    int TransferEngine::removeServerDesc()
-    {
-        return metadata_->removeServerDesc(local_server_name_);
-    }
-
-    static std::string get_server_name(const std::string &segment_path)
-    {
-        size_t pos = segment_path.find('/');
-        if (pos == segment_path.npos)
-            return "";
-        return segment_path.substr(0, pos);
-    }
-
-    TransferEngine::SegmentID TransferEngine::getSegmentID(const std::string &segment_path)
-    {
-        {
-            RWSpinlock::ReadGuard guard(segment_lock_);
-            if (segment_lookup_map_.count(segment_path))
-                return segment_lookup_map_[segment_path];
-        }
-
-        RWSpinlock::WriteGuard guard(segment_lock_);
-        if (segment_lookup_map_.count(segment_path))
-            return segment_lookup_map_[segment_path];
-        auto server_desc = metadata_->getServerDesc(get_server_name(segment_path));
-        for (auto &segment : server_desc->segments)
-        {
-            if (segment.name == segment_path)
+            RWSpinlock::ReadGuard guard(registered_buffer_lock_);
+            for (auto &entry : registered_buffer_list_)
             {
-                SegmentID id = next_segment_id_.fetch_add(1);
-                segment_desc_map_[id] = &segment;
-                segment_lookup_map_[segment_path] = id;
-                LOG(INFO) << "Register segment id: " << id << ", addr: " << segment.addr;
-                return id;
+                TransferMetadata::BufferDesc buffer_desc;
+                buffer_desc.name = entry.name;
+                buffer_desc.addr = (uint64_t)entry.addr;
+                buffer_desc.length = entry.length;
+                buffer_desc.rkey = entry.rkey;
+                desc.buffers.push_back(buffer_desc);
             }
         }
 
-        return -1;
+        desc.priority_matrix = local_priority_matrix_;
+        return metadata_->updateSegmentDesc(local_server_name_, desc);
     }
 
-    int TransferEngine::registerLocalMemory(void *addr, size_t size)
+    int TransferEngine::removeLocalSegmentDesc()
     {
-        const static int access_rights = IBV_ACCESS_LOCAL_WRITE;
+        return metadata_->removeSegmentDesc(local_server_name_);
+    }
+
+    TransferEngine::SegmentID TransferEngine::getSegmentID(const std::string &segment_name)
+    {
+        {
+            RWSpinlock::ReadGuard guard(segment_lock_);
+            if (segment_name_to_id_map_.count(segment_name))
+                return segment_name_to_id_map_[segment_name];
+        }
+
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        if (segment_name_to_id_map_.count(segment_name))
+            return segment_name_to_id_map_[segment_name];
+        auto server_desc = metadata_->getSegmentDesc(segment_name);
+        if (!server_desc)
+            return -1;
+        SegmentID id = next_segment_id_.fetch_add(1);
+        segment_id_to_desc_map_[id] = server_desc;
+        segment_name_to_id_map_[segment_name] = id;
+        return id;
+    }
+
+    std::shared_ptr<TransferEngine::SegmentDesc> TransferEngine::getSegmentDescByName(const std::string &segment_name, bool force_update)
+    {
+        if (!force_update)
+        {
+            RWSpinlock::ReadGuard guard(segment_lock_);
+            auto iter = segment_name_to_id_map_.find(segment_name);
+            if (iter != segment_name_to_id_map_.end())
+                return segment_id_to_desc_map_[iter->second];
+        }
+
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        auto iter = segment_name_to_id_map_.find(segment_name);
+        SegmentID segment_id;
+        if (iter != segment_name_to_id_map_.end())
+            segment_id = iter->second;
+        else
+            segment_id = next_segment_id_.fetch_add(1);
+        auto server_desc = metadata_->getSegmentDesc(segment_name);
+        if (!server_desc)
+            return nullptr;
+        segment_id_to_desc_map_[segment_id] = server_desc;
+        segment_name_to_id_map_[segment_name] = segment_id;
+        return server_desc;
+    }
+
+    std::shared_ptr<TransferEngine::SegmentDesc> TransferEngine::getSegmentDescByID(SegmentID segment_id, bool force_update)
+    {
+        if (force_update)
+        {
+            RWSpinlock::WriteGuard guard(segment_lock_);
+            if (!segment_id_to_desc_map_.count(segment_id))
+                return nullptr;
+            auto server_desc = metadata_->getSegmentDesc(segment_id_to_desc_map_[segment_id]->name);
+            if (!server_desc)
+                return nullptr;
+            segment_id_to_desc_map_[segment_id] = server_desc;
+            return segment_id_to_desc_map_[segment_id];
+        }
+        else
+        {
+            RWSpinlock::ReadGuard guard(segment_lock_);
+            if (!segment_id_to_desc_map_.count(segment_id))
+                return nullptr;
+            return segment_id_to_desc_map_[segment_id];
+        }
+    }
+
+    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name)
+    {
+        LocalBufferDesc desc;
+        desc.name = name;
+        desc.addr = addr;
+        desc.length = length;
+        const static int access_rights = IBV_ACCESS_LOCAL_WRITE |
+                                         IBV_ACCESS_REMOTE_WRITE |
+                                         IBV_ACCESS_REMOTE_READ;
         for (auto &entry : context_list_)
         {
-            int ret = entry->registerMemoryRegion(addr, size, access_rights);
+            int ret = entry->registerMemoryRegion(addr, length, access_rights);
             if (ret)
                 return -1;
+            desc.lkey.push_back(entry->lkey(addr));
+            desc.rkey.push_back(entry->rkey(addr));
         }
-        return 0;
+        {
+            RWSpinlock::WriteGuard guard(registered_buffer_lock_);
+            registered_buffer_list_.push_back(desc);
+        }
+        return updateLocalSegmentDesc();
     }
 
     int TransferEngine::unregisterLocalMemory(void *addr)
     {
-        for (auto &entry : context_list_)
         {
-            int ret = entry->unregisterMemoryRegion(addr);
-            if (ret)
-                return -1;
+            RWSpinlock::WriteGuard guard(registered_buffer_lock_);
+            for (auto iter = registered_buffer_list_.begin();
+                 iter != registered_buffer_list_.end();
+                 ++iter)
+            {
+                if (iter->addr == addr)
+                {
+                    for (auto &entry : context_list_)
+                        entry->unregisterMemoryRegion(addr);
+                    registered_buffer_list_.erase(iter);
+                    break;
+                }
+            }
         }
-        return 0;
+
+        return updateLocalSegmentDesc();
     }
 
     TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
@@ -203,65 +224,62 @@ namespace mooncake
         if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
             return -1;
 
-        struct SegmentInfo4Slice
-        {
-            SegmentDesc *desc;
-            std::string server_name;
-            std::map<RdmaContext *, RdmaEndPoint *> endpoint_map;
-        };
-
-        std::unordered_map<SegmentID, SegmentInfo4Slice> segment_map;
         std::unordered_map<RdmaEndPoint *, std::vector<Slice *>> slices_to_post;
-        for (auto &request : entries)
-        {
-            if (segment_map.count(request.target_id))
-                continue;
-
-            segment_lock_.RLock();
-            if (!segment_desc_map_.count(request.target_id))
-            {
-                segment_lock_.RUnlock();
-                LOG(ERROR) << "Invalid target id";
-                return -1;
-            }
-            auto &info = segment_map[request.target_id];
-            info.desc = segment_desc_map_[request.target_id];
-            segment_lock_.RUnlock();
-            info.server_name = get_server_name(info.desc->name);
-        }
-
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
+
+        struct SegmentCache
+        {
+            std::vector<RdmaEndPoint *> endpoints;
+            std::shared_ptr<SegmentDesc> desc;
+        };
+
+        std::unordered_map<SegmentID, SegmentCache> segment_cache;
+        for (auto &request : entries)
+        {
+            if (segment_cache.count(request.target_id) == 0)
+            {
+                auto &item = segment_cache[request.target_id];
+                item.desc = getSegmentDescByID(request.target_id);
+                for (auto &context : context_list_)
+                {
+                    auto endpoint = context->endpoint(MakeNicPath(item.desc->name, context->deviceName()));
+                    if (!endpoint->connected())
+                        endpoint->setupConnectionsByActive();
+                    item.endpoints.push_back(endpoint);
+                }
+            }
+        }
+
         for (auto &request : entries)
         {
             TransferTask &task = batch_desc.task_list[task_id];
             ++task_id;
-            auto &segment_info = segment_map[request.target_id];
+            auto &cache = segment_cache[request.target_id];
             const static size_t kBlockSize = 65536;
             for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
             {
                 int rnic_index = rnic_prob_list_[lrand48() % 64];
                 auto context = context_list_[rnic_index];
-                auto &endpoint = segment_info.endpoint_map[context.get()];
-                if (!endpoint)
-                {
-                    endpoint = context->endpoint(MakeNicPath(segment_info.server_name, context->deviceName()));
-                    if (!endpoint->connected())
-                        endpoint->setupConnectionsByActive();
-                }
-
                 auto slice = new Slice();
                 slice->source_addr = (char *)request.source + offset;
                 slice->length = std::min(request.length - offset, kBlockSize);
                 slice->opcode = request.opcode;
-                slice->rdma.dest_addr = segment_info.desc->addr + request.target_offset + offset;
-                slice->rdma.dest_rkey = segment_info.desc->rkey[rnic_index];
+                slice->rdma.dest_addr = request.target_offset + offset;
+                for (auto &item : cache.desc->buffers)
+                {
+                    if (slice->rdma.dest_addr >= item.addr && slice->rdma.dest_addr < item.addr + item.length)
+                    {
+                        slice->rdma.dest_rkey = item.rkey[rnic_index];
+                        break;
+                    }
+                }
                 slice->rdma.source_lkey = context->lkey(slice->source_addr);
                 slice->task = &task;
                 slice->status.store(Slice::PENDING, std::memory_order_relaxed);
                 task.total_bytes += slice->length;
                 task.slices.push_back(slice);
-                slices_to_post[endpoint].push_back(slice);
+                slices_to_post[cache.endpoints[rnic_index]].push_back(slice);
             }
         }
         for (auto &entry : slices_to_post)
@@ -330,11 +348,6 @@ namespace mooncake
         return 0;
     }
 
-    int TransferEngine::parseNicPriorityMatrix(const std::string &nic_priority_matrix)
-    {
-        return metadata_->parseNicPriorityMatrix(nic_priority_matrix, priority_map_, rnic_list_);
-    }
-
     int TransferEngine::initializeRdmaResources()
     {
         if (rnic_list_.empty())
@@ -348,20 +361,6 @@ namespace mooncake
             auto context = std::make_shared<RdmaContext>(this);
             if (context->construct(rnic))
                 return -1;
-
-            const static int access_rights = IBV_ACCESS_LOCAL_WRITE |
-                                             IBV_ACCESS_REMOTE_WRITE |
-                                             IBV_ACCESS_REMOTE_READ;
-
-            int ret = context->registerMemoryRegion(dram_buffer_list_[0],
-                                                    dram_buffer_size_,
-                                                    access_rights);
-            if (ret)
-            {
-                context->deconstruct();
-                return ret;
-            }
-
             context_list_.push_back(context);
         }
 
@@ -379,29 +378,6 @@ namespace mooncake
                       this,
                       std::placeholders::_1,
                       std::placeholders::_2));
-    }
-
-    int TransferEngine::allocateInternalBuffer()
-    {
-        for (int socket_id = 0; socket_id < 1; ++socket_id)
-        {
-            auto dram_buffer = allocate_memory_pool(dram_buffer_size_);
-            if (!dram_buffer)
-                return -1;
-            LOG(INFO) << "Allocate DRAM pool " << dram_buffer << " on socket " << socket_id;
-            dram_buffer_list_.push_back(dram_buffer);
-        }
-        // TODO allocate CUDA vram buffer
-        return 0;
-    }
-
-    int TransferEngine::freeInternalBuffer()
-    {
-        for (int socket_id = 0; socket_id < 1; ++socket_id)
-            free_memory_pool(dram_buffer_list_[socket_id], dram_buffer_size_);
-        dram_buffer_list_.clear();
-        // TODO free CUDA vram buffer
-        return 0;
     }
 
     int TransferEngine::updateRnicLinkSpeed(const std::vector<int> &rnic_speed)
@@ -427,5 +403,4 @@ namespace mooncake
 
         return 0;
     }
-
 }

@@ -303,9 +303,9 @@ namespace mooncake
         local_desc.qp_num = qpNum();
 
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
-        auto &metadata = context_->engine()->metadata();
+        auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
 
-        int rc = metadata.sendHandshake(peer_server_name, local_desc, peer_desc);
+        int rc = context_->engine()->sendHandshake(peer_server_name, local_desc, peer_desc);
         if (rc)
             return rc;
 
@@ -315,13 +315,12 @@ namespace mooncake
             return -1;
         }
 
-        auto &nic_list = metadata.getServerDesc(peer_server_name)->devices;
-        auto nic_name = getNicNameFromNicPath(local_nic_path_);
+        auto &nic_list = context_->engine()->getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
-            if (nic.name == nic_name)
+            if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
 
-        LOG(INFO) << "NIC " << nic_name << " not found";
+        LOG(INFO) << "NIC " << peer_nic_name << " not found in server desc";
         return -1;
     }
 
@@ -335,19 +334,18 @@ namespace mooncake
         }
 
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
-        auto &metadata = context_->engine()->metadata();
+        auto peer_nic_name = getNicNameFromNicPath(local_nic_path_);
 
         local_desc.local_nic_path = local_nic_path_;
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
 
-        auto &nic_list = metadata.getServerDesc(peer_server_name)->devices;
-        auto nic_name = getNicNameFromNicPath(local_nic_path_);
+        auto &nic_list = context_->engine()->getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
-            if (nic.name == nic_name)
+            if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
 
-        LOG(INFO) << "NIC " << nic_name << " not found";
+        LOG(INFO) << "NIC " << peer_nic_name << " not found in server desc";
         return -1;
     }
 }
