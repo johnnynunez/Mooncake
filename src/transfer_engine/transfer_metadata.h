@@ -76,6 +76,7 @@ namespace mooncake
             std::string name;
             uint64_t addr;
             uint64_t length;
+            std::vector<uint32_t> lkey;
             std::vector<uint32_t> rkey;
         };
 
