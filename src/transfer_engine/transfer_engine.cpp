@@ -181,7 +181,7 @@ namespace mooncake
                 auto &context = context_list_[device_id];
                 slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
                 slice->task = &task;
-                slice->status.store(Slice::PENDING, std::memory_order_relaxed);
+                slice->status = Slice::PENDING;
 
                 auto &peer_segment_desc = segment_desc_map[request.target_id];
                 selectDevice(peer_segment_desc, request.target_offset, buffer_id, device_id);
