@@ -18,6 +18,11 @@ namespace mooncake
         {
             const std::string connect_string = "--SERVER=" + metadata_uri;
             client_ = memcached(connect_string.c_str(), connect_string.length());
+            if (!client_)
+            {
+                LOG(ERROR) << "Cannot allocate memcached objects";
+                exit(EXIT_FAILURE);
+            }
         }
 
         ~TransferMetadataImpl()
@@ -64,6 +69,11 @@ namespace mooncake
         : listener_running_(false)
     {
         impl_ = std::make_shared<TransferMetadataImpl>(metadata_uri);
+        if (!impl_)
+        {
+            LOG(ERROR) << "Cannot allocate TransferMetadataImpl objects";
+            exit(EXIT_FAILURE);
+        }
     }
 
     TransferMetadata::~TransferMetadata()
