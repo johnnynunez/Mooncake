@@ -6,6 +6,7 @@
 
 namespace mooncake {
 
+
 class RandomAllocationStrategy : public AllocationStrategy
 {
 private:
@@ -13,7 +14,7 @@ private:
 
 public:
     RandomAllocationStrategy();
-     std::map<std::string, std::map<int, std::vector<int>>> selectNodes(
+     SelectNodesType selectNodes(
         int num_shards, 
         int num_replicas, 
         size_t shard_size,

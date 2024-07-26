@@ -3,63 +3,52 @@
 
 namespace mooncake {
 
-CacheAllocator::CacheAllocator(size_t shard_size, std::vector<std::unique_ptr<VirtualNode>> nodes, std::unique_ptr<AllocationStrategy> strategy)
+CacheAllocator::CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy)
     : shard_size_(shard_size), allocation_strategy_(std::move(strategy)), global_version_(0) {}
 
 ReplicaList CacheAllocator::allocateReplicas(size_t obj_size, int num_replicas) {
     std::cout << "Allocating replicas for object size: " << obj_size << ", num replicas: " << num_replicas << std::endl;
 
     int num_shards = (obj_size + shard_size_ - 1) / shard_size_;
-    std::map<std::string, std::map<int, std::vector<int>>>  selected_nodes = allocation_strategy_->selectNodes(num_shards, num_replicas, shard_size_, buf_allocators_);
+    SelectNodesType selected_nodes = allocation_strategy_->selectNodes(num_shards, num_replicas, shard_size_, buf_allocators_);
 
     ReplicaList replicas(num_replicas);
-    int replica_index = 0;
     size_t remaining_size = obj_size;
-    for (const auto& [category, segments] : selected_nodes) {
-        for (const auto& [segment_id, allocator_indices] : segments) {
-            
-            int shard_index = 0;            
-            for (int allocator_index : allocator_indices) {
-                if (replica_index >= num_replicas) {
-                    break;  // 已经分配了足够的副本
-                }
-                
-                size_t shard_size = std::min(remaining_size, shard_size_);
-                auto& allocator = buf_allocators_[category][segment_id][allocator_index];
-                BufHandle handle = allocator.allocate(shard_size);
-                
-                if (handle.status != BufStatus::INIT) {
-                    // 处理分配失败的情况
-                    std::cout << "the handle status: " << (int)BufStatus::OVERFLOW << std::endl;
-                    throw std::runtime_error("Failed to allocate buffer");
-                }
-                
-                replicas[replica_index].handles.push_back(handle);
-                
-                std::cout << "  Replica " << replica_index + 1 << ", Shard " << shard_index + 1 
-                          << ": Category " << category << ", Segment " << segment_id 
-                          << ", Allocator " << allocator_index 
-                          << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
-                
-                remaining_size -= shard_size;
-                shard_index++;
-                std::cout << "the remaining_size: " << remaining_size << std::endl;
-                if (remaining_size == 0) {
-                    replicas[replica_index].status = ReplicaStatus::INITIALIZED;
-                    replica_index++;
-                    if (replica_index < num_replicas) {
-                        remaining_size = obj_size;  // 为下一个副本重置剩余大小
-                        shard_index = 0;
-                    }
-                }
-            }
+    int current_replica = 0;
+    int shard_index = 0;
+    
+    for (const auto& node : selected_nodes) {
+        size_t shard_size = std::min(remaining_size, node.shard_size);
+        auto& allocator = buf_allocators_[node.category][node.segment_id][node.allocator_index];
+        BufHandle handle = allocator.allocate(shard_size);
+        
+        if (handle.status != BufStatus::INIT) {
+            throw std::runtime_error("Failed to allocate buffer");
         }
-        if (replica_index >= num_replicas) {
-            break;  // 已经分配了足够的副本
+        
+        replicas[current_replica].handles.push_back(handle);
+        
+        std::cout << "  Replica " << current_replica + 1 << ", Shard " << shard_index + 1 
+                  << ": Category " << node.category << ", Segment " << node.segment_id 
+                  << ", Allocator " << node.allocator_index 
+                  << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
+        
+        remaining_size -= shard_size;
+        shard_index++;
+        
+        if (remaining_size == 0 || shard_index == num_shards) {
+            replicas[current_replica].status = ReplicaStatus::INITIALIZED;
+            current_replica++;
+            if (current_replica < num_replicas) {
+                remaining_size = obj_size;  // 为下一个副本重置剩余大小
+                shard_index = 0;
+            } else {
+                break;  // 所有副本都已分配完成
+            }
         }
     }
 
-    if (replica_index < num_replicas) {
+    if (current_replica < num_replicas) {
         throw std::runtime_error("Failed to allocate all requested replicas");
     }
     return replicas;
@@ -209,7 +198,7 @@ void CacheAllocator::generateReadTransferRequests(const std::vector<BufHandle> &
                                         
 }
 
-TaskID CacheAllocator::asyncPut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config, std::vector<TransferRequest>& transfer_requests) {
+TaskID CacheAllocator::makePut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config, std::vector<TransferRequest>& transfer_requests) {
     if (ptrs.size() != sizes.size()) {
         throw std::invalid_argument("ptrs and sizes vectors must have the same length");
     }
@@ -228,7 +217,7 @@ TaskID CacheAllocator::asyncPut(ObjectKey key, PtrType type, std::vector<void *>
     return global_version_.load();
 }
 
-TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff, std::vector<TransferRequest>& transfer_tasks) {
+TaskID CacheAllocator::makeReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff, std::vector<TransferRequest>& transfer_tasks) {
     std::cout << "AsyncReplicate: key=" << key << ", new_num_replicas=" << new_config.num_replicas << std::endl;
     
     auto it = object_meta_.find(key);
@@ -306,7 +295,7 @@ TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config,
     return global_version_.load();
 }
 
-TaskID CacheAllocator::asyncGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset, std::vector<TransferRequest>& transfer_tasks) {
+TaskID CacheAllocator::makeGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset, std::vector<TransferRequest>& transfer_tasks) {
     std::cout << "AsyncGet: key=" << key << ", min_version=" << min_version << ", offset=" << offset << std::endl;
 
     const std::pair<Version, ReplicaList>& replicas = getReplicas(key, min_version);
@@ -331,7 +320,7 @@ TaskID CacheAllocator::asyncGet(ObjectKey key, PtrType type, std::vector<void *>
     return replicas.first; // version
 }
 
-void CacheAllocator::RegisterBuffer(std::string type, int segment_id, size_t base, size_t size) {
+void CacheAllocator::registerBuffer(std::string type, int segment_id, size_t base, size_t size) {
      // 创建新的 BufferAllocator 实例
     BufferAllocator new_allocator(type, segment_id, base, size);
 

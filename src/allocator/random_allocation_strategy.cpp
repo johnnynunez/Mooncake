@@ -12,13 +12,13 @@ namespace mooncake
         rng_ = std::mt19937(rd());
     }
 
-    std::map<std::string, std::map<int, std::vector<int>>> RandomAllocationStrategy::selectNodes(
+    SelectNodesType RandomAllocationStrategy::selectNodes(
         int num_shards,
         int num_replicas,
         size_t shard_size,
         const BufferResources &buffer_resources) 
     {
-        std::map<std::string, std::map<int, std::vector<int>>> selected_nodes;
+        SelectNodesType selected_nodes;
         std::vector<std::tuple<std::string, int, int>> available_allocators;
 
         // 预处理：找出所有可用的 BufferAllocator
@@ -42,12 +42,9 @@ namespace mooncake
         }
 
         // 为每个副本分配 shards
-        for (int replica = 0; replica < num_replicas; ++replica)
-        {
-            for (int shard = 0; shard < num_shards; ++shard)
-            {
-                if (available_allocators.empty())
-                {
+        for (int replica = 0; replica < num_replicas; ++replica) {
+            for (int shard = 0; shard < num_shards; ++shard) {
+                if (available_allocators.empty()) {
                     throw std::runtime_error("Ran out of available allocators during selection");
                 }
 
@@ -57,7 +54,7 @@ namespace mooncake
                 auto [category, segment_id, allocator_index] = available_allocators[index];
 
                 // 添加到结果中
-                selected_nodes[category][segment_id].push_back(allocator_index);
+                selected_nodes.emplace_back(category, segment_id, allocator_index, shard_size);
 
                 // 从可用列表中移除已选择的 allocator
                 available_allocators.erase(available_allocators.begin() + index);
