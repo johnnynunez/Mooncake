@@ -13,7 +13,7 @@ DEFINE_string(operation, "read", "Operation type: read or write");
 //     "cpu:1": [["mlx5_3"], ["mlx5_2"]],
 //     "cuda:0": [["mlx5_2"], ["mlx5_3"]],
 // }
-DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\", \"mlx5_3\"], []], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
+DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
 DEFINE_string(segment_id, "optane20", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
@@ -33,23 +33,25 @@ static std::string getHostname()
     return hostname;
 }
 
-static void *allocateMemoryPool(size_t size)
+static void *allocateMemoryPool(size_t size, int socket_id)
 {
-    void *start_addr;
-    start_addr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
-                      MAP_ANON | MAP_PRIVATE,
-                      -1, 0);
-    if (start_addr == MAP_FAILED)
-    {
-        PLOG(ERROR) << "Failed to allocate memory";
-        return nullptr;
-    }
-    return start_addr;
+    return numa_alloc_onnode(size, socket_id);
+    // void *start_addr;
+    // start_addr = mmap(nullptr, size, PROT_READ | PROT_WRITE,
+    //                   MAP_ANON | MAP_PRIVATE,
+    //                   -1, 0);
+    // if (start_addr == MAP_FAILED)
+    // {
+    //     PLOG(ERROR) << "Failed to allocate memory";
+    //     return nullptr;
+    // }
+    // return start_addr;
 }
 
 static void freeMemoryPool(void *addr, size_t size)
 {
-    munmap(addr, size);
+    numa_free(addr, size);
+    // munmap(addr, size);
 }
 
 volatile bool running = true;
@@ -57,6 +59,7 @@ std::atomic<size_t> total_batch_count(0);
 
 int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id, void *addr)
 {
+    bindToSocket(0);
     TransferRequest::OpCode opcode;
     if (FLAGS_operation == "read")
         opcode = TransferRequest::READ;
@@ -130,7 +133,7 @@ int initiator()
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr = allocateMemoryPool(dram_buffer_size);
+    void *addr = allocateMemoryPool(dram_buffer_size, 0);
     engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
 
     auto segment_id = engine->getSegmentID(FLAGS_segment_id);
@@ -179,7 +182,7 @@ int target()
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr = allocateMemoryPool(dram_buffer_size);
+    void *addr = allocateMemoryPool(dram_buffer_size, 0);
     engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
 
     while (true)

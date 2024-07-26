@@ -13,7 +13,7 @@ namespace mooncake
     class WorkerPool
     {
     public:
-        WorkerPool(RdmaContext &context);
+        WorkerPool(RdmaContext &context, int numa_socket_id = 0);
 
         ~WorkerPool();
 
@@ -28,6 +28,7 @@ namespace mooncake
 
     private:
         RdmaContext &context_;
+        const int numa_socket_id_;
         std::vector<std::thread> worker_thread_;
         std::atomic<bool> workers_running_;
         std::mutex cond_mutex_;

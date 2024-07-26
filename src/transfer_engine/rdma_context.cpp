@@ -97,6 +97,7 @@ namespace mooncake
             }
         }
 
+        // TODO 确定网卡所属的 NUMA Socket，并且填充到 WorkerPool 的第二个构造函数中
         worker_pool_ = std::make_shared<WorkerPool>(*this);
         return 0;
     }

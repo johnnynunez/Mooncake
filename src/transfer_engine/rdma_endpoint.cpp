@@ -74,7 +74,7 @@ namespace mooncake
         if (connected())
         {
             LOG(WARNING) << "Previous connection is discarded";
-            disconnect();
+            disconnectUnlocked();
         }
         peer_nic_path_ = peer_nic_path;
     }
@@ -82,21 +82,30 @@ namespace mooncake
     int RdmaEndPoint::setupConnectionsByActive()
     {
         RWSpinlock::WriteGuard guard(lock_);
-        HandShakeDesc local_desc, peer_desc;
-
         if (connected())
-            return -1;
-
+        {
+            LOG(WARNING) << "Previous connection is discarded";
+            disconnectUnlocked();
+        }
+        HandShakeDesc local_desc, peer_desc;
         local_desc.local_nic_path = context_.nicPath();
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
 
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
+        if (peer_server_name.empty() || peer_nic_name.empty())
+        {
+            LOG(ERROR) << "Invalid argument";
+            return -1;
+        }
 
         int rc = context_.engine().sendHandshake(peer_server_name, local_desc, peer_desc);
         if (rc)
+        {
+            LOG(ERROR) << "Failed to exchange handshake description";
             return rc;
+        }
 
         if (peer_desc.local_nic_path != peer_nic_path_ || peer_desc.peer_nic_path != local_desc.local_nic_path)
         {
@@ -119,7 +128,7 @@ namespace mooncake
         if (connected())
         {
             LOG(WARNING) << "Previous connection is discarded";
-            disconnect();
+            disconnectUnlocked();
         }
 
         peer_nic_path_ = peer_desc.local_nic_path;
@@ -147,7 +156,12 @@ namespace mooncake
 
     void RdmaEndPoint::disconnect()
     {
-        // 强制中断当前链路上的传输
+        RWSpinlock::WriteGuard guard(lock_);
+        disconnectUnlocked();
+    }
+
+    void RdmaEndPoint::disconnectUnlocked()
+    {
         ibv_qp_attr attr;
         memset(&attr, 0, sizeof(attr));
         attr.qp_state = IBV_QPS_RESET;
@@ -159,7 +173,12 @@ namespace mooncake
 
         peer_nic_path_.clear();
         while (!slice_queue_.empty())
+        {
+            auto slice = slice_queue_.front();
+            slice->status = TransferEngine::Slice::FAILED;
+            __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
             slice_queue_.pop();
+        }
         slice_queue_size_.store(0, std::memory_order_relaxed);
         for (size_t i = 0; i < qp_list_.size(); ++i)
             wr_depth_list_[i] = 0;
@@ -212,8 +231,6 @@ namespace mooncake
             for (int i = 0; i < wr_count; ++i)
             {
                 auto slice = slice_list[i];
-                posted_slice_count++;
-
                 auto &sge = sge_list[i];
                 sge.addr = (uint64_t)slice->source_addr;
                 sge.length = slice->length;
@@ -229,7 +246,7 @@ namespace mooncake
                 wr.imm_data = 0;
                 wr.wr.rdma.remote_addr = slice->rdma.dest_addr;
                 wr.wr.rdma.rkey = slice->rdma.dest_rkey;
-                slice->status.store(TransferEngine::Slice::POSTED, std::memory_order_release);
+                slice->status = TransferEngine::Slice::POSTED;
                 slice->rdma.qp_depth = &wr_depth_list_[qp_index];
                 __sync_fetch_and_add(slice->rdma.qp_depth, 1);
             }
@@ -237,10 +254,17 @@ namespace mooncake
             int rc = ibv_post_send(qp_list_[qp_index], wr_list, &bad_wr);
             if (rc)
             {
-                PLOG(ERROR) << "post send failed";
+                PLOG(ERROR) << "ibv_post_send failed";
                 for (int i = 0; i < wr_count; ++i)
+                {
                     slice_list[i]->status = TransferEngine::Slice::FAILED;
-                exit(-1);
+                    __sync_fetch_and_add(&slice_list[i]->task->failed_slice_count, 1);
+                    __sync_fetch_and_sub(slice_list[i]->rdma.qp_depth, 1);
+                }
+            }
+            else
+            {
+                posted_slice_count += wr_count;
             }
         }
 

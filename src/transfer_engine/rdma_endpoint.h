@@ -80,6 +80,9 @@ namespace mooncake
         // 下一次可以连接到不同的远端 NIC（本地 NIC 固定）
         void disconnect();
 
+    private:
+        void disconnectUnlocked();
+
     public:
         const std::string toString() const;
 

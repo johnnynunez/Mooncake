@@ -214,7 +214,7 @@ namespace mooncake
                 } nvmeof;
             };
 
-            std::atomic<SliceStatus> status;
+            SliceStatus status;
             TransferTask *task;
         };
 
