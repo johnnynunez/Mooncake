@@ -54,10 +54,11 @@ namespace mooncake
 
     public:
         void setPeerNicPath(const std::string &peer_nic_path);
-        
+
         int setupConnectionsByActive();
 
-        int setupConnectionsByActive(const std::string &peer_nic_path) {
+        int setupConnectionsByActive(const std::string &peer_nic_path)
+        {
             setPeerNicPath(peer_nic_path);
             return setupConnectionsByActive();
         }
@@ -118,7 +119,7 @@ namespace mooncake
         std::queue<TransferEngine::Slice *> slice_queue_;
         std::atomic<int> slice_queue_size_;
 
-        std::vector<int> wr_depth_list_;
+        volatile int *wr_depth_list_;
         int max_wr_depth_;
 
         std::atomic<uint64_t> submitted_slice_count_, posted_slice_count_;

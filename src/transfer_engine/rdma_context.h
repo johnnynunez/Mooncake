@@ -34,7 +34,7 @@ namespace mooncake
                       size_t num_comp_channels = 1,
                       uint8_t port = 1,
                       int gid_index = 0,
-                      size_t max_cqe = 256);
+                      size_t max_cqe = 4096);
 
     private:
         int deconstruct();

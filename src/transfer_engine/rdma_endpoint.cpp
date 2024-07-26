@@ -34,10 +34,10 @@ namespace mooncake
         qp_list_.resize(num_qp_list);
 
         max_wr_depth_ = (int)max_wr_depth;
-        wr_depth_list_.resize(num_qp_list, 0);
-
+        wr_depth_list_ = new volatile int[num_qp_list];
         for (size_t i = 0; i < num_qp_list; ++i)
         {
+            wr_depth_list_[i] = 0;
             ibv_qp_init_attr attr;
             memset(&attr, 0, sizeof(attr));
             attr.send_cq = cq;
@@ -64,6 +64,7 @@ namespace mooncake
         for (size_t i = 0; i < qp_list_.size(); ++i)
             ibv_destroy_qp(qp_list_[i]);
         qp_list_.clear();
+        delete[] wr_depth_list_;
         return 0;
     }
 
@@ -160,8 +161,8 @@ namespace mooncake
         while (!slice_queue_.empty())
             slice_queue_.pop();
         slice_queue_size_.store(0, std::memory_order_relaxed);
-        for (auto &wr_depth : wr_depth_list_)
-            wr_depth = 0;
+        for (size_t i = 0; i < qp_list_.size(); ++i)
+            wr_depth_list_[i] = 0;
         submitted_slice_count_.store(0, std::memory_order_relaxed);
         posted_slice_count_.store(0, std::memory_order_relaxed);
         status_.store(UNCONNECTED, std::memory_order_release);
@@ -179,9 +180,8 @@ namespace mooncake
     int RdmaEndPoint::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
         RWSpinlock::WriteGuard guard(lock_);
-        slice_queue_size_.fetch_add(slice_list.size(), std::memory_order_release);
         for (auto &slice : slice_list)
-            slice_queue_.emplace(slice);
+            slice_queue_.push(slice);
         submitted_slice_count_.fetch_add(slice_list.size(), std::memory_order_relaxed);
         context_.notifyWorker();
         return 0;
@@ -189,9 +189,6 @@ namespace mooncake
 
     int RdmaEndPoint::performPostSend()
     {
-        if (slice_queue_size_.load(std::memory_order_acquire) == 0)
-            return 0;
-
         int posted_slice_count = 0;
         int qp_index = lrand48() % qp_list_.size();
         while (wr_depth_list_[qp_index] < max_wr_depth_)
@@ -234,7 +231,7 @@ namespace mooncake
                 wr.wr.rdma.rkey = slice->rdma.dest_rkey;
                 slice->status.store(TransferEngine::Slice::POSTED, std::memory_order_release);
                 slice->rdma.qp_depth = &wr_depth_list_[qp_index];
-                wr_depth_list_[qp_index]++;
+                __sync_fetch_and_add(slice->rdma.qp_depth, 1);
             }
 
             int rc = ibv_post_send(qp_list_[qp_index], wr_list, &bad_wr);
@@ -247,7 +244,8 @@ namespace mooncake
             }
         }
 
-        slice_queue_size_.fetch_sub(posted_slice_count, std::memory_order_relaxed);
+        if (posted_slice_count)
+            posted_slice_count_.fetch_add(posted_slice_count, std::memory_order_relaxed);
         return 0;
     }
 

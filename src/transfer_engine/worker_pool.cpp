@@ -65,12 +65,14 @@ namespace mooncake
                 endpoint_list.clear();
                 for (auto &entry : endpoint_set_)
                     endpoint_list.push_back(entry);
+                if (new_version != endpoint_set_version_.load(std::memory_order_relaxed))
+                    continue;
                 version = new_version;
             }
 
-            uint64_t post_slice_count = 0;
-            for (auto &entry : endpoint_list)
-                post_slice_count += entry->submittedSliceCount();
+            // uint64_t post_slice_count = 0;
+            // for (auto &entry : endpoint_list)
+            //     post_slice_count += entry->submittedSliceCount();
 
             // if (post_slice_count == ack_slice_count)
             // {
@@ -98,8 +100,7 @@ namespace mooncake
                 for (int i = 0; i < nr_poll; ++i)
                 {
                     TransferEngine::Slice *slice = (TransferEngine::Slice *)wc[i].wr_id;
-                    if (slice->rdma.qp_depth)
-                        (*slice->rdma.qp_depth)--;
+                    __sync_fetch_and_sub(slice->rdma.qp_depth, 1);
                     if (wc[i].status != IBV_WC_SUCCESS)
                     {
                         LOG(ERROR) << "Process failed for slice (opcode: " << slice->opcode

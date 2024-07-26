@@ -202,7 +202,7 @@ namespace mooncake
                     uint32_t source_lkey;
                     uint32_t dest_rkey;
                     int rkey_index;
-                    int *qp_depth;
+                    volatile int *qp_depth;
                 } rdma;
                 struct
                 {
