@@ -12,7 +12,6 @@ namespace mooncake
     RdmaEndPoint::RdmaEndPoint(RdmaContext &context)
         : context_(context),
           status_(INITIALIZING),
-          slice_queue_size_(0),
           submitted_slice_count_(0),
           posted_slice_count_(0) {}
 
@@ -172,14 +171,6 @@ namespace mooncake
         }
 
         peer_nic_path_.clear();
-        while (!slice_queue_.empty())
-        {
-            auto slice = slice_queue_.front();
-            slice->status = TransferEngine::Slice::FAILED;
-            __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
-            slice_queue_.pop();
-        }
-        slice_queue_size_.store(0, std::memory_order_relaxed);
         for (size_t i = 0; i < qp_list_.size(); ++i)
             wr_depth_list_[i] = 0;
         submitted_slice_count_.store(0, std::memory_order_relaxed);
@@ -196,80 +187,57 @@ namespace mooncake
             return "EndPoint: local " + context_.nicPath() + " (unconnected)";
     }
 
-    int RdmaEndPoint::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
+    int RdmaEndPoint::submitPostSend(std::vector<TransferEngine::Slice *> &slice_list,
+                                     std::vector<TransferEngine::Slice *> &failed_slice_list)
     {
         RWSpinlock::WriteGuard guard(lock_);
-        for (auto &slice : slice_list)
-            slice_queue_.push(slice);
-        submitted_slice_count_.fetch_add(slice_list.size(), std::memory_order_relaxed);
-        context_.notifyWorker();
-        return 0;
-    }
-
-    int RdmaEndPoint::performPostSend()
-    {
-        int posted_slice_count = 0;
         int qp_index = lrand48() % qp_list_.size();
-        while (wr_depth_list_[qp_index] < max_wr_depth_)
+        int wr_count = std::min(max_wr_depth_ - wr_depth_list_[qp_index], (int)slice_list.size());
+        if (wr_count == 0)
+            return 0;
+
+        ibv_send_wr wr_list[wr_count], *bad_wr = nullptr;
+        ibv_sge sge_list[wr_count];
+        memset(wr_list, 0, sizeof(ibv_send_wr) * wr_count);
+        for (int i = 0; i < wr_count; ++i)
         {
-            std::vector<TransferEngine::Slice *> slice_list;
-            lock_.lock();
-            int wr_count = std::min(max_wr_depth_ - wr_depth_list_[qp_index], (int)slice_queue_.size());
-            for (int i = 0; i < wr_count; ++i)
-            {
-                auto slice = slice_queue_.front();
-                slice_queue_.pop();
-                slice_list.push_back(slice);
-            }
-            lock_.unlock();
-            if (wr_count == 0)
-                break;
+            auto slice = slice_list[i];
+            auto &sge = sge_list[i];
+            sge.addr = (uint64_t)slice->source_addr;
+            sge.length = slice->length;
+            sge.lkey = slice->rdma.source_lkey;
 
-            ibv_send_wr wr_list[wr_count], *bad_wr = nullptr;
-            ibv_sge sge_list[wr_count];
-            memset(wr_list, 0, sizeof(ibv_send_wr) * wr_count);
-            for (int i = 0; i < wr_count; ++i)
-            {
-                auto slice = slice_list[i];
-                auto &sge = sge_list[i];
-                sge.addr = (uint64_t)slice->source_addr;
-                sge.length = slice->length;
-                sge.lkey = slice->rdma.source_lkey;
-
-                auto &wr = wr_list[i];
-                wr.wr_id = (uint64_t)slice;
-                wr.opcode = slice->opcode == TransferEngine::TransferRequest::READ ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
-                wr.num_sge = 1;
-                wr.sg_list = &sge;
-                wr.send_flags = IBV_SEND_SIGNALED;
-                wr.next = (i + 1 == wr_count) ? nullptr : &wr_list[i + 1];
-                wr.imm_data = 0;
-                wr.wr.rdma.remote_addr = slice->rdma.dest_addr;
-                wr.wr.rdma.rkey = slice->rdma.dest_rkey;
-                slice->status = TransferEngine::Slice::POSTED;
-                slice->rdma.qp_depth = &wr_depth_list_[qp_index];
-                __sync_fetch_and_add(slice->rdma.qp_depth, 1);
-            }
-
-            int rc = ibv_post_send(qp_list_[qp_index], wr_list, &bad_wr);
-            if (rc)
-            {
-                PLOG(ERROR) << "ibv_post_send failed";
-                for (int i = 0; i < wr_count; ++i)
-                {
-                    slice_list[i]->status = TransferEngine::Slice::FAILED;
-                    __sync_fetch_and_add(&slice_list[i]->task->failed_slice_count, 1);
-                    __sync_fetch_and_sub(slice_list[i]->rdma.qp_depth, 1);
-                }
-            }
-            else
-            {
-                posted_slice_count += wr_count;
-            }
+            auto &wr = wr_list[i];
+            wr.wr_id = (uint64_t)slice;
+            wr.opcode = slice->opcode == TransferEngine::TransferRequest::READ ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
+            wr.num_sge = 1;
+            wr.sg_list = &sge;
+            wr.send_flags = IBV_SEND_SIGNALED;
+            wr.next = (i + 1 == wr_count) ? nullptr : &wr_list[i + 1];
+            wr.imm_data = 0;
+            wr.wr.rdma.remote_addr = slice->rdma.dest_addr;
+            wr.wr.rdma.rkey = slice->rdma.dest_rkey;
+            slice->status = TransferEngine::Slice::POSTED;
+            slice->rdma.qp_depth = &wr_depth_list_[qp_index];
+            __sync_fetch_and_add(slice->rdma.qp_depth, 1);
         }
 
-        if (posted_slice_count)
-            posted_slice_count_.fetch_add(posted_slice_count, std::memory_order_relaxed);
+        int rc = ibv_post_send(qp_list_[qp_index], wr_list, &bad_wr);
+        if (rc)
+        {
+            PLOG(ERROR) << "ibv_post_send failed";
+            for (int i = 0; i < wr_count; ++i)
+            {
+                failed_slice_list.push_back(slice_list[i]);
+                __sync_fetch_and_sub(slice_list[i]->rdma.qp_depth, 1);
+            }
+            slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
+            return rc;
+        }
+
+        submitted_slice_count_.fetch_add(wr_count, std::memory_order_relaxed);
+        posted_slice_count_.fetch_add(wr_count, std::memory_order_relaxed);
+        slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
         return 0;
     }
 

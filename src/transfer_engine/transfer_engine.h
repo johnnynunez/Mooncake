@@ -173,8 +173,8 @@ namespace mooncake
 
         int startHandshakeDaemon();
 
-    private:
-        int selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id);
+    public:
+        static int selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id);
 
     private:
         struct TransferTask;
@@ -203,6 +203,8 @@ namespace mooncake
                     uint32_t dest_rkey;
                     int rkey_index;
                     volatile int *qp_depth;
+                    uint32_t retry_cnt;
+                    uint32_t max_retry_cnt;
                 } rdma;
                 struct
                 {
@@ -214,6 +216,7 @@ namespace mooncake
                 } nvmeof;
             };
 
+            std::shared_ptr<SegmentDesc> peer_segment_desc;
             SliceStatus status;
             TransferTask *task;
         };

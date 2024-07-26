@@ -382,6 +382,11 @@ namespace mooncake
         return nr_poll;
     }
 
+    int RdmaContext::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
+    {
+        return worker_pool_->submitPostSend(slice_list);
+    }
+
     void RdmaContext::notifyWorker()
     {
         worker_pool_->notify();

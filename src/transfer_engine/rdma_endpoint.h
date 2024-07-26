@@ -97,11 +97,9 @@ namespace mooncake
         }
 
     public:
-        // 由 TransferEngine 调用，向队列添加 Slice
-        int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
-
-        // 由 RdmaContext 后台线程调用，从队列提取 Slices 并执行 ibv_post_send()
-        int performPostSend();
+        // 提交并执行其中的部分工作请求，已提交的任务会从 slice_list 中删除。
+        int submitPostSend(std::vector<TransferEngine::Slice *> &slice_list,
+                           std::vector<TransferEngine::Slice *> &failed_slice_list);
 
     private:
         std::vector<uint32_t> qpNum() const;
@@ -118,9 +116,6 @@ namespace mooncake
         std::vector<ibv_qp *> qp_list_;
 
         std::string peer_nic_path_;
-
-        std::queue<TransferEngine::Slice *> slice_queue_;
-        std::atomic<int> slice_queue_size_;
 
         volatile int *wr_depth_list_;
         int max_wr_depth_;

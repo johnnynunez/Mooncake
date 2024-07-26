@@ -147,7 +147,7 @@ namespace mooncake
         if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
             return -1;
 
-        std::unordered_map<std::shared_ptr<RdmaEndPoint>, std::vector<Slice *>> slices_to_post;
+        std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
 
@@ -180,14 +180,12 @@ namespace mooncake
                 selectDevice(local_segment_desc, (uint64_t)slice->source_addr, buffer_id, device_id);
                 auto &context = context_list_[device_id];
                 slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
+                slice->rdma.retry_cnt = 0;
+                slice->rdma.max_retry_cnt = 4;
                 slice->task = &task;
                 slice->status = Slice::PENDING;
-
-                auto &peer_segment_desc = segment_desc_map[request.target_id];
-                selectDevice(peer_segment_desc, request.target_offset, buffer_id, device_id);
-                slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
-                auto endpoint = context->endpoint(MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name));
-                slices_to_post[std::move(endpoint)].push_back(slice.get());
+                slice->peer_segment_desc = segment_desc_map[request.target_id];
+                slices_to_post[context].push_back(slice.get());
                 task.total_bytes += slice->length;
                 task.slices.push_back(std::move(slice));
             }
