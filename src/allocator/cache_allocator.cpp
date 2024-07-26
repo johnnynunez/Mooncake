@@ -3,53 +3,68 @@
 
 namespace mooncake {
 
-CacheAllocator::CacheAllocator(size_t shard_size, std::vector<std::unique_ptr<VirtualNode>> nodes, std::unique_ptr<AllocationStrategy> strategy)
-    : shard_size_(shard_size), virtual_nodes_(std::move(nodes)), allocation_strategy_(std::move(strategy)), global_version_(0) {}
+CacheAllocator::CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy)
+    : shard_size_(shard_size), allocation_strategy_(std::move(strategy)), global_version_(0) {}
 
 ReplicaList CacheAllocator::allocateReplicas(size_t obj_size, int num_replicas) {
     std::cout << "Allocating replicas for object size: " << obj_size << ", num replicas: " << num_replicas << std::endl;
 
     int num_shards = (obj_size + shard_size_ - 1) / shard_size_;
-    std::vector<int> selected_nodes = allocation_strategy_->selectNodes(num_shards * num_replicas, num_replicas, virtual_nodes_);
-
-    std::cout << "Selected nodes: " << std::endl;
-    for (int i = 0; i < num_replicas; ++i) {
-        std::cout << "replicate " << i << " : ";
-        for (int j = 0; j < num_shards; ++j) {
-            std::cout << selected_nodes[i * num_shards + j] << " ";
-        }
-        std::cout << std::endl;
-    }
-    std::cout << std::endl;
+    SelectNodesType selected_nodes = allocation_strategy_->selectNodes(num_shards, num_replicas, shard_size_, buf_allocators_);
 
     ReplicaList replicas(num_replicas);
-    int node_index = 0;
-    for (int i = 0; i < num_replicas; ++i) {
-        std::cout << "Allocating replica " << i + 1 << ":" << std::endl;
-        size_t remaining_size = obj_size;
-        for (int j = 0; j < num_shards; ++j) {
-            size_t shard_size = std::min(remaining_size, shard_size_);
-            BufHandle handle = virtual_nodes_[selected_nodes[node_index]]->allocate(shard_size);
-            replicas[i].handles.push_back(handle);
-            std::cout << "  Shard " << j + 1 << ": Node " << selected_nodes[node_index] 
-                      << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
-            remaining_size -= shard_size;
-            node_index++;
+    size_t remaining_size = obj_size;
+    int current_replica = 0;
+    int shard_index = 0;
+    
+    for (const auto& node : selected_nodes) {
+        size_t shard_size = std::min(remaining_size, node.shard_size);
+        auto& allocator = buf_allocators_[node.category][node.segment_id][node.allocator_index];
+        BufHandle handle = allocator.allocate(shard_size);
+        
+        if (handle.status != BufStatus::INIT) {
+            throw std::runtime_error("Failed to allocate buffer");
         }
-        replicas[i].status = ReplicaStatus::INITIALIZED;
+        
+        replicas[current_replica].handles.push_back(handle);
+        
+        std::cout << "  Replica " << current_replica + 1 << ", Shard " << shard_index + 1 
+                  << ": Category " << node.category << ", Segment " << node.segment_id 
+                  << ", Allocator " << node.allocator_index 
+                  << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
+        
+        remaining_size -= shard_size;
+        shard_index++;
+        
+        if (remaining_size == 0 || shard_index == num_shards) {
+            replicas[current_replica].status = ReplicaStatus::INITIALIZED;
+            current_replica++;
+            if (current_replica < num_replicas) {
+                remaining_size = obj_size;  // 为下一个副本重置剩余大小
+                shard_index = 0;
+            } else {
+                break;  // 所有副本都已分配完成
+            }
+        }
     }
 
+    if (current_replica < num_replicas) {
+        throw std::runtime_error("Failed to allocate all requested replicas");
+    }
     return replicas;
 }
 
-void CacheAllocator::writeDataToReplicas(ReplicaList &replicas, const std::vector<void *> &ptrs, const std::vector<void *> &sizes, int num_replicas) {
+
+void CacheAllocator::generateWriteTransferRequests(ReplicaList &replicas, const std::vector<void *> &ptrs, const std::vector<void *> &sizes, int num_replicas, std::vector<TransferRequest>& transfer_requests) {
+
     for (int replica_idx = 0; replica_idx < num_replicas; ++replica_idx) {
         size_t written = 0;
         size_t input_offset = 0;
         size_t input_idx = 0;
 
+        // shard类型为 BufHandle
         for (const auto &shard : replicas[replica_idx].handles) {
-            char *dest = reinterpret_cast<char *>(virtual_nodes_[shard.segment_id]->getBuffer(shard));
+
             size_t shard_offset = 0;
 
             while (shard_offset < shard.size && input_idx < ptrs.size()) {
@@ -59,7 +74,14 @@ void CacheAllocator::writeDataToReplicas(ReplicaList &replicas, const std::vecto
                 size_t to_write = std::min(remaining_input, remaining_shard);
 
                 // Copy data
-                memcpy(dest + shard_offset, static_cast<char *>(ptrs[input_idx]) + input_offset, to_write);
+                TransferRequest request;
+                request.opcode = TransferRequest::OpCode::WRITE;
+                request.source = (void*)(static_cast<char *>(ptrs[input_idx]) + input_offset);
+                request.length = to_write;
+                request.target_id = shard.segment_id;
+                request.target_offset = shard.offset + shard_offset;
+                transfer_requests.push_back(std::move(request));
+
 
                 shard_offset += to_write;
                 input_offset += to_write;
@@ -81,6 +103,7 @@ void CacheAllocator::writeDataToReplicas(ReplicaList &replicas, const std::vecto
         replicas[replica_idx].status = ReplicaStatus::COMPLETED;
         std::cout << "Total written for replica " << replica_idx << ": " << written << " bytes" << std::endl;
     }
+    return;
 }
 
 void CacheAllocator::updateObjectMeta(const ObjectKey &key, const ReplicaList &replicas, const ReplicateConfig &config) {
@@ -117,10 +140,10 @@ std::pair<Version, ReplicaList> CacheAllocator::getReplicas(const ObjectKey &key
     return std::make_pair(version_it->first, version_it->second);
 }
 
-size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle> &replica, 
-                                       size_t offset, 
-                                       std::vector<void *> &ptrs, 
-                                       const std::vector<void *> &sizes) {
+void CacheAllocator::generateReadTransferRequests(const std::vector<BufHandle> &replica, 
+                                       size_t offset, std::vector<void *> &ptrs, 
+                                       const std::vector<void *> &sizes,std::vector<TransferRequest>& transfer_requests) {
+    
     size_t total_size = 0;
     for (const auto &size : sizes) {
         total_size += reinterpret_cast<size_t>(size);
@@ -141,7 +164,8 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle> &replica,
         size_t shard_start = (remaining_offset > shard.size) ? 0 : remaining_offset;
         remaining_offset = (remaining_offset > shard.size) ? remaining_offset - shard.size : 0;
 
-        char *shard_buffer = reinterpret_cast<char *>(virtual_nodes_[shard.segment_id]->getBuffer(shard));
+       
+        TransferRequest request;
 
         while (shard_start < shard.size && bytes_read < total_size) {
             size_t bytes_to_read = std::min({
@@ -149,9 +173,13 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle> &replica,
                 reinterpret_cast<size_t>(sizes[output_index]) - output_offset,
                 total_size - bytes_read
             });
-
-            memcpy(static_cast<char *>(ptrs[output_index]) + output_offset, 
-                   shard_buffer + shard_start, bytes_to_read);
+                
+            request.source = (void*)(static_cast<char *>(ptrs[output_index]) + output_offset);
+            request.target_id = shard.segment_id;
+            request.target_offset = shard.offset;
+            request.length = bytes_to_read;
+            request.opcode = TransferRequest::OpCode::READ;
+            transfer_requests.push_back(std::move(request));
 
             shard_start += bytes_to_read;
             output_offset += bytes_to_read;
@@ -166,10 +194,11 @@ size_t CacheAllocator::readAndCopyData(const std::vector<BufHandle> &replica,
         current_offset += shard.size;
     }
 
-    return bytes_read;
+    return;
+                                        
 }
 
-TaskID CacheAllocator::asyncPut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config) {
+TaskID CacheAllocator::makePut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config, std::vector<TransferRequest>& transfer_requests) {
     if (ptrs.size() != sizes.size()) {
         throw std::invalid_argument("ptrs and sizes vectors must have the same length");
     }
@@ -181,14 +210,14 @@ TaskID CacheAllocator::asyncPut(ObjectKey key, PtrType type, std::vector<void *>
     std::cout << "AsyncPut: key=" << key << ", total_size=" << total_size << ", num_replicas=" << config.num_replicas << std::endl;
     
     ReplicaList replicas = allocateReplicas(total_size, config.num_replicas);
-    writeDataToReplicas(replicas, ptrs, sizes, config.num_replicas);
+    generateWriteTransferRequests(replicas, ptrs, sizes, config.num_replicas, transfer_requests);
     updateObjectMeta(key, replicas, config);
     
     std::cout << "AsyncPut completed, TaskID: " << global_version_.load() << std::endl;
     return global_version_.load();
 }
 
-TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff) {
+TaskID CacheAllocator::makeReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff, std::vector<TransferRequest>& transfer_tasks) {
     std::cout << "AsyncReplicate: key=" << key << ", new_num_replicas=" << new_config.num_replicas << std::endl;
     
     auto it = object_meta_.find(key);
@@ -209,11 +238,29 @@ TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config,
         for (const auto& handle : current_replicas[0].handles) {
             obj_size += handle.size;
         }
-        
+
         ReplicaList new_replicas = allocateReplicas(obj_size, new_config.num_replicas - old_config.num_replicas);
+
+        // Transfer data from old replicas to new replicas
+        for (auto& replica : new_replicas) {
+            int index = 0;
+            for (const auto& handle : current_replicas[0].handles) {
+                TransferRequest request;
+                request.source_replica.target_id = handle.segment_id;
+                request.source_replica.target_offset = handle.offset;
+                request.source_replica.length = handle.size;
+                request.opcode = TransferRequest::OpCode::REPLICA_INCR;
+                request.target_id = replica.handles[index].segment_id;
+                request.target_offset = replica.handles[index].offset;
+                request.length = replica.handles[index].size;
+                index++;
+                transfer_tasks.push_back(request);
+            }
+            replica.status = ReplicaStatus::INITIALIZED;
+        }
+
         replica_diff.added_replicas = new_replicas;
         current_replicas.insert(current_replicas.end(), new_replicas.begin(), new_replicas.end());
-        // TODO: 开辟了空间 但没有复制数据
         replica_diff.change_status = ReplicaChangeStatus::ADDED;
     } else if (new_config.num_replicas < old_config.num_replicas) {
         // TODO : 这里删除时 暂时没有考虑副本有刚刚创建的情况，假设副本都是可用状态
@@ -222,9 +269,17 @@ TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config,
             current_replicas.begin() + new_config.num_replicas,
             current_replicas.end()
         );
+
         for (int i = new_config.num_replicas; i < old_config.num_replicas; ++i) {
+            int index = 0;
             for (const auto& handle : current_replicas[i].handles) {
-                virtual_nodes_[handle.segment_id]->deallocate(handle);
+                // virtual_nodes_[handle.segment_id]->deallocate(handle);
+                TransferRequest request;
+                request.source_replica.target_id = handle.segment_id;
+                request.source_replica.target_offset = handle.offset;
+                request.source_replica.length = handle.size;
+                request.opcode = TransferRequest::OpCode::REPLICA_DECR;
+                transfer_tasks.push_back(std::move(request));
                 std::cout << "Deallocated: Node " << handle.segment_id << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
             }
         }
@@ -240,7 +295,7 @@ TaskID CacheAllocator::asyncReplicate(ObjectKey key, ReplicateConfig new_config,
     return global_version_.load();
 }
 
-TaskID CacheAllocator::asyncGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset) {
+TaskID CacheAllocator::makeGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset, std::vector<TransferRequest>& transfer_tasks) {
     std::cout << "AsyncGet: key=" << key << ", min_version=" << min_version << ", offset=" << offset << std::endl;
 
     const std::pair<Version, ReplicaList>& replicas = getReplicas(key, min_version);
@@ -253,15 +308,39 @@ TaskID CacheAllocator::asyncGet(ObjectKey key, PtrType type, std::vector<void *>
     std::cout << "Total size to read: " << total_size << " bytes" << std::endl;
 
     // 选择从第一个副本进行读取（可以根据需要实现更复杂的选择逻辑）
-    size_t bytes_read = 0;
+   
     for (const auto& replica : replicas.second) {
         if (replica.status == ReplicaStatus::COMPLETED) {
             std::cout << "Reading from replica with status COMPLETED" << std::endl;
-            bytes_read = readAndCopyData(replica.handles, offset, ptrs, sizes);
+            generateReadTransferRequests(replica.handles, offset, ptrs, sizes, transfer_tasks);
             break;
         }
     }
-    std::cout << "AsyncGet completed, read " << bytes_read << " bytes" << std::endl;
+    std::cout << "AsyncGet completed, read " << std::endl;
     return replicas.first; // version
 }
+
+void CacheAllocator::registerBuffer(std::string type, int segment_id, size_t base, size_t size) {
+     // 创建新的 BufferAllocator 实例
+    BufferAllocator new_allocator(type, segment_id, base, size);
+
+    // 检查 type 是否存在
+    auto type_it = buf_allocators_.find(type);
+    if (type_it == buf_allocators_.end()) {
+        // 如果 type 不存在，创建新的内层 map
+        buf_allocators_[type] = std::map<int, std::vector<BufferAllocator>>();
+    }
+
+    // 检查 segment_id 是否存在
+    auto& segment_map = buf_allocators_[type];
+    auto segment_it = segment_map.find(segment_id);
+    if (segment_it == segment_map.end()) {
+        // 如果 segment_id 不存在，创建新的 vector
+        segment_map[segment_id] = std::vector<BufferAllocator>();
+    }
+
+    // 添加新的 BufferAllocator 到 vector 中
+    buf_allocators_[type][segment_id].push_back(std::move(new_allocator));
+}
+
 } // namespace mooncake

@@ -2,6 +2,8 @@
 
 #include "common_types.h"
 
+namespace mooncake {
+
 class VirtualNode
 {
 public:
@@ -10,3 +12,6 @@ public:
     virtual void *getBuffer(const BufHandle &handle) = 0;
     virtual ~VirtualNode() = default;
 };
+
+
+}
