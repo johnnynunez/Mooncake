@@ -7,8 +7,9 @@
 
 namespace mooncake
 {
-    WorkerPool::WorkerPool(RdmaContext &context)
+    WorkerPool::WorkerPool(RdmaContext &context, int numa_socket_id)
         : context_(context),
+          numa_socket_id_(numa_socket_id),
           workers_running_(true),
           suspended_flag_(false),
           endpoint_set_version_(0)
@@ -52,6 +53,7 @@ namespace mooncake
 
     void WorkerPool::worker()
     {
+        bindToSocket(numa_socket_id_);
         std::vector<std::shared_ptr<RdmaEndPoint>> endpoint_list;
         uint64_t version = 0;
         uint64_t ack_slice_count = 0;
