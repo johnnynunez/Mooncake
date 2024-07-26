@@ -102,6 +102,10 @@ namespace mooncake
             for (auto &entry : buffer.rkey)
                 rkeyJSON.append(entry);
             bufferJSON["rkey"] = rkeyJSON;
+            Json::Value lkeyJSON(Json::arrayValue);
+            for (auto &entry : buffer.lkey)
+                lkeyJSON.append(entry);
+            bufferJSON["lkey"] = lkeyJSON;
             buffersJSON.append(bufferJSON);
         }
         serverJSON["buffers"] = buffersJSON;
@@ -170,6 +174,8 @@ namespace mooncake
             buffer.length = bufferJSON["length"].asUInt64();
             for (const auto &rkeyJSON : bufferJSON["rkey"])
                 buffer.rkey.push_back(rkeyJSON.asUInt());
+            for (const auto &lkeyJSON : bufferJSON["lkey"])
+                buffer.lkey.push_back(lkeyJSON.asUInt());
             desc->buffers.push_back(buffer);
         }
 

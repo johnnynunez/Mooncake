@@ -22,15 +22,19 @@ namespace mooncake
     class RdmaContext;
     class RdmaEndPoint;
     class TransferMetadata;
+    class WorkerPool;
 
     // TransferEngine
     class TransferEngine
     {
         friend class RdmaContext;
         friend class RdmaEndPoint;
+        friend class WorkerPool;
 
     public:
         using SegmentID = int32_t;
+        const static SegmentID LOCAL_SEGMENT_ID = 0;
+
         using BatchID = uint64_t;
         const static BatchID INVALID_BATCH_ID = UINT64_MAX;
 
@@ -135,8 +139,8 @@ namespace mooncake
         // 获取 segment_name 对应的 SegmentID，其中 segment_name 在 RDMA 语义中表示目标服务器的名称 (与 server_name 相同)
         SegmentID getSegmentID(const std::string &segment_name);
 
-        // 更新每张卡的最大带宽，用以控制分发 Slice 到不同网卡的概率，后期准备优化掉
-        int updateRnicLinkSpeed(const std::vector<int> &rnic_speed);
+    private:
+        int allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix);
 
     public:
         std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
@@ -170,6 +174,9 @@ namespace mooncake
         int startHandshakeDaemon();
 
     private:
+        int selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id);
+
+    private:
         struct TransferTask;
 
         struct Slice
@@ -195,7 +202,7 @@ namespace mooncake
                     uint32_t source_lkey;
                     uint32_t dest_rkey;
                     int rkey_index;
-                    int *qp_depth;
+                    volatile int *qp_depth;
                 } rdma;
                 struct
                 {
@@ -213,23 +220,12 @@ namespace mooncake
 
         struct TransferTask
         {
-            TransferTask()
-                : success_slice_count(0),
-                  failed_slice_count(0),
-                  transferred_bytes(0),
-                  total_bytes(0) {}
-
-            ~TransferTask()
-            {
-                for (auto item : slices)
-                    delete item;
-            }
-
-            std::vector<Slice *> slices;
-            volatile uint64_t success_slice_count;
-            volatile uint64_t failed_slice_count;
-            volatile uint64_t transferred_bytes;
-            uint64_t total_bytes;
+            std::vector<std::unique_ptr<Slice>> slices;
+            volatile uint64_t success_slice_count = 0;
+            volatile uint64_t failed_slice_count = 0;
+            volatile uint64_t transferred_bytes = 0;
+            volatile bool is_finished = false;
+            uint64_t total_bytes = 0;
         };
 
         struct BatchDesc
@@ -239,23 +235,12 @@ namespace mooncake
             std::vector<TransferTask> task_list;
         };
 
-        struct LocalBufferDesc
-        {
-            std::string name;
-            void *addr;
-            size_t length;
-            std::vector<uint32_t> lkey;
-            std::vector<uint32_t> rkey;
-        };
-
     private:
         std::unique_ptr<TransferMetadata> metadata_;
 
-        using PriorityMatrix = TransferMetadata::PriorityMatrix;
-        PriorityMatrix local_priority_matrix_;
-        std::vector<std::string> rnic_list_;
-        std::vector<uint8_t> rnic_prob_list_; // possibility to use this rnic
+        std::vector<std::string> device_name_list_;
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
+        std::unordered_map<std::string, int> device_name_to_index_map_;
 
         RWSpinlock segment_lock_;
         std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
@@ -263,10 +248,7 @@ namespace mooncake
         std::atomic<SegmentID> next_segment_id_;
 
         RWSpinlock batch_desc_lock_;
-        std::unordered_set<BatchDesc *> batch_desc_set_;
-
-        RWSpinlock registered_buffer_lock_;
-        std::vector<LocalBufferDesc> registered_buffer_list_;
+        std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
 
         const std::string local_server_name_;
     };
