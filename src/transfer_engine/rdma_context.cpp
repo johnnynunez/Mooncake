@@ -228,6 +228,7 @@ namespace mooncake
         int ret = endpoint->construct(cq());
         if (ret)
             return nullptr;
+        endpoint->setPeerNicPath(peer_nic_path);
         endpoint_map_[peer_nic_path] = endpoint;
         worker_pool_->insertEndPoint(endpoint);
         return endpoint;

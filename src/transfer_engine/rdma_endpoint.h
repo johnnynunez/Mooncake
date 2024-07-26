@@ -53,7 +53,14 @@ namespace mooncake
         int deconstruct();
 
     public:
-        int setupConnectionsByActive(const std::string &peer_nic_path);
+        void setPeerNicPath(const std::string &peer_nic_path);
+        
+        int setupConnectionsByActive();
+
+        int setupConnectionsByActive(const std::string &peer_nic_path) {
+            setPeerNicPath(peer_nic_path);
+            return setupConnectionsByActive();
+        }
 
         using HandShakeDesc = TransferMetadata::HandShakeDesc;
         int setupConnectionsByPassive(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc);

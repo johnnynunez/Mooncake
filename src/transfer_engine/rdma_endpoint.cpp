@@ -67,7 +67,18 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaEndPoint::setupConnectionsByActive(const std::string &peer_nic_path)
+    void RdmaEndPoint::setPeerNicPath(const std::string &peer_nic_path)
+    {
+        RWSpinlock::WriteGuard guard(lock_);
+        if (connected())
+        {
+            LOG(WARNING) << "Previous connection is discarded";
+            disconnect();
+        }
+        peer_nic_path_ = peer_nic_path;
+    }
+
+    int RdmaEndPoint::setupConnectionsByActive()
     {
         RWSpinlock::WriteGuard guard(lock_);
         HandShakeDesc local_desc, peer_desc;
@@ -75,7 +86,6 @@ namespace mooncake
         if (connected())
             return -1;
 
-        peer_nic_path_ = peer_nic_path;
         local_desc.local_nic_path = context_.nicPath();
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
@@ -106,7 +116,10 @@ namespace mooncake
     {
         RWSpinlock::WriteGuard guard(lock_);
         if (connected())
-            return -1;
+        {
+            LOG(WARNING) << "Previous connection is discarded";
+            disconnect();
+        }
 
         peer_nic_path_ = peer_desc.local_nic_path;
         if (peer_desc.peer_nic_path != context_.nicPath())
@@ -184,8 +197,7 @@ namespace mooncake
         while (wr_depth_list_[qp_index] < max_wr_depth_)
         {
             std::vector<TransferEngine::Slice *> slice_list;
-
-            lock_.WLock();
+            lock_.lock();
             int wr_count = std::min(max_wr_depth_ - wr_depth_list_[qp_index], (int)slice_queue_.size());
             for (int i = 0; i < wr_count; ++i)
             {
@@ -193,7 +205,7 @@ namespace mooncake
                 slice_queue_.pop();
                 slice_list.push_back(slice);
             }
-            lock_.WUnlock();
+            lock_.unlock();
             if (wr_count == 0)
                 break;
 

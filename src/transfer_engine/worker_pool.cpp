@@ -72,17 +72,21 @@ namespace mooncake
             for (auto &entry : endpoint_list)
                 post_slice_count += entry->submittedSliceCount();
 
-            if (post_slice_count == ack_slice_count)
-            {
-                std::unique_lock<std::mutex> lock(cond_mutex_);
-                suspended_flag_.store(true, std::memory_order_release);
-                cond_var_.wait(lock);
-                continue;
-            }
+            // if (post_slice_count == ack_slice_count)
+            // {
+            //     std::unique_lock<std::mutex> lock(cond_mutex_);
+            //     suspended_flag_.store(true, std::memory_order_release);
+            //     cond_var_.wait(lock);
+            //     continue;
+            // }
 
-            for (auto &entry : endpoint_list)
-                if (entry->performPostSend())
+            for (auto &endpoint : endpoint_list)
+            {
+                if (!endpoint->connected())
+                    endpoint->setupConnectionsByActive();
+                if (endpoint->performPostSend())
                     LOG(ERROR) << "Failed to send work requests";
+            }
 
             for (int cq_index = 0; cq_index < context_.cqCount(); ++cq_index)
             {
@@ -94,24 +98,24 @@ namespace mooncake
                 for (int i = 0; i < nr_poll; ++i)
                 {
                     TransferEngine::Slice *slice = (TransferEngine::Slice *)wc[i].wr_id;
+                    if (slice->rdma.qp_depth)
+                        (*slice->rdma.qp_depth)--;
                     if (wc[i].status != IBV_WC_SUCCESS)
                     {
-                        __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
                         LOG(ERROR) << "Process failed for slice (opcode: " << slice->opcode
                                    << ", source_addr: " << slice->source_addr
                                    << ", length: " << slice->length
                                    << ", dest_addr: " << slice->rdma.dest_addr
                                    << "): " << ibv_wc_status_str(wc[i].status);
                         slice->status.store(TransferEngine::Slice::FAILED);
+                        __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
                     }
                     else
                     {
-                        __sync_fetch_and_add(&slice->task->success_slice_count, 1);
-                        __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
                         slice->status.store(TransferEngine::Slice::SUCCESS);
+                        __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
+                        __sync_fetch_and_add(&slice->task->success_slice_count, 1);
                     }
-                    if (slice->rdma.qp_depth)
-                        (*slice->rdma.qp_depth)--;
                 }
             }
         }

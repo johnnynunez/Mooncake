@@ -11,6 +11,7 @@
 #include <cstdint>
 #include <ctime>
 #include <atomic>
+#include <thread>
 #include <sys/mman.h>
 #include <numa.h>
 
@@ -131,65 +132,123 @@ namespace mooncake
 
     class RWSpinlock
     {
+        union RWTicket
+        {
+            constexpr RWTicket() : whole(0) {}
+            uint64_t whole;
+            uint32_t readWrite;
+            struct
+            {
+                uint16_t write;
+                uint16_t read;
+                uint16_t users;
+            };
+        } ticket;
+
+    private:
+        static void asm_volatile_memory()
+        {
+            asm volatile("" ::: "memory");
+        }
+
+        template <class T>
+        static T load_acquire(T *addr)
+        {
+            T t = *addr;
+            asm_volatile_memory();
+            return t;
+        }
+
+        template <class T>
+        static void store_release(T *addr, T v)
+        {
+            asm_volatile_memory();
+            *addr = v;
+        }
+
     public:
-        RWSpinlock() : lock_(0) {}
+        RWSpinlock() {}
 
-        ~RWSpinlock() {}
+        RWSpinlock(RWSpinlock const &) = delete;
+        RWSpinlock &operator=(RWSpinlock const &) = delete;
 
-        RWSpinlock(const RWSpinlock &) = delete;
-
-        RWSpinlock &operator=(const RWSpinlock &) = delete;
-
-        void RLock()
+        void lock()
         {
-            while (true)
-            {
-                int64_t lock = lock_.fetch_add(1, std::memory_order_relaxed);
-                if (lock >= 0)
-                    break;
-                lock_.fetch_sub(1, std::memory_order_relaxed);
-            }
-            std::atomic_thread_fence(std::memory_order_acquire);
+            writeLockNice();
         }
 
-        void RUnlock()
+        bool tryLock()
         {
-            std::atomic_thread_fence(std::memory_order_release);
-            int64_t lock = lock_.fetch_sub(1, std::memory_order_relaxed);
-            LOG_ASSERT(lock > 0);
+            RWTicket t;
+            uint64_t old = t.whole = load_acquire(&ticket.whole);
+            if (t.users != t.write)
+                return false;
+            ++t.users;
+            return __sync_bool_compare_and_swap(&ticket.whole, old, t.whole);
         }
 
-        void WLock()
+        void writeLockAggressive()
         {
-            while (true)
+            uint32_t count = 0;
+            uint16_t val = __sync_fetch_and_add(&ticket.users, 1);
+            while (val != load_acquire(&ticket.write))
             {
-                int64_t lock;
-                while ((lock = lock_.load(std::memory_order_relaxed)))
-                    PAUSE();
-                if (lock_.compare_exchange_weak(lock, kExclusiveLock, std::memory_order_relaxed))
-                    break;
-            }
-            std::atomic_thread_fence(std::memory_order_acquire);
-        }
-
-        void WUnlock()
-        {
-            while (true)
-            {
-                int64_t lock;
-                while ((lock = lock_.load(std::memory_order_relaxed)) != kExclusiveLock)
-                    PAUSE();
-                std::atomic_thread_fence(std::memory_order_release);
-                if (lock_.compare_exchange_weak(lock, 0, std::memory_order_relaxed))
-                    return;
+                PAUSE();
+                if (++count > 1000)
+                    std::this_thread::yield();
             }
         }
 
+        void writeLockNice()
+        {
+            while (!tryLock())
+                ;
+        }
+
+        void unlockAndLockShared()
+        {
+            uint16_t val = __sync_fetch_and_add(&ticket.read, 1);
+            (void)val;
+        }
+
+        void unlock()
+        {
+            RWTicket t;
+            t.whole = load_acquire(&ticket.whole);
+            ++t.read;
+            ++t.write;
+            store_release(&ticket.readWrite, t.readWrite);
+        }
+
+        void lockShared()
+        {
+            uint_fast32_t count = 0;
+            while (!tryLockShared())
+            {
+                _mm_pause();
+                if ((++count & 1023) == 0)
+                    std::this_thread::yield();
+            }
+        }
+
+        bool tryLockShared()
+        {
+            RWTicket t, old;
+            old.whole = t.whole = load_acquire(&ticket.whole);
+            old.users = old.read;
+            ++t.read;
+            ++t.users;
+            return __sync_bool_compare_and_swap(&ticket.whole, old.whole, t.whole);
+        }
+
+        void unlockShared() { __sync_fetch_and_add(&ticket.write, 1); }
+
+    public:
         struct WriteGuard
         {
             WriteGuard(RWSpinlock &lock) : lock(lock)
             {
-                lock.WLock();
+                lock.lock();
             }
 
             WriteGuard(const WriteGuard &) = delete;
@@ -198,7 +257,7 @@ namespace mooncake
 
             ~WriteGuard()
             {
-                lock.WUnlock();
+                lock.unlock();
             }
 
             RWSpinlock &lock;
@@ -208,7 +267,7 @@ namespace mooncake
         {
             ReadGuard(RWSpinlock &lock) : lock(lock)
             {
-                lock.RLock();
+                lock.lockShared();
             }
 
             ReadGuard(const ReadGuard &) = delete;
@@ -217,7 +276,7 @@ namespace mooncake
 
             ~ReadGuard()
             {
-                lock.RUnlock();
+                lock.unlockShared();
             }
 
             RWSpinlock &lock;
@@ -229,7 +288,6 @@ namespace mooncake
         std::atomic<int64_t> lock_;
         uint64_t padding_[15];
     };
-
 }
 
 #endif // COMMON_H

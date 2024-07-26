@@ -33,6 +33,8 @@ namespace mooncake
 
     public:
         using SegmentID = int32_t;
+        const static SegmentID LOCAL_SEGMENT_ID = 0;
+
         using BatchID = uint64_t;
         const static BatchID INVALID_BATCH_ID = UINT64_MAX;
 
@@ -137,6 +139,9 @@ namespace mooncake
         // 获取 segment_name 对应的 SegmentID，其中 segment_name 在 RDMA 语义中表示目标服务器的名称 (与 server_name 相同)
         SegmentID getSegmentID(const std::string &segment_name);
 
+    private:
+        int allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix);
+
     public:
         std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
 
@@ -169,9 +174,7 @@ namespace mooncake
         int startHandshakeDaemon();
 
     private:
-        RdmaContext *selectLocalContext(void *source_addr, uint32_t &lkey);
-
-        int selectPeerContext(uint64_t target_id, uint64_t target_offset, std::string &peer_device_name, uint32_t &dest_rkey);
+        int selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id);
 
     private:
         struct TransferTask;
@@ -217,10 +220,11 @@ namespace mooncake
 
         struct TransferTask
         {
-            std::vector<std::shared_ptr<Slice>> slices;
+            std::vector<std::unique_ptr<Slice>> slices;
             volatile uint64_t success_slice_count = 0;
             volatile uint64_t failed_slice_count = 0;
             volatile uint64_t transferred_bytes = 0;
+            volatile bool is_finished = false;
             uint64_t total_bytes = 0;
         };
 
@@ -234,11 +238,9 @@ namespace mooncake
     private:
         std::unique_ptr<TransferMetadata> metadata_;
 
-        using PriorityMatrix = TransferMetadata::PriorityMatrix;
-        PriorityMatrix local_priority_matrix_;
-
         std::vector<std::string> device_name_list_;
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
+        std::unordered_map<std::string, int> device_name_to_index_map_;
 
         RWSpinlock segment_lock_;
         std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
@@ -247,9 +249,6 @@ namespace mooncake
 
         RWSpinlock batch_desc_lock_;
         std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
-
-        RWSpinlock registered_buffer_lock_;
-        std::vector<BufferDesc> registered_buffer_list_;
 
         const std::string local_server_name_;
     };
