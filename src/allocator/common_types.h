@@ -17,9 +17,9 @@ using TaskID = uint64_t;
 using SegmentID = int32_t;
 
 struct ReplicaSource {
-    SegmentID target_id;
-    size_t target_offset;
-    size_t length;
+    SegmentID target_id = 0;
+    size_t target_offset = 0;
+    size_t length = 0;
 };
 
 struct TransferRequest
@@ -30,14 +30,15 @@ struct TransferRequest
         WRITE,
         REPLICA_INCR,
         REPLICA_DECR,
+        ILLEGAL,
     };
 
-    OpCode opcode;
-    void *source;
-    SegmentID target_id;
-    size_t target_offset;
-    size_t length;
-    ReplicaSource source_replica;
+    OpCode opcode = ILLEGAL;                  // Default to ILLEGAL operation
+    void *source = nullptr;                // Default to null pointer
+    SegmentID target_id = 0;               // Default to some default SegmentID value
+    size_t target_offset = 0;              // Default to 0 offset
+    size_t length = 0;                     // Default to 0 length
+    ReplicaSource source_replica = {};     // Default to default-constructed ReplicaSource
 };
 
 

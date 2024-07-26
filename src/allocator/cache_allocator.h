@@ -20,15 +20,15 @@ class CacheAllocator
 
 
 public:
-    CacheAllocator(size_t shard_size, std::vector<std::unique_ptr<VirtualNode>> nodes, std::unique_ptr<AllocationStrategy> strategy);
+    CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy);
 
-    TaskID asyncPut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config,  std::vector<TransferRequest>& requests);
+    TaskID makePut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config,  std::vector<TransferRequest>& requests);
 
-    TaskID asyncReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff, std::vector<TransferRequest>& transfer_tasks);
+    TaskID makeReplicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff, std::vector<TransferRequest>& transfer_tasks);
 
-    TaskID asyncGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset, std::vector<TransferRequest>& transfer_tasks);
+    TaskID makeGet(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset, std::vector<TransferRequest>& transfer_tasks);
 
-    void RegisterBuffer(std::string type, int segment_id, size_t base, size_t size);
+    void registerBuffer(std::string type, int segment_id, size_t base, size_t size);
 
 private:
     ReplicaList allocateReplicas(size_t obj_size, int num_replicas);
@@ -51,7 +51,6 @@ private:
 
     std::atomic<uint64_t> global_version_;
     std::unordered_map<ObjectKey, VersionList> object_meta_;
-    // std::vector<std::unique_ptr<VirtualNode>> virtual_nodes_;
     std::unique_ptr<AllocationStrategy> allocation_strategy_;
     size_t shard_size_;
 };
