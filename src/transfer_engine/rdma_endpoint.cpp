@@ -12,7 +12,6 @@ namespace mooncake
     RdmaEndPoint::RdmaEndPoint(RdmaContext &context)
         : context_(context),
           status_(INITIALIZING),
-          submitted_slice_count_(0),
           posted_slice_count_(0) {}
 
     RdmaEndPoint::~RdmaEndPoint()
@@ -173,7 +172,6 @@ namespace mooncake
         peer_nic_path_.clear();
         for (size_t i = 0; i < qp_list_.size(); ++i)
             wr_depth_list_[i] = 0;
-        submitted_slice_count_.store(0, std::memory_order_relaxed);
         posted_slice_count_.store(0, std::memory_order_relaxed);
         status_.store(UNCONNECTED, std::memory_order_release);
     }
@@ -235,7 +233,6 @@ namespace mooncake
             return rc;
         }
 
-        submitted_slice_count_.fetch_add(wr_count, std::memory_order_relaxed);
         posted_slice_count_.fetch_add(wr_count, std::memory_order_relaxed);
         slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
         return 0;

@@ -13,10 +13,8 @@ namespace mooncake
           numa_socket_id_(numa_socket_id),
           workers_running_(true),
           suspended_flag_(false),
-          endpoint_set_version_(0),
           submitted_slice_count_(0),
-          posted_slice_count_(0),
-          completed_slice_count_(0)
+          processed_slice_count_(0)
     {
         worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::worker, this)));
     }
@@ -32,38 +30,26 @@ namespace mooncake
         }
     }
 
-    void WorkerPool::insertEndPoint(std::shared_ptr<RdmaEndPoint> &endpoint)
-    {
-        RWSpinlock::WriteGuard guard(endpoint_set_lock_);
-        endpoint_set_.insert(endpoint);
-        endpoint_set_version_++;
-    }
-
-    void WorkerPool::removeEndPoint(std::shared_ptr<RdmaEndPoint> &endpoint)
-    {
-        RWSpinlock::WriteGuard guard(endpoint_set_lock_);
-        endpoint_set_.erase(endpoint);
-        endpoint_set_version_++;
-    }
-
     int WorkerPool::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
-        RWSpinlock::WriteGuard guard(slice_list_lock_);
+        std::unordered_multimap<std::string, TransferEngine::Slice *> slice_list_map;
         for (auto &slice : slice_list) {
             auto &peer_segment_desc = slice->peer_segment_desc;
             int buffer_id, device_id;
             TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, buffer_id, device_id);
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
-            slice_list_map_[peer_nic_path].push_back(slice);
+            slice_list_map.emplace(std::make_pair(peer_nic_path, slice));
         }
-        submitted_slice_count_.fetch_add(slice_list.size(), std::memory_order_relaxed);
+        RWSpinlock::WriteGuard guard(slice_list_lock_);
+        for (auto &entry : slice_list_map) {
+            slice_list_map_[entry.first].push_back(entry.second);
+        }
+        submitted_slice_count_ += slice_list.size();
+        if (suspended_flag_.load(std::memory_order_relaxed)) {
+            cond_var_.notify_all();
+        }
         return 0;
-    }
-
-    void WorkerPool::notify()
-    {
-        // TBD
     }
 
     void WorkerPool::performPostSend()
@@ -113,6 +99,7 @@ namespace mooncake
                     slice->status = TransferEngine::Slice::SUCCESS;
                     __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
                     __sync_fetch_and_add(&slice->task->success_slice_count, 1);
+                    processed_slice_count_++;
                 }
             }
         }
@@ -123,11 +110,12 @@ namespace mooncake
         if (slice->rdma.retry_cnt == slice->rdma.max_retry_cnt) {
             slice->status = TransferEngine::Slice::FAILED;
             __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
+            processed_slice_count_++;
         } else {
             slice->rdma.retry_cnt++;
             auto &peer_segment_desc = slice->peer_segment_desc;
             int buffer_id, device_id;
-            TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, buffer_id, device_id);
+            TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, buffer_id, device_id, slice->rdma.retry_cnt);
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
             slice_list_map_[peer_nic_path].push_back(slice);
@@ -137,8 +125,20 @@ namespace mooncake
     void WorkerPool::worker()
     {
         bindToSocket(numa_socket_id_);
+        const static uint64_t kWaitPeriodInNano = 100000000; // 100ms
+        uint64_t last_wait_ts = getCurrentTimeInNano();
         while (workers_running_)
         {
+            if (processed_slice_count_ == submitted_slice_count_) {
+                uint64_t curr_wait_ts = getCurrentTimeInNano();
+                if (curr_wait_ts - last_wait_ts > kWaitPeriodInNano) {
+                    std::unique_lock<std::mutex> lock(cond_mutex_);
+                    suspended_flag_ = true;
+                    cond_var_.wait_for(lock, std::chrono::seconds(1));
+                    suspended_flag_ = false;
+                    last_wait_ts = curr_wait_ts;
+                }
+            }
             performPostSend();
             performPollCq();
         }

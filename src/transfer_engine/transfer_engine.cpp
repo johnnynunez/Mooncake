@@ -178,6 +178,7 @@ namespace mooncake
                 int buffer_id, device_id;
 
                 selectDevice(local_segment_desc, (uint64_t)slice->source_addr, buffer_id, device_id);
+                // TODO if selectDevice failed?
                 auto &context = context_list_[device_id];
                 slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
                 slice->rdma.retry_cnt = 0;
@@ -379,7 +380,7 @@ namespace mooncake
                       std::placeholders::_2));
     }
 
-    int TransferEngine::selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id)
+    int TransferEngine::selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id, int retry_count)
     {
         for (buffer_id = 0; buffer_id < (int)desc->buffers.size(); ++buffer_id)
         {
@@ -389,12 +390,29 @@ namespace mooncake
 
             auto &priority = desc->priority_matrix[buffer_desc.name];
             std::string device_name;
-            if (!priority.preferred_rnic_list.empty())
-                device_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
-            if (device_name.empty() && !priority.available_rnic_list.empty())
-                device_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
-            if (device_name.empty())
-                return -1;
+            if (retry_count == 0) 
+            {
+                if (!priority.preferred_rnic_list.empty())
+                    device_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
+                if (device_name.empty() && !priority.available_rnic_list.empty())
+                    device_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
+                if (device_name.empty())
+                    return -1;
+            } else {
+                size_t preferred_rnic_list_len = priority.preferred_rnic_list.size();
+                size_t available_rnic_list_len = priority.available_rnic_list.size();
+                size_t rnic_list_len = preferred_rnic_list_len + available_rnic_list_len;
+                if (rnic_list_len == 0)
+                    return -1;
+                size_t index = (retry_count - 1) % rnic_list_len;
+                if (index < preferred_rnic_list_len)
+                    device_name = priority.preferred_rnic_list[index];
+                else
+                {
+                    index -= preferred_rnic_list_len;
+                    device_name = priority.available_rnic_list[index];
+                }
+            }
 
             for (device_id = 0; device_id < (int)desc->devices.size(); ++device_id)
                 if (desc->devices[device_id].name == device_name)

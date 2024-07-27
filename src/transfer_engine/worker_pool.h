@@ -25,8 +25,6 @@ namespace mooncake
         // 由 TransferEngine 调用，向队列添加 Slice
         int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
 
-        void notify();
-
     private:
         void performPostSend();
 
@@ -45,15 +43,9 @@ namespace mooncake
         std::condition_variable cond_var_;
         std::atomic<bool> suspended_flag_;
 
-        RWSpinlock endpoint_set_lock_;
-        std::unordered_set<std::shared_ptr<RdmaEndPoint>> endpoint_set_;
-        std::atomic<uint64_t> endpoint_set_version_;
-
         RWSpinlock slice_list_lock_;
         std::unordered_map<std::string, std::vector<TransferEngine::Slice *>> slice_list_map_;
-
-        std::atomic<uint64_t> submitted_slice_count_, posted_slice_count_, completed_slice_count_;
-
+        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
     };
 }
 

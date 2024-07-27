@@ -86,18 +86,13 @@ namespace mooncake
     public:
         const std::string toString() const;
 
-        int submittedSliceCount() const
-        {
-            return submitted_slice_count_.load(std::memory_order_relaxed);
-        }
-
         int postedSliceCount() const
         {
             return posted_slice_count_.load(std::memory_order_relaxed);
         }
 
     public:
-        // 提交并执行其中的部分工作请求，已提交的任务会从 slice_list 中删除。
+        // 提交并执行其中的部分工作请求，已提交的任务会从 slice_list 中删除，提交失败的任务会加入 failed_slice_list。
         int submitPostSend(std::vector<TransferEngine::Slice *> &slice_list,
                            std::vector<TransferEngine::Slice *> &failed_slice_list);
 
@@ -120,7 +115,7 @@ namespace mooncake
         volatile int *wr_depth_list_;
         int max_wr_depth_;
 
-        std::atomic<uint64_t> submitted_slice_count_, posted_slice_count_;
+        std::atomic<uint64_t> posted_slice_count_;
     };
 
 }
