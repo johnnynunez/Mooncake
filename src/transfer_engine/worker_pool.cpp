@@ -92,6 +92,7 @@ namespace mooncake
                                << ", length: " << slice->length
                                << ", dest_addr: " << slice->rdma.dest_addr
                                << "): " << ibv_wc_status_str(wc[i].status);
+                    RWSpinlock::WriteGuard guard(slice_list_lock_);
                     processFailedSlice(slice);
                 }
                 else
