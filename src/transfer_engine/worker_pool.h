@@ -5,6 +5,7 @@
 #define WORKER_H
 
 #include <unordered_set>
+#include <queue>
 
 #include "transfer_engine/rdma_context.h"
 
@@ -21,9 +22,16 @@ namespace mooncake
 
         void removeEndPoint(std::shared_ptr<RdmaEndPoint> &endpoint);
 
-        void notify();
+        // 由 TransferEngine 调用，向队列添加 Slice
+        int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
 
     private:
+        void performPostSend();
+
+        void performPollCq();
+
+        void processFailedSlice(TransferEngine::Slice *slice);
+
         void worker();
 
     private:
@@ -35,9 +43,9 @@ namespace mooncake
         std::condition_variable cond_var_;
         std::atomic<bool> suspended_flag_;
 
-        RWSpinlock endpoint_set_lock_;
-        std::unordered_set<std::shared_ptr<RdmaEndPoint>> endpoint_set_;
-        std::atomic<uint64_t> endpoint_set_version_;
+        RWSpinlock slice_list_lock_;
+        std::unordered_map<std::string, std::vector<TransferEngine::Slice *>> slice_list_map_;
+        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
     };
 }
 

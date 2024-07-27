@@ -231,7 +231,6 @@ namespace mooncake
             return nullptr;
         endpoint->setPeerNicPath(peer_nic_path);
         endpoint_map_[peer_nic_path] = endpoint;
-        worker_pool_->insertEndPoint(endpoint);
         return endpoint;
     }
 
@@ -241,7 +240,6 @@ namespace mooncake
         auto iter = endpoint_map_.find(peer_nic_path);
         if (iter != endpoint_map_.end())
         {
-            worker_pool_->removeEndPoint(iter->second);
             endpoint_map_.erase(iter);
         }
         return 0;
@@ -382,8 +380,8 @@ namespace mooncake
         return nr_poll;
     }
 
-    void RdmaContext::notifyWorker()
+    int RdmaContext::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
-        worker_pool_->notify();
+        return worker_pool_->submitPostSend(slice_list);
     }
 }

@@ -14,6 +14,7 @@
 #include <infiniband/verbs.h>
 
 #include "transfer_engine/common.h"
+#include "transfer_engine/transfer_engine.h"
 
 namespace mooncake
 {
@@ -96,6 +97,8 @@ namespace mooncake
         int joinNonblockingPollList(int event_fd, int data_fd);
 
     public:
+        int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
+
         void notifyWorker();
 
     private:
