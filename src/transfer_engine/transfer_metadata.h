@@ -13,7 +13,11 @@
 #include <glog/logging.h>
 
 #include <jsoncpp/json/json.h>
+#ifdef MOONCAKE_USE_ETCD
+#include <etcd/Client.hpp>
+#else
 #include <libmemcached/memcached.hpp>
+#endif
 
 #include "transfer_engine/common.h"
 

@@ -5,13 +5,69 @@
 #include "transfer_engine/transfer_metadata.h"
 
 #include <set>
-#include <libmemcached/memcached.hpp>
 
 namespace mooncake
 {
 
     const static std::string ServerDescPrefix = "mooncake/serverdesc/";
 
+#ifdef MOONCAKE_USE_ETCD
+    struct TransferMetadataImpl
+    {
+        TransferMetadataImpl(const std::string &metadata_uri) 
+            : client_(metadata_uri) {}
+
+        ~TransferMetadataImpl() {}
+
+        bool get(const std::string &key, Json::Value &value)
+        {
+            Json::Reader reader;
+            uint32_t flags = 0;
+            auto resp = client_.get(key);
+            if (!resp.is_ok()) {
+                if (resp.error_code() != 100) {
+                    LOG(ERROR) << "Error from etcd client: " << resp.error_code()
+                               << ", message: " << resp.error_message();
+                }
+                return false;
+            }
+            auto json_file = resp.value().as_string();
+            if (!reader.parse(json_file, value))
+                return false;
+            LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
+            return true;
+        }
+
+        bool set(const std::string &key, const Json::Value &value)
+        {
+            Json::FastWriter writer;
+            const std::string json_file = writer.write(value);
+            LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
+            auto resp = client_.put(key, json_file);
+            if (!resp.is_ok()) {
+                LOG(ERROR) << "Error from etcd client: " << resp.error_code()
+                           << ", message: " << resp.error_message(); 
+                return false;
+            }
+            return true;
+        }
+
+        bool remove(const std::string &key)
+        {
+            auto resp = client_.rm(key);
+            if (!resp.is_ok()) {
+                if (resp.error_code() != 100) {
+                    LOG(ERROR) << "Error from etcd client: " << resp.error_code()
+                               << ", message: " << resp.error_message();       
+                }
+                return false;
+            }
+            return true;
+        }
+
+        etcd::SyncClient client_;
+    };
+#else
     struct TransferMetadataImpl
     {
         TransferMetadataImpl(const std::string &metadata_uri)
@@ -64,6 +120,7 @@ namespace mooncake
 
         memcached_st *client_;
     };
+#endif // MOONCAKE_USE_ETCD
 
     TransferMetadata::TransferMetadata(const std::string &metadata_uri)
         : listener_running_(false)
