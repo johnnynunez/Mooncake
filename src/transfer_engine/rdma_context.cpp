@@ -40,8 +40,10 @@ namespace mooncake
                                size_t num_comp_channels,
                                uint8_t port,
                                int gid_index,
-                               size_t max_cqe)
+                               size_t max_cqe,
+                               int max_endpoints)
     {
+        max_endpoints_ = max_endpoints;
         if (openRdmaDevice(device_name_, port, gid_index))
             return -1;
 
@@ -229,8 +231,16 @@ namespace mooncake
         int ret = endpoint->construct(cq());
         if (ret)
             return nullptr;
-        endpoint->setPeerNicPath(peer_nic_path);
+
+        while (endpoint_map_.size() >= max_endpoints_) {
+            evictEndpoint();
+        }
+
         endpoint_map_[peer_nic_path] = endpoint;
+        fifo_list_.push_back(peer_nic_path);
+        auto it = fifo_list_.end();
+        fifo_map_[peer_nic_path] = --it;
+
         return endpoint;
     }
 
@@ -238,11 +248,25 @@ namespace mooncake
     {
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
         auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end())
-        {
+        if (iter != endpoint_map_.end()) {
             endpoint_map_.erase(iter);
+            auto fifo_iter = fifo_map_[peer_nic_path];
+            fifo_list_.erase(fifo_iter);
+            fifo_map_.erase(peer_nic_path);
         }
         return 0;
+    }
+
+    void RdmaContext::evictEndpoint() {
+        if (fifo_list_.empty()) {
+            return;
+        }
+        std::string victim = fifo_list_.front();
+        fifo_list_.pop_front();
+        fifo_map_.erase(victim);
+        LOG(INFO) << victim << " evicted";
+        endpoint_map_.erase(victim);
+        return; // All endpoints are in use
     }
 
     std::string RdmaContext::nicPath() const

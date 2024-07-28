@@ -7,6 +7,7 @@
 #include <map>
 #include <mutex>
 #include <atomic>
+#include <cstddef>
 #include <memory>
 #include <string>
 #include <vector>
@@ -87,7 +88,8 @@ namespace mooncake
         // - nic_priority_matrix：是一个 JSON 字符串，表示使用的存储介质名称及优先使用的网卡列表
         TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                        const std::string &local_server_name,
-                       const std::string &nic_priority_matrix);
+                       const std::string &nic_priority_matrix,
+                       bool dummy = false);
 
         // 回收分配的所有类型资源。
         ~TransferEngine();

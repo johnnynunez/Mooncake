@@ -1,22 +1,36 @@
 #include "transfer_engine/transfer_engine.h"
 
+#include <cassert>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iomanip>
 #include <sys/time.h>
 
-DEFINE_string(metadata_server, "optane21:12345", "etcd server host address");
+#ifdef USE_CUDA
+#include "cuda.h"
+
+static CUcontext cuContext;
+
+#define CUCHECK(stmt)                   \
+    do                                  \
+    {                                   \
+        CUresult result = (stmt);       \
+        assert(CUDA_SUCCESS == result); \
+    } while (0)
+#endif
+
+DEFINE_string(metadata_server, "optane14:12345", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
-DEFINE_string(operation, "read", "Operation type: read or write");
+DEFINE_string(operation, "write", "Operation type: read or write");
 // {
 //     "cpu:0": [["mlx5_2"], ["mlx5_3"]],
 //     "cpu:1": [["mlx5_3"], ["mlx5_2"]],
 //     "cuda:0": [["mlx5_2"], ["mlx5_3"]],
 // }
-DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
-DEFINE_string(segment_id, "optane20", "Segment ID to access data");
+DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_0\"], [\"mlx5_0\"]], \"cpu:1\": [[\"mlx5_0\"], [\"mlx5_0\"]]}", "NIC priority matrix");
+DEFINE_string(segment_id, "optane14", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");
@@ -33,6 +47,50 @@ static std::string getHostname()
         return "";
     }
     return hostname;
+}
+
+static void *init_gpu_and_allocate_memory(size_t size)
+{
+#ifdef USE_CUDA
+    CUresult cu_result = cuInit(0);
+    printf("initializing CUDA\n");
+    if (cu_result != CUDA_SUCCESS)
+    {
+        fprintf(stderr, "cuInit(0) returned %d\n", cu_result);
+        return NULL;
+    }
+
+    int dev_id = 0; // TODO: get dev id
+
+    CUdevice cu_dev;
+    CUCHECK(cuDeviceGet(&cu_dev, dev_id));
+    /* Create context */
+    cu_result = cuCtxCreate(&cuContext, CU_CTX_MAP_HOST, cu_dev);
+    if (cu_result != CUDA_SUCCESS)
+    {
+        fprintf(stderr, "cuCtxCreate() error=%d\n", cu_result);
+        return NULL;
+    }
+
+    cu_result = cuCtxSetCurrent(cuContext);
+    if (cu_result != CUDA_SUCCESS)
+    {
+        fprintf(stderr, "cuCtxSetCurrent() error=%d\n", cu_result);
+        return NULL;
+    }
+
+    CUdeviceptr d_A;
+    cu_result = cuMemAlloc(&d_A, size);
+    if (cu_result != CUDA_SUCCESS)
+    {
+        fprintf(stderr, "cuMemAlloc error=%d\n", cu_result);
+        return NULL;
+    }
+
+    return ((void *)d_A);
+#else
+    return NULL;
+#endif
 }
 
 static void *allocateMemoryPool(size_t size, int socket_id)
@@ -68,10 +126,10 @@ static void freeMemoryPool(void *addr, size_t size)
 
     switch (attributes)
     {
-    case CU_MEMORYTYPE_HOST:
-        munmap(addr, size);
+    case CU_POINTER_ATTRIBUTE_HOST_POINTER:
+        numa_free(addr, size);
         break;
-    case CU_MEMORYTYPE_DEVICE:
+    case CU_POINTER_ATTRIBUTE_DEVICE_POINTER:
         cuMemFree((CUdeviceptr)addr);
         LOG(INFO) << "Pointer is located in GPU memory" << std::endl;
         break;
@@ -87,7 +145,8 @@ static void freeMemoryPool(void *addr, size_t size)
 volatile bool running = true;
 std::atomic<size_t> total_batch_count(0);
 
-int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id, void *addr)
+int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
+                    void *addr)
 {
     bindToSocket(0);
     TransferRequest::OpCode opcode;
@@ -116,9 +175,11 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
             TransferRequest entry;
             entry.opcode = opcode;
             entry.length = FLAGS_block_size;
-            entry.source = (uint8_t *)(addr) + FLAGS_block_size * (i * FLAGS_threads + thread_id);
+            entry.source = (uint8_t *)(addr) +
+                           FLAGS_block_size * (i * FLAGS_threads + thread_id);
             entry.target_id = segment_id;
-            entry.target_offset = remote_base + FLAGS_block_size * (i * FLAGS_threads + thread_id);
+            entry.target_offset =
+                remote_base + FLAGS_block_size * (i * FLAGS_threads + thread_id);
             requests.emplace_back(entry);
         }
 
@@ -154,12 +215,12 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
 
 int initiator()
 {
-    auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server);
+    auto metadata_client =
+        std::make_unique<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
     const size_t dram_buffer_size = 1ull << 30;
-    auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   getHostname(),
+    auto engine = std::make_unique<TransferEngine>(metadata_client, getHostname(),
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
 
@@ -175,7 +236,8 @@ int initiator()
     gettimeofday(&start_tv, nullptr);
 
     for (int i = 0; i < FLAGS_threads; ++i)
-        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i, addr);
+        workers[i] =
+            std::thread(initiatorWorker, engine.get(), segment_id, i, addr);
 
     sleep(FLAGS_duration);
     running = false;
@@ -184,16 +246,14 @@ int initiator()
         workers[i].join();
 
     gettimeofday(&stop_tv, nullptr);
-    auto duration = (stop_tv.tv_sec - start_tv.tv_sec) + (stop_tv.tv_usec - start_tv.tv_usec) / 1000000.0;
+    auto duration = (stop_tv.tv_sec - start_tv.tv_sec) +
+                    (stop_tv.tv_usec - start_tv.tv_usec) / 1000000.0;
     auto batch_count = total_batch_count.load();
 
-    LOG(INFO) << "Test completed: duration "
-              << std::fixed << std::setprecision(2)
-              << duration
-              << ", batch count "
-              << batch_count
-              << ", throughput "
-              << (batch_count * FLAGS_batch_size * FLAGS_block_size) / duration / 1000000000.0;
+    LOG(INFO) << "Test completed: duration " << std::fixed << std::setprecision(2)
+              << duration << ", batch count " << batch_count << ", throughput "
+              << (batch_count * FLAGS_batch_size * FLAGS_block_size) / duration /
+                     1000000000.0;
 
     engine->unregisterLocalMemory(addr);
     freeMemoryPool(addr, dram_buffer_size);
@@ -203,23 +263,23 @@ int initiator()
 
 int target()
 {
-    auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server);
+    auto metadata_client =
+        std::make_unique<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
-    const size_t dram_buffer_size = 1ull << 30;
-    auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   getHostname(),
+    const size_t vram_buffer_size = 1ull << 30;
+    auto engine = std::make_unique<TransferEngine>(metadata_client, getHostname(),
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr = allocateMemoryPool(dram_buffer_size, 0);
-    engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
+    void *addr = init_gpu_and_allocate_memory(vram_buffer_size);
+    engine->registerLocalMemory(addr, vram_buffer_size, "cpu:0");
 
     while (true)
         sleep(1);
 
     engine->unregisterLocalMemory(addr);
-    freeMemoryPool(addr, dram_buffer_size);
+    freeMemoryPool(addr, vram_buffer_size);
 
     return 0;
 }
