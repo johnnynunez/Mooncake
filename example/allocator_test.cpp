@@ -67,7 +67,7 @@ void runTests()
 
     // 创建 CacheAllocator
     const size_t SHARD_SIZE = 1024 * 1024; // 1m
-    CacheAllocator allocator(SHARD_SIZE, std::move(strategy));
+    CacheAllocator allocator(SHARD_SIZE, std::move(strategy), (void*)0x10000000, 0x10000000);
     allocator.registerBuffer("RAM", 1, 0, SHARD_SIZE);
     allocator.registerBuffer("RAM", 1, SHARD_SIZE * 2, SHARD_SIZE * 20);
      allocator.registerBuffer("RAM", 2, 0, SHARD_SIZE);

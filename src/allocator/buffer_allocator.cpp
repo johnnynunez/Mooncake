@@ -7,7 +7,9 @@
 namespace mooncake {
 
     
-BufferAllocator::BufferAllocator(std::string type, int segment_id, size_t base, size_t size) : 
+BufferAllocator::BufferAllocator(MemoryAllocator *memory_allocator, PoolId pool_id, std::string type, int segment_id, size_t base, size_t size) :
+    memory_allocator_(memory_allocator),
+    pool_id_(pool_id),
     type_(type),
     segment_id_(segment_id), base_(base), 
     total_size_(size), remaining_size_(size), next_offset_(0) {}
@@ -27,7 +29,7 @@ BufHandle BufferAllocator::allocate(size_t size)
     handle.status = BufStatus::INIT;
 
     // 其实无需allocatoe开辟真实空间
-    char *buffer = new char[size];
+    char *buffer = reinterpret_cast<char *>(memory_allocator_->allocate(pool_id_, size));
     buffers_[next_offset_] = buffer;
 
     next_offset_ += size;
@@ -44,7 +46,7 @@ void BufferAllocator::deallocate(const BufHandle &handle)
     auto it = buffers_.find(handle.offset);
     if (it != buffers_.end())
     {
-        delete[] it->second;
+        memory_allocator_->free(reinterpret_cast<void *>(it->second));
         buffers_.erase(it);
         std::cout << "Deallocated buffer in node " << segment_id_
                   << " at offset " << handle.offset

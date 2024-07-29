@@ -3,8 +3,18 @@
 
 namespace mooncake {
 
-CacheAllocator::CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy)
-    : shard_size_(shard_size), allocation_strategy_(std::move(strategy)), global_version_(0) {}
+CacheAllocator::CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy, void *memory_start, size_t memory_size)
+    : header_region_size_(sizeof(facebook::cachelib::SlabHeader) * static_cast<unsigned int>(memory_size / sizeof(facebook::cachelib::Slab)) + 1),
+      header_region_start_(new char[header_region_size_]),
+      memory_allocator_(MemoryAllocator::Config(MemoryAllocator::generateAllocSizes()),
+                        reinterpret_cast<void *>(header_region_start_),
+                        header_region_size_, memory_start, memory_size),
+      pool_id(memory_allocator_.addPool("default", memory_size / 2)),
+      shard_size_(shard_size), allocation_strategy_(std::move(strategy)), global_version_(0) {}
+
+CacheAllocator::~CacheAllocator() {
+    delete[] header_region_start_;
+}
 
 ReplicaList CacheAllocator::allocateReplicas(size_t obj_size, int num_replicas) {
     std::cout << "Allocating replicas for object size: " << obj_size << ", num replicas: " << num_replicas << std::endl;
@@ -323,7 +333,7 @@ TaskID CacheAllocator::makeGet(ObjectKey key, PtrType type, std::vector<void *> 
 
 void CacheAllocator::registerBuffer(std::string type, int segment_id, size_t base, size_t size) {
      // 创建新的 BufferAllocator 实例
-    BufferAllocator new_allocator(type, segment_id, base, size);
+    BufferAllocator new_allocator(&memory_allocator_, pool_id, type, segment_id, base, size);
 
     // 检查 type 是否存在
     auto type_it = buf_allocators_.find(type);
