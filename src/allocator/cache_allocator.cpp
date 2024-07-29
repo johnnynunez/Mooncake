@@ -28,7 +28,7 @@ ReplicaList CacheAllocator::allocateReplicas(size_t obj_size, int num_replicas) 
         
         replicas[current_replica].handles.push_back(handle);
         
-        std::cout << "  Replica " << current_replica + 1 << ", Shard " << shard_index + 1 
+        std::cout << "Replica " << current_replica + 1 << ", Shard " << shard_index + 1 
                   << ": Category " << node.category << ", Segment " << node.segment_id 
                   << ", Allocator " << node.allocator_index 
                   << ", Offset " << handle.offset << ", Size " << handle.size << std::endl;
@@ -74,6 +74,7 @@ void CacheAllocator::generateWriteTransferRequests(ReplicaList &replicas, const 
                 size_t to_write = std::min(remaining_input, remaining_shard);
 
                 // Copy data
+                std::cout << "create write request, input_idx: " << input_idx << ", input_offset: " << input_offset << ", shard_offset: " << shard_offset << ", to_write_length: " << to_write << std::endl;
                 TransferRequest request;
                 request.opcode = TransferRequest::OpCode::WRITE;
                 request.source = (void*)(static_cast<char *>(ptrs[input_idx]) + input_offset);

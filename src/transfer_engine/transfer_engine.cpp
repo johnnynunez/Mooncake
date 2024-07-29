@@ -5,27 +5,32 @@
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
 
-#include <set>
 #include <cassert>
-#include <sys/time.h>
-#include <sys/mman.h>
+#include <cstddef>
 #include <glog/logging.h>
+#include <set>
+#include <sys/mman.h>
+#include <sys/time.h>
 
 namespace mooncake
 {
     TransferEngine::TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                                    const std::string &local_server_name,
-                                   const std::string &nic_priority_matrix)
+                                   const std::string &nic_priority_matrix,
+                                   bool dummy)
         : metadata_(std::move(metadata)),
           next_segment_id_(1),
           local_server_name_(local_server_name)
     {
         TransferMetadata::PriorityMatrix local_priority_matrix;
 
+        if (dummy) return;
+
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot parse nic priority matrix";
+            LOG(ERROR) << "Transfer engine cannot be initialized: cannot parse nic "
+                          "priority matrix";
             exit(EXIT_FAILURE);
         }
 
@@ -36,7 +41,8 @@ namespace mooncake
         ret = initializeRdmaResources();
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot initialize rdma resources";
+            LOG(ERROR) << "Transfer engine cannot be initialized: cannot initialize "
+                          "rdma resources";
             exit(EXIT_FAILURE);
         }
 
@@ -50,14 +56,16 @@ namespace mooncake
         ret = startHandshakeDaemon();
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot start handshake daemon";
+            LOG(ERROR) << "Transfer engine cannot be initialized: cannot start "
+                          "handshake daemon";
             exit(EXIT_FAILURE);
         }
 
         ret = updateLocalSegmentDesc();
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot publish segments";
+            LOG(ERROR)
+                << "Transfer engine cannot be initialized: cannot publish segments";
             exit(EXIT_FAILURE);
         }
     }
@@ -140,8 +148,8 @@ namespace mooncake
         return batch_desc->id;
     }
 
-    int TransferEngine::submitTransfer(BatchID batch_id,
-                                       const std::vector<TransferRequest> &entries)
+    int TransferEngine::submitTransfer(
+        BatchID batch_id, const std::vector<TransferRequest> &entries)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
@@ -208,7 +216,8 @@ namespace mooncake
             status[task_id].transferred_bytes = task.transferred_bytes;
             uint64_t success_slice_count = task.success_slice_count;
             uint64_t failed_slice_count = task.failed_slice_count;
-            if (success_slice_count + failed_slice_count == (uint64_t)task.slices.size())
+            if (success_slice_count + failed_slice_count ==
+                (uint64_t)task.slices.size())
             {
                 if (failed_slice_count)
                     status[task_id].s = TransferStatusEnum::FAILED;
@@ -374,10 +383,8 @@ namespace mooncake
     int TransferEngine::startHandshakeDaemon()
     {
         return metadata_->startHandshakeDaemon(
-            std::bind(&TransferEngine::onSetupRdmaConnections,
-                      this,
-                      std::placeholders::_1,
-                      std::placeholders::_2));
+            std::bind(&TransferEngine::onSetupRdmaConnections, this,
+                      std::placeholders::_1, std::placeholders::_2));
     }
 
     int TransferEngine::selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id, int retry_count)

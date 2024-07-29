@@ -18,51 +18,47 @@ namespace mooncake
         size_t shard_size,
         const BufferResources &buffer_resources) 
     {
-        SelectNodesType selected_nodes;
-        std::vector<std::tuple<std::string, int, int>> available_allocators;
+    std::vector<NodeInfo> selected_nodes;
+    selected_nodes.reserve(num_shards * num_replicas);
 
-        // 预处理：找出所有可用的 BufferAllocator
-        for (const auto &[category, segments] : buffer_resources)
-        {
-            for (const auto &[segment_id, allocators] : segments)
-            {
-                for (int i = 0; i < allocators.size(); ++i)
-                {
-                    if (allocators[i].getRemainingSize() >= shard_size)
-                    {
-                        available_allocators.emplace_back(category, segment_id, i);
-                    }
-                }
-            }
+    // 创建一个包含所有类别和段的向量，用于随机选择
+    std::vector<std::pair<std::string, int>> all_segments;
+    for (const auto &[category, segments] : buffer_resources) {
+        for (const auto &[segment_id, allocators] : segments) {
+            all_segments.emplace_back(category, segment_id);
         }
-
-        if (available_allocators.size() < num_shards * num_replicas)
-        {
-            throw std::runtime_error("Not enough available allocators to satisfy the request");
-        }
-
-        // 为每个副本分配 shards
-        for (int replica = 0; replica < num_replicas; ++replica) {
-            for (int shard = 0; shard < num_shards; ++shard) {
-                if (available_allocators.empty()) {
-                    throw std::runtime_error("Ran out of available allocators during selection");
-                }
-
-                // 随机选择一个可用的 allocator
-                std::uniform_int_distribution<> dis(0, available_allocators.size() - 1);
-                int index = dis(rng_);
-                auto [category, segment_id, allocator_index] = available_allocators[index];
-
-                // 添加到结果中
-                selected_nodes.emplace_back(category, segment_id, allocator_index, shard_size);
-
-                // 从可用列表中移除已选择的 allocator
-                available_allocators.erase(available_allocators.begin() + index);
-            }
-        }
-
-        return selected_nodes;
     }
+
+    int total_allocations = num_shards * num_replicas;
+    int attempts = 0;
+    const int max_attempts = total_allocations * 10; // 设置一个最大尝试次数，避免无限循环
+
+    while (selected_nodes.size() < total_allocations && attempts < max_attempts) {
+        // 随机选择一个段
+        std::uniform_int_distribution<> segment_dis(0, all_segments.size() - 1);
+        int segment_index = segment_dis(rng_);
+        const auto &[category, segment_id] = all_segments[segment_index];
+
+        const auto &allocators = buffer_resources.at(category).at(segment_id);
+        
+        // 随机选择该段中的一个allocator
+        std::uniform_int_distribution<> allocator_dis(0, allocators.size() - 1);
+        int allocator_index = allocator_dis(rng_);
+
+        if (allocators[allocator_index].getRemainingSize() >= shard_size) {
+            selected_nodes.emplace_back(category, segment_id, allocator_index, shard_size);
+        }
+
+        attempts++;
+    }
+
+    if (selected_nodes.size() < total_allocations) {
+        throw std::runtime_error("Failed to find enough available allocators after " + 
+                                 std::to_string(max_attempts) + " attempts");
+    }
+
+    return selected_nodes;
+}
 
     std::vector<int> RandomAllocationStrategy::selectDummyNodes(int num_shards, int num_replicas, const std::vector<std::unique_ptr<VirtualNode>> &nodes)
     {

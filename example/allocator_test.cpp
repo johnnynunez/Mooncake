@@ -12,6 +12,44 @@ void printSeparator()
     std::cout << "========================================" << std::endl;
 }
 
+
+void printTransferRequests(const std::vector<TransferRequest>& transfer_tasks) {
+    std::cout << "Transfer Tasks:" << std::endl;
+    for (size_t i = 0; i < transfer_tasks.size(); ++i) {
+        const auto& task = transfer_tasks[i];
+        std::cout << "Task " << i + 1 << ":" << std::endl;
+        
+        std::cout << "  OpCode: ";
+        switch (task.opcode) {
+            case TransferRequest::READ:
+                std::cout << "READ";
+                break;
+            case TransferRequest::WRITE:
+                std::cout << "WRITE";
+                break;
+            case TransferRequest::REPLICA_INCR:
+                std::cout << "REPLICA_INCR";
+                break;
+            case TransferRequest::REPLICA_DECR:
+                std::cout << "REPLICA_DECR";
+                break;
+        }
+        std::cout << std::endl;
+
+        std::cout << "  Source: " << task.source << std::endl;
+        std::cout << "  Target ID: " << task.target_id << std::endl;
+        std::cout << "  Target Offset: " << task.target_offset << std::endl;
+        std::cout << "  Length: " << task.length << std::endl;
+        
+        std::cout << "  Source Replica:" << std::endl;
+        std::cout << "    Target ID: " << task.source_replica.target_id << std::endl;
+        std::cout << "    Target Offset: " << task.source_replica.target_offset << std::endl;
+        std::cout << "    Length: " << task.source_replica.length << std::endl;
+        
+        std::cout << std::endl;
+    }
+}
+
 void runTests()
 {
     std::cout << "Starting CacheAllocator tests..." << std::endl;
@@ -69,6 +107,7 @@ void runTests()
         ReplicateConfig config{2}; // 2 replicas
         TaskID task_id = allocator.makePut(key, PtrType::HOST, ptrs, sizes, config, transfer_tasks);
         assert(task_id > 0);
+        printTransferRequests(transfer_tasks);
         std::cout << "makePut with multiple input blocks test passed." << std::endl;
         printSeparator();
     }
@@ -88,7 +127,7 @@ void runTests()
         assert(task_id > 0);
 
         // TODO: 验证数据是否被正确读取
-
+        printTransferRequests(transfer_tasks);
         std::cout << "makeGet test passed." << std::endl;
         printSeparator();
     }
@@ -115,6 +154,8 @@ void runTests()
             std::cout << std::endl;
         }
         std::cout << "makeReplicate (increase) test passed." << std::endl;
+        printTransferRequests(transfer_tasks);
+
         printSeparator();
     }
 
@@ -139,6 +180,8 @@ void runTests()
             std::cout << std::endl;
         }
         std::cout << "makeReplicate (decrease) test passed." << std::endl;
+        printTransferRequests(transfer_tasks);
+
         printSeparator();
     }
 
@@ -168,6 +211,7 @@ void runTests()
         std::cout << "makePut large object test passed." << std::endl;
 
         // todo: 验证数据是否正确写入
+        printTransferRequests(transfer_tasks);
 
         std::cout << "Large object data verification passed." << std::endl;
         printSeparator();
@@ -189,6 +233,7 @@ void runTests()
 
         TaskID task_id = allocator.makeGet(key, PtrType::HOST, ptrs, sizes, min_version, offset, transfer_tasks);
         assert(task_id > 0);
+        printTransferRequests(transfer_tasks);
 
         // TODO: 验证数据是否被正确读取
         // assert(memcmp(buffer.data(), expected_data + offset, buffer.size()) == 0);
@@ -231,6 +276,7 @@ void runTests()
         // assert(memcmp(buffer1.data(), expected_data, buffer1.size()) == 0);
         // assert(memcmp(buffer2.data(), expected_data + buffer1.size(), buffer2.size()) == 0);
         // assert(memcmp(buffer3.data(), expected_data + buffer1.size() + buffer2.size(), buffer3.size()) == 0);
+        printTransferRequests(transfer_tasks);
 
         std::cout << "makeGet with multiple output buffers test passed." << std::endl;
         printSeparator();
@@ -259,6 +305,8 @@ void runTests()
         }
 
         std::cout << "Error handling test passed." << std::endl;
+        printTransferRequests(transfer_tasks);
+
         printSeparator();
     }
 
@@ -281,6 +329,7 @@ void runTests()
             std::cout << "Caught expected exception: " << e.what() << std::endl;
         }
         std::cout << "Error handling test passed." << std::endl;
+        printTransferRequests(transfer_tasks);
         printSeparator();
     }
 

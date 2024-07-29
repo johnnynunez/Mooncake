@@ -554,6 +554,7 @@ namespace mooncake
             }
             else
             {
+                LOG(ERROR) << "size " << value.size() << " " << value.isArray();
                 LOG(ERROR) << "Invalid array structure in JSON";
                 return -1;
             }

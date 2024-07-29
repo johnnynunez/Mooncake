@@ -2,6 +2,7 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_endpoint.h"
+#include <cassert>
 
 namespace mooncake
 {
@@ -94,7 +95,8 @@ namespace mooncake
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
         if (peer_server_name.empty() || peer_nic_name.empty())
         {
-            LOG(ERROR) << "Invalid argument";
+            LOG(ERROR) << "Invalid argument " << peer_server_name << " " << peer_nic_name;
+            assert(false);
             return -1;
         }
 
