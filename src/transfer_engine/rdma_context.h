@@ -5,10 +5,12 @@
 #define RDMA_CONTEXT_H
 
 #include <atomic>
+#include <cstdint>
 #include <thread>
 #include <string>
 #include <condition_variable>
 #include <unordered_map>
+#include <list>
 #include <glog/logging.h>
 #include <gflags/gflags.h>
 #include <infiniband/verbs.h>
@@ -35,7 +37,8 @@ namespace mooncake
                       size_t num_comp_channels = 1,
                       uint8_t port = 1,
                       int gid_index = 0,
-                      size_t max_cqe = 4096);
+                      size_t max_cqe = 256,
+                      int max_endpoints = 256);
 
     private:
         int deconstruct();
@@ -91,7 +94,7 @@ namespace mooncake
 
         int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
 
-    private:
+      private:
         int openRdmaDevice(const std::string &device_name, uint8_t port, int gid_index);
 
         int joinNonblockingPollList(int event_fd, int data_fd);
@@ -100,6 +103,8 @@ namespace mooncake
         int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
 
         void notifyWorker();
+
+        void evictEndpoint();
 
     private:
         const std::string device_name_;
@@ -121,10 +126,18 @@ namespace mooncake
         RWSpinlock memory_regions_lock_;
         std::vector<ibv_mr *> memory_region_list_;
 
+        uint32_t max_endpoints_;
+
         std::vector<ibv_cq *> cq_list_;
 
         RWSpinlock endpoint_map_lock_;
         std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map_;
+
+        std::unordered_map<std::string, std::list<std::string>::iterator> fifo_map_;
+        std::list<std::string> fifo_list_;
+
+        std::vector<std::thread> background_thread_;
+        std::atomic<bool> threads_running_;
 
         std::atomic<int> next_comp_channel_index_;
         std::atomic<int> next_comp_vector_index_;
