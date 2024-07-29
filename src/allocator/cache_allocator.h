@@ -20,7 +20,9 @@ class CacheAllocator
 
 
 public:
-    CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy);
+    CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStrategy> strategy, void *memory_start, size_t memory_size);
+
+    ~CacheAllocator();
 
     TaskID makePut(ObjectKey key, PtrType type, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config,  std::vector<TransferRequest>& requests);
 
@@ -43,6 +45,11 @@ private:
                                        const std::vector<void *> &sizes, std::vector<TransferRequest>& transfer_requests);
 
 private:
+    // CacheLib memory allocator 相关参数
+    size_t header_region_size_;
+    char *header_region_start_;
+    MemoryAllocator memory_allocator_;
+    PoolId pool_id;
 
     // 一个类别有多个 segment
     // 一个 segment 上可能会有多端不连续的 buffer
