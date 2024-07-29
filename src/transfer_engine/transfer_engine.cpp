@@ -24,7 +24,8 @@ namespace mooncake
     {
         TransferMetadata::PriorityMatrix local_priority_matrix;
 
-        if (dummy) return;
+        if (dummy)
+            return;
 
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
         if (ret)
@@ -183,10 +184,12 @@ namespace mooncake
 
                 auto &local_segment_desc = segment_desc_map[LOCAL_SEGMENT_ID];
                 std::string device_name;
-                int buffer_id, device_id;
-
-                selectDevice(local_segment_desc, (uint64_t)slice->source_addr, buffer_id, device_id);
-                // TODO if selectDevice failed?
+                int buffer_id = 0, device_id = 0;
+                if (selectDevice(local_segment_desc, (uint64_t)slice->source_addr, buffer_id, device_id))
+                {
+                    LOG(ERROR) << "Unrecorgnized source address " << slice->source_addr;
+                    return -1;
+                }
                 auto &context = context_list_[device_id];
                 slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
                 slice->rdma.retry_cnt = 0;
@@ -353,10 +356,13 @@ namespace mooncake
     int TransferEngine::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)
     {
         auto local_nic_name = getNicNameFromNicPath(peer_desc.peer_nic_path);
+        if (local_nic_name.empty())
+            return -1;
         auto context = context_list_[device_name_to_index_map_[local_nic_name]];
         auto endpoint = context->endpoint(peer_desc.local_nic_path);
-        endpoint->setupConnectionsByPassive(peer_desc, local_desc);
-        return 0;
+        if (!endpoint)
+            return -1;
+        return endpoint->setupConnectionsByPassive(peer_desc, local_desc);
     }
 
     int TransferEngine::initializeRdmaResources()
@@ -396,35 +402,29 @@ namespace mooncake
                 continue;
 
             auto &priority = desc->priority_matrix[buffer_desc.name];
-            std::string device_name;
-            if (retry_count == 0) 
+            size_t preferred_rnic_list_len = priority.preferred_rnic_list.size();
+            size_t available_rnic_list_len = priority.available_rnic_list.size();
+            size_t rnic_list_len = preferred_rnic_list_len + available_rnic_list_len;
+            if (rnic_list_len == 0)
+                return -1;
+
+            if (retry_count == 0)
             {
-                if (!priority.preferred_rnic_list.empty())
-                    device_name = priority.preferred_rnic_list[lrand48() % priority.preferred_rnic_list.size()];
-                if (device_name.empty() && !priority.available_rnic_list.empty())
-                    device_name = priority.available_rnic_list[lrand48() % priority.available_rnic_list.size()];
-                if (device_name.empty())
-                    return -1;
-            } else {
-                size_t preferred_rnic_list_len = priority.preferred_rnic_list.size();
-                size_t available_rnic_list_len = priority.available_rnic_list.size();
-                size_t rnic_list_len = preferred_rnic_list_len + available_rnic_list_len;
-                if (rnic_list_len == 0)
-                    return -1;
+                if (preferred_rnic_list_len)
+                    device_id = priority.preferred_rnic_id_list[lrand48() % preferred_rnic_list_len];
+                else
+                    device_id = priority.available_rnic_id_list[lrand48() % available_rnic_list_len];
+            }
+            else
+            {
                 size_t index = (retry_count - 1) % rnic_list_len;
                 if (index < preferred_rnic_list_len)
-                    device_name = priority.preferred_rnic_list[index];
+                    device_id = index;
                 else
-                {
-                    index -= preferred_rnic_list_len;
-                    device_name = priority.available_rnic_list[index];
-                }
+                    device_id = index - preferred_rnic_list_len;
             }
 
-            for (device_id = 0; device_id < (int)desc->devices.size(); ++device_id)
-                if (desc->devices[device_id].name == device_name)
-                    return 0;
-            return -1;
+            return 0;
         }
 
         return -1;

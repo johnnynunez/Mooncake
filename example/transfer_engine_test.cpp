@@ -124,9 +124,9 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
 
         ret = engine->submitTransfer(batch_id, requests);
         LOG_ASSERT(!ret);
+        std::vector<TransferStatus> status;
         while (true)
         {
-            std::vector<TransferStatus> status;
             ret = engine->getTransferStatus(batch_id, status);
             LOG_ASSERT(!ret);
             int completed = 0, failed = 0;

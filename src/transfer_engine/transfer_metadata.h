@@ -5,15 +5,19 @@
 #define TRANSFER_METADATA
 
 #include <atomic>
-#include <thread>
-#include <string>
-#include <memory>
 #include <functional>
-#include <unordered_map>
 #include <glog/logging.h>
+#include <memory>
+#include <string>
+#include <thread>
+#include <unordered_map>
 
 #include <jsoncpp/json/json.h>
+#ifdef MOONCAKE_USE_ETCD
+#include <etcd/Client.hpp>
+#else
 #include <libmemcached/memcached.hpp>
+#endif
 
 #include "transfer_engine/common.h"
 
@@ -84,6 +88,8 @@ namespace mooncake
         {
             std::vector<std::string> preferred_rnic_list;
             std::vector<std::string> available_rnic_list;
+            std::vector<int> preferred_rnic_id_list;
+            std::vector<int> available_rnic_id_list;
         };
 
         using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;

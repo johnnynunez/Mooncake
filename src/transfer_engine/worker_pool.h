@@ -4,8 +4,8 @@
 #ifndef WORKER_H
 #define WORKER_H
 
-#include <unordered_set>
 #include <queue>
+#include <unordered_set>
 
 #include "transfer_engine/rdma_context.h"
 
@@ -17,10 +17,6 @@ namespace mooncake
         WorkerPool(RdmaContext &context, int numa_socket_id = 0);
 
         ~WorkerPool();
-
-        void insertEndPoint(std::shared_ptr<RdmaEndPoint> &endpoint);
-
-        void removeEndPoint(std::shared_ptr<RdmaEndPoint> &endpoint);
 
         // 由 TransferEngine 调用，向队列添加 Slice
         int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
@@ -45,7 +41,7 @@ namespace mooncake
 
         RWSpinlock slice_list_lock_;
         std::unordered_map<std::string, std::vector<TransferEngine::Slice *>> slice_list_map_;
-        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
+        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_, slice_list_map_size_;
     };
 }
 

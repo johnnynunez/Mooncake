@@ -140,6 +140,12 @@ namespace mooncake
 
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
+        if (peer_server_name.empty() || peer_nic_name.empty())
+        {
+            LOG(ERROR) << "Invalid argument " << peer_server_name << " " << peer_nic_name;
+            assert(false);
+            return -1;
+        }
 
         local_desc.local_nic_path = context_.nicPath();
         local_desc.peer_nic_path = peer_nic_path_;

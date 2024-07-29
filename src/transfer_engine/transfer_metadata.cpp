@@ -1,17 +1,78 @@
 // transfer_metadata.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/common.h"
 #include "transfer_engine/transfer_metadata.h"
+#include "transfer_engine/common.h"
 
 #include <set>
-#include <libmemcached/memcached.hpp>
 
 namespace mooncake
 {
 
     const static std::string ServerDescPrefix = "mooncake/serverdesc/";
 
+#ifdef MOONCAKE_USE_ETCD
+    struct TransferMetadataImpl
+    {
+        TransferMetadataImpl(const std::string &metadata_uri)
+            : client_(metadata_uri) {}
+
+        ~TransferMetadataImpl() {}
+
+        bool get(const std::string &key, Json::Value &value)
+        {
+            Json::Reader reader;
+            uint32_t flags = 0;
+            auto resp = client_.get(key);
+            if (!resp.is_ok())
+            {
+                if (resp.error_code() != 100)
+                {
+                    LOG(ERROR) << "Error from etcd client: " << resp.error_code()
+                               << ", message: " << resp.error_message();
+                }
+                return false;
+            }
+            auto json_file = resp.value().as_string();
+            if (!reader.parse(json_file, value))
+                return false;
+            LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
+            return true;
+        }
+
+        bool set(const std::string &key, const Json::Value &value)
+        {
+            Json::FastWriter writer;
+            const std::string json_file = writer.write(value);
+            LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
+            auto resp = client_.put(key, json_file);
+            if (!resp.is_ok())
+            {
+                LOG(ERROR) << "Error from etcd client: " << resp.error_code()
+                           << ", message: " << resp.error_message();
+                return false;
+            }
+            return true;
+        }
+
+        bool remove(const std::string &key)
+        {
+            auto resp = client_.rm(key);
+            if (!resp.is_ok())
+            {
+                if (resp.error_code() != 100)
+                {
+                    LOG(ERROR) << "Error from etcd client: " << resp.error_code()
+                               << ", message: " << resp.error_message();
+                }
+                return false;
+            }
+            return true;
+        }
+
+        etcd::SyncClient client_;
+    };
+#else
     struct TransferMetadataImpl
     {
         TransferMetadataImpl(const std::string &metadata_uri)
@@ -64,6 +125,7 @@ namespace mooncake
 
         memcached_st *client_;
     };
+#endif // MOONCAKE_USE_ETCD
 
     TransferMetadata::TransferMetadata(const std::string &metadata_uri)
         : listener_running_(false)
@@ -197,9 +259,37 @@ namespace mooncake
             {
                 PriorityItem item;
                 for (const auto &array : value[0])
-                    item.preferred_rnic_list.push_back(array.asString());
+                {
+                    auto device_name = array.asString();
+                    item.preferred_rnic_list.push_back(device_name);
+                    int device_index = 0;
+                    for (auto &entry : desc->devices)
+                    {
+                        if (entry.name == device_name)
+                        {
+                            item.preferred_rnic_id_list.push_back(device_index);
+                            break;
+                        }
+                        device_index++;
+                    }
+                    LOG_ASSERT(device_index != (int)desc->devices.size());
+                }
                 for (const auto &array : value[1])
-                    item.available_rnic_list.push_back(array.asString());
+                {
+                    auto device_name = array.asString();
+                    item.available_rnic_list.push_back(device_name);
+                    int device_index = 0;
+                    for (auto &entry : desc->devices)
+                    {
+                        if (entry.name == device_name)
+                        {
+                            item.available_rnic_id_list.push_back(device_index);
+                            break;
+                        }
+                        device_index++;
+                    }
+                    LOG_ASSERT(device_index != (int)desc->devices.size());
+                }
                 desc->priority_matrix[key] = item;
             }
         }
@@ -485,13 +575,33 @@ namespace mooncake
                 PriorityItem item;
                 for (const auto &array : value[0])
                 {
-                    item.preferred_rnic_list.push_back(array.asString());
-                    rnic_set.insert(array.asString());
+                    auto device_name = array.asString();
+                    item.preferred_rnic_list.push_back(device_name);
+                    auto iter = rnic_set.find(device_name);
+                    if (iter == rnic_set.end())
+                    {
+                        item.preferred_rnic_id_list.push_back(rnic_set.size());
+                        rnic_set.insert(device_name);
+                    }
+                    else
+                    {
+                        item.preferred_rnic_id_list.push_back(std::distance(rnic_set.begin(), iter));
+                    }
                 }
                 for (const auto &array : value[1])
                 {
-                    item.available_rnic_list.push_back(array.asString());
-                    rnic_set.insert(array.asString());
+                    auto device_name = array.asString();
+                    item.available_rnic_list.push_back(device_name);
+                    auto iter = rnic_set.find(device_name);
+                    if (iter == rnic_set.end())
+                    {
+                        item.available_rnic_id_list.push_back(rnic_set.size());
+                        rnic_set.insert(device_name);
+                    }
+                    else
+                    {
+                        item.available_rnic_id_list.push_back(std::distance(rnic_set.begin(), iter));
+                    }
                 }
                 priority_map[key] = item;
             }
