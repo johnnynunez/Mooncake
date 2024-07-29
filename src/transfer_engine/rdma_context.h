@@ -5,15 +5,15 @@
 #define RDMA_CONTEXT_H
 
 #include <atomic>
-#include <cstdint>
-#include <thread>
-#include <string>
 #include <condition_variable>
-#include <unordered_map>
-#include <list>
-#include <glog/logging.h>
+#include <cstdint>
 #include <gflags/gflags.h>
+#include <glog/logging.h>
 #include <infiniband/verbs.h>
+#include <list>
+#include <string>
+#include <thread>
+#include <unordered_map>
 
 #include "transfer_engine/common.h"
 #include "transfer_engine/transfer_engine.h"
@@ -37,7 +37,7 @@ namespace mooncake
                       size_t num_comp_channels = 1,
                       uint8_t port = 1,
                       int gid_index = 0,
-                      size_t max_cqe = 256,
+                      size_t max_cqe = 4096,
                       int max_endpoints = 256);
 
     private:
@@ -94,7 +94,7 @@ namespace mooncake
 
         int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
 
-      private:
+    private:
         int openRdmaDevice(const std::string &device_name, uint8_t port, int gid_index);
 
         int joinNonblockingPollList(int event_fd, int data_fd);
