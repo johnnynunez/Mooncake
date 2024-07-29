@@ -236,6 +236,7 @@ namespace mooncake
             evictEndpoint();
         }
 
+        endpoint->setPeerNicPath(peer_nic_path);
         endpoint_map_[peer_nic_path] = endpoint;
         fifo_list_.push_back(peer_nic_path);
         auto it = fifo_list_.end();
