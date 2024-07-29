@@ -4,16 +4,14 @@
 #ifndef COMMON_H
 #define COMMON_H
 
-#include <cstdint>
-#include <sys/time.h>
-#include <glog/logging.h>
-#include <sys/time.h>
+#include <atomic>
 #include <cstdint>
 #include <ctime>
-#include <atomic>
-#include <thread>
-#include <sys/mman.h>
+#include <glog/logging.h>
 #include <numa.h>
+#include <sys/mman.h>
+#include <sys/time.h>
+#include <thread>
 
 #if defined(__x86_64__)
 #include <immintrin.h>

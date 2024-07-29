@@ -41,7 +41,7 @@ namespace mooncake
 
         RWSpinlock slice_list_lock_;
         std::unordered_map<std::string, std::vector<TransferEngine::Slice *>> slice_list_map_;
-        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
+        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_, slice_list_map_size_;
     };
 }
 

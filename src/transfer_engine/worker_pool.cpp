@@ -14,7 +14,8 @@ namespace mooncake
           workers_running_(true),
           suspended_flag_(false),
           submitted_slice_count_(0),
-          processed_slice_count_(0)
+          processed_slice_count_(0),
+          slice_list_map_size_(0)
     {
         worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::worker, this)));
     }
@@ -52,6 +53,7 @@ namespace mooncake
             slice_list_map_[entry.first].push_back(entry.second);
         }
         submitted_slice_count_ += slice_list.size();
+        slice_list_map_size_.fetch_add(slice_list.size(), std::memory_order_relaxed);
         if (suspended_flag_.load(std::memory_order_relaxed))
         {
             cond_var_.notify_all();
@@ -61,7 +63,10 @@ namespace mooncake
 
     void WorkerPool::performPostSend()
     {
+        if (slice_list_map_size_.load(std::memory_order_relaxed) == 0)
+            return;
         RWSpinlock::WriteGuard guard(slice_list_lock_);
+        uint64_t slice_list_map_size = 0;
         for (auto &entry : slice_list_map_)
         {
             auto endpoint = context_.endpoint(entry.first);
@@ -87,7 +92,9 @@ namespace mooncake
                 for (auto &slice : failed_slice_list)
                     processFailedSlice(slice);
             }
+            slice_list_map_size += entry.second.size();
         }
+        slice_list_map_size_.store(slice_list_map_size, std::memory_order_relaxed);
     }
 
     void WorkerPool::performPollCq()
@@ -115,6 +122,7 @@ namespace mooncake
                                << "): " << ibv_wc_status_str(wc[i].status);
                     RWSpinlock::WriteGuard guard(slice_list_lock_);
                     processFailedSlice(slice);
+                    slice_list_map_size_.fetch_add(1, std::memory_order_relaxed);
                 }
                 else
                 {
