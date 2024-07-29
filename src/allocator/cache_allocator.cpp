@@ -9,7 +9,7 @@ CacheAllocator::CacheAllocator(size_t shard_size, std::unique_ptr<AllocationStra
       memory_allocator_(MemoryAllocator::Config(MemoryAllocator::generateAllocSizes()),
                         reinterpret_cast<void *>(header_region_start_),
                         header_region_size_, memory_start, memory_size),
-      pool_id(memory_allocator_.addPool("default", memory_size / 2)),
+      pool_id(memory_allocator_.addPool("default", memory_size)),
       shard_size_(shard_size), allocation_strategy_(std::move(strategy)), global_version_(0) {}
 
 CacheAllocator::~CacheAllocator() {
