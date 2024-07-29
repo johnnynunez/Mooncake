@@ -15,6 +15,3 @@ add_library (cachelib_memory_allocator
         Slab.cpp
         SlabAllocator.cpp
 )
-
-add_executable(main main.cpp)
-target_link_libraries(main cachelib_memory_allocator)
