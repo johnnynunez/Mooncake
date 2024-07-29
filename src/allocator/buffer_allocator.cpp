@@ -7,10 +7,13 @@
 namespace mooncake {
 
     
-BufferAllocator::BufferAllocator(MemoryAllocator *memory_allocator, PoolId pool_id, std::string type, int segment_id, size_t base, size_t size) :
-    memory_allocator_(memory_allocator),
-    pool_id_(pool_id),
-    type_(type),
+BufferAllocator::BufferAllocator(std::string type, int segment_id, size_t base, size_t size, void *memory_start) :
+    header_region_size_(sizeof(facebook::cachelib::SlabHeader) * static_cast<unsigned int>(size / sizeof(facebook::cachelib::Slab)) + 1),
+    header_region_start_(new char[header_region_size_]),
+    memory_allocator_(new MemoryAllocator(MemoryAllocator::Config(MemoryAllocator::generateAllocSizes()),
+                                          reinterpret_cast<void *>(header_region_start_.get()),
+                                          header_region_size_, memory_start, size)),
+    pool_id_(memory_allocator_->addPool("main", size)), type_(type),
     segment_id_(segment_id), base_(base), 
     total_size_(size), remaining_size_(size), next_offset_(0) {}
 
