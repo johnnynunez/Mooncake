@@ -12,19 +12,6 @@
 #include <sys/mman.h>
 #include <sys/time.h>
 
-#ifdef USE_CUDA
-#include "cuda.h"
-
-static CUcontext cuContext;
-
-#define CUCHECK(stmt)                   \
-    do                                  \
-    {                                   \
-        CUresult result = (stmt);       \
-        assert(CUDA_SUCCESS == result); \
-    } while (0)
-#endif
-
 namespace mooncake
 {
     TransferEngine::TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
