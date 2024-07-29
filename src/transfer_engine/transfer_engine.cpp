@@ -402,7 +402,6 @@ namespace mooncake
                 continue;
 
             auto &priority = desc->priority_matrix[buffer_desc.name];
-            std::string device_name;
             size_t preferred_rnic_list_len = priority.preferred_rnic_list.size();
             size_t available_rnic_list_len = priority.available_rnic_list.size();
             size_t rnic_list_len = preferred_rnic_list_len + available_rnic_list_len;
@@ -412,29 +411,20 @@ namespace mooncake
             if (retry_count == 0)
             {
                 if (preferred_rnic_list_len)
-                    device_name = priority.preferred_rnic_list[lrand48() % preferred_rnic_list_len];
-                else if (available_rnic_list_len)
-                    device_name = priority.available_rnic_list[lrand48() % available_rnic_list_len];
+                    device_id = priority.preferred_rnic_id_list[lrand48() % preferred_rnic_list_len];
                 else
-                    return -1;
+                    device_id = priority.available_rnic_id_list[lrand48() % available_rnic_list_len];
             }
             else
             {
                 size_t index = (retry_count - 1) % rnic_list_len;
                 if (index < preferred_rnic_list_len)
-                    device_name = priority.preferred_rnic_list[index];
+                    device_id = index;
                 else
-                {
-                    index -= preferred_rnic_list_len;
-                    device_name = priority.available_rnic_list[index];
-                }
+                    device_id = index - preferred_rnic_list_len;
             }
 
-            for (device_id = 0; device_id < (int)desc->devices.size(); ++device_id)
-                if (desc->devices[device_id].name == device_name)
-                    return 0;
-
-            return -1;
+            return 0;
         }
 
         return -1;
