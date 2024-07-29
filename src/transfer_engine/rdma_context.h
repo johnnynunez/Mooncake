@@ -102,8 +102,6 @@ namespace mooncake
     public:
         int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
 
-        void notifyWorker();
-
         void evictEndpoint();
 
     private:

@@ -6,10 +6,10 @@
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
 
-#include <sys/epoll.h>
+#include <atomic>
 #include <cassert>
 #include <fcntl.h>
-#include <atomic>
+#include <sys/epoll.h>
 #include <thread>
 
 namespace mooncake
@@ -232,9 +232,8 @@ namespace mooncake
         if (ret)
             return nullptr;
 
-        while (endpoint_map_.size() >= max_endpoints_) {
+        while (endpoint_map_.size() >= max_endpoints_)
             evictEndpoint();
-        }
 
         endpoint->setPeerNicPath(peer_nic_path);
         endpoint_map_[peer_nic_path] = endpoint;
@@ -249,7 +248,8 @@ namespace mooncake
     {
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
         auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end()) {
+        if (iter != endpoint_map_.end())
+        {
             endpoint_map_.erase(iter);
             auto fifo_iter = fifo_map_[peer_nic_path];
             fifo_list_.erase(fifo_iter);
@@ -258,10 +258,10 @@ namespace mooncake
         return 0;
     }
 
-    void RdmaContext::evictEndpoint() {
-        if (fifo_list_.empty()) {
+    void RdmaContext::evictEndpoint()
+    {
+        if (fifo_list_.empty())
             return;
-        }
         std::string victim = fifo_list_.front();
         fifo_list_.pop_front();
         fifo_map_.erase(victim);
