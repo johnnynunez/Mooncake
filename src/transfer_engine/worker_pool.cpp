@@ -1,10 +1,12 @@
 // worker_pool.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/worker_pool.h"
+#include <sys/epoll.h>
+
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
+#include "transfer_engine/worker_pool.h"
 
 namespace mooncake
 {
@@ -17,7 +19,8 @@ namespace mooncake
           processed_slice_count_(0),
           slice_list_map_size_(0)
     {
-        worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::worker, this)));
+        worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::transferWorker, this)));
+        worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::monitorWorker, this)));
     }
 
     WorkerPool::~WorkerPool()
@@ -161,7 +164,7 @@ namespace mooncake
         }
     }
 
-    void WorkerPool::worker()
+    void WorkerPool::transferWorker()
     {
         bindToSocket(numa_socket_id_);
         const static uint64_t kWaitPeriodInNano = 100000000; // 100ms
@@ -182,6 +185,46 @@ namespace mooncake
             }
             performPostSend();
             performPollCq();
+        }
+    }
+
+    int WorkerPool::doProcessContextEvents()
+    {
+        ibv_async_event event;
+        if (ibv_get_async_event(context_.context(), &event) < 0)
+            return -1;
+        LOG(INFO) << "Received context async event: " << ibv_event_type_str(event.event_type);
+        // TODO 处理策略？
+        // - 鸵鸟（只打印警告？）
+        // - 杀掉进程？
+        // - 完全删除该 Context 并重新创建？
+        ibv_ack_async_event(&event);
+    }
+
+    void WorkerPool::monitorWorker()
+    {
+        bindToSocket(numa_socket_id_);
+        while (workers_running_)
+        {
+            struct epoll_event event;
+            int num_events = epoll_wait(context_.eventFd(), &event, 1, 100);
+            if (num_events < 0)
+            {
+                PLOG(ERROR) << "Failed to call epoll wait";
+                continue;
+            }
+
+            if (num_events == 0)
+                continue;
+
+            LOG(ERROR) << "Received event, fd: " << event.data.fd
+                       << ", events: " << event.events;
+
+            if (!(event.events & EPOLLIN))
+                continue;
+
+            if (event.data.fd == context_.context()->async_fd)
+                doProcessContextEvents();
         }
     }
 }

@@ -28,7 +28,11 @@ namespace mooncake
 
         void processFailedSlice(TransferEngine::Slice *slice);
 
-        void worker();
+        void transferWorker();
+
+        void monitorWorker();
+
+        int doProcessContextEvents();
 
     private:
         RdmaContext &context_;

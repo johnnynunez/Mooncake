@@ -88,6 +88,8 @@ namespace mooncake
 
         int compVector();
 
+        int eventFd() const { return event_fd_; }
+
         ibv_cq *cq() const { return cq_list_[0]; }
 
         int cqCount() const { return 1; }
