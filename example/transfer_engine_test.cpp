@@ -5,16 +5,34 @@
 #include <iomanip>
 #include <sys/time.h>
 
+/*
+  测试用例使用方法
+  1. 启动一个 memcached 服务（如果开启 MOONCAKE_USE_ETCD 编译选项，则转用 etcd 服务，需要保证监听 IP 是
+     0.0.0.0），记录该服务的 URI [如 optane21:12345]
+  2. 在一台机器上启动一个 transfer_engine 服务，并指定 metadata_server 参数为 1. 所述的 URI
+     [如 optane21:12345]。该机器运行 target 模式，负责在测试中供给 Segment，记录该机器的 Hostname
+     [如 optane20]。
+     可结合该机器网卡配置情况设置 nic_priority_matrix：其中最左表示设备类别，与 registerMemory 的 type 字段
+     对应，右侧分别表示“推荐使用的网卡名称”和“可以使用的其他网卡名称”。
+     // {
+     //     "cpu:0": [["mlx5_2"], ["mlx5_3"]],
+     //     "cpu:1": [["mlx5_3"], ["mlx5_2"]],
+     //     "cuda:0": [["mlx5_2"], ["mlx5_3"]],
+     // }
+     因此， ./transfer_engine_test --mode=target --metadata_server=optane21:12345
+                                  --nic_priority_matrix=...
+  3. 在另一台机器上启动一个 transfer_engine 服务，用以发起 transfer 请求。metadata_server 和
+     nic_priority_matrix 的规约同上所述，segment_id 用以指定 transfer 目标 Segment 名称，应当是 2.
+     所述的机器的 Hostname [如 optane20]。
+     此外，operation、batch_size、block_size、duration、threads 等均为测试配置项，不言自明。
+
+*/
+
 DEFINE_string(metadata_server, "optane21:12345", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
 DEFINE_string(operation, "read", "Operation type: read or write");
-// {
-//     "cpu:0": [["mlx5_2"], ["mlx5_3"]],
-//     "cpu:1": [["mlx5_3"], ["mlx5_2"]],
-//     "cuda:0": [["mlx5_2"], ["mlx5_3"]],
-// }
 DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
 DEFINE_string(segment_id, "optane20", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
