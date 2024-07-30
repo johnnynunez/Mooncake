@@ -11,6 +11,7 @@
 #include <glog/logging.h>
 #include <infiniband/verbs.h>
 #include <list>
+#include <memory>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -24,6 +25,7 @@ namespace mooncake
     class RdmaEndPoint;
     class TransferEngine;
     class WorkerPool;
+    class EndpointStore;
 
     // RdmaContext 表示本地每个 NIC 所掌控的资源集合，具体包括 Memory Region、CQ、EndPoint（实质是 QP）等
     class RdmaContext
@@ -102,8 +104,6 @@ namespace mooncake
     public:
         int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
 
-        void evictEndpoint();
-
     private:
         const std::string device_name_;
         TransferEngine &engine_;
@@ -123,16 +123,9 @@ namespace mooncake
 
         RWSpinlock memory_regions_lock_;
         std::vector<ibv_mr *> memory_region_list_;
-
-        uint32_t max_endpoints_;
-
         std::vector<ibv_cq *> cq_list_;
 
-        RWSpinlock endpoint_map_lock_;
-        std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map_;
-
-        std::unordered_map<std::string, std::list<std::string>::iterator> fifo_map_;
-        std::list<std::string> fifo_list_;
+        std::shared_ptr<EndpointStore> endpoint_store_;
 
         std::vector<std::thread> background_thread_;
         std::atomic<bool> threads_running_;

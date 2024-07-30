@@ -2,6 +2,7 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_context.h"
+#include "transfer_engine/endpoint_store.h"
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
@@ -9,6 +10,7 @@
 #include <atomic>
 #include <cassert>
 #include <fcntl.h>
+#include <memory>
 #include <sys/epoll.h>
 #include <thread>
 
@@ -43,7 +45,7 @@ namespace mooncake
                                size_t max_cqe,
                                int max_endpoints)
     {
-        max_endpoints_ = max_endpoints;
+        endpoint_store_ = std::make_shared<FIFOEndpointStore>(max_endpoints);
         if (openRdmaDevice(device_name_, port, gid_index))
             return -1;
 
@@ -107,7 +109,6 @@ namespace mooncake
     int RdmaContext::deconstruct()
     {
         worker_pool_.reset();
-        endpoint_map_.clear();
         for (auto &entry : memory_region_list_)
             ibv_dereg_mr(entry);
         memory_region_list_.clear();
@@ -216,58 +217,21 @@ namespace mooncake
             LOG(ERROR) << "Invalid peer nic path";
             return nullptr;
         }
-        {
-            RWSpinlock::ReadGuard guard(endpoint_map_lock_);
-            auto iter = endpoint_map_.find(peer_nic_path);
-            if (iter != endpoint_map_.end())
-                return iter->second;
+
+        auto endpoint = endpoint_store_->getEndpoint(peer_nic_path);
+        if (endpoint) {
+            return endpoint;
+        } else {
+            auto endpoint = endpoint_store_->insertEndpoint(peer_nic_path, this);
+            return endpoint;
         }
 
-        RWSpinlock::WriteGuard guard(endpoint_map_lock_);
-        auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end())
-            return iter->second;
-        auto endpoint = std::make_shared<RdmaEndPoint>(*this);
-        int ret = endpoint->construct(cq());
-        if (ret)
-            return nullptr;
-
-        while (endpoint_map_.size() >= max_endpoints_)
-            evictEndpoint();
-
-        endpoint->setPeerNicPath(peer_nic_path);
-        endpoint_map_[peer_nic_path] = endpoint;
-        fifo_list_.push_back(peer_nic_path);
-        auto it = fifo_list_.end();
-        fifo_map_[peer_nic_path] = --it;
-
-        return endpoint;
+        return nullptr;
     }
 
     int RdmaContext::deleteEndpoint(const std::string &peer_nic_path)
     {
-        RWSpinlock::WriteGuard guard(endpoint_map_lock_);
-        auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end())
-        {
-            endpoint_map_.erase(iter);
-            auto fifo_iter = fifo_map_[peer_nic_path];
-            fifo_list_.erase(fifo_iter);
-            fifo_map_.erase(peer_nic_path);
-        }
-        return 0;
-    }
-
-    void RdmaContext::evictEndpoint()
-    {
-        if (fifo_list_.empty())
-            return;
-        std::string victim = fifo_list_.front();
-        fifo_list_.pop_front();
-        fifo_map_.erase(victim);
-        LOG(INFO) << victim << " evicted";
-        endpoint_map_.erase(victim);
-        return; // All endpoints are in use
+        return endpoint_store_->deleteEndpoint(peer_nic_path);
     }
 
     std::string RdmaContext::nicPath() const
