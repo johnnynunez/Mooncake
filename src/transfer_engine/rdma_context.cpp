@@ -45,7 +45,7 @@ namespace mooncake
                                size_t max_cqe,
                                int max_endpoints)
     {
-        endpoint_store_ = std::make_shared<FIFOEndpointStore>(max_endpoints);
+        endpoint_store_ = std::make_shared<SIEVEEndpointStore>(max_endpoints);
         if (openRdmaDevice(device_name_, port, gid_index))
             return -1;
 
