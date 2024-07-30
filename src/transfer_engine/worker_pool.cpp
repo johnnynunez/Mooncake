@@ -199,6 +199,7 @@ namespace mooncake
         // - 杀掉进程？
         // - 完全删除该 Context 并重新创建？
         ibv_ack_async_event(&event);
+        return 0;
     }
 
     void WorkerPool::monitorWorker()
