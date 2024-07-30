@@ -150,6 +150,20 @@ namespace mooncake
 
     int RdmaContext::registerMemoryRegion(void *addr, size_t length, int access)
     {
+        // Currently if the memory region overlaps with existing one, return -1
+        // Or Merge it with existing mr?
+        for (const auto &entry : memory_region_list_) {
+            bool start_overlapped = entry->addr <= addr && addr < (char *)entry->addr + entry->length;
+            bool end_overlapped = entry->addr < (char *)addr + length && (char *)addr + length <= (char *)entry->addr + entry->length;
+            bool covered = addr <= entry->addr && (char *)entry->addr + entry->length <= (char *)addr + length;
+            if (start_overlapped || end_overlapped || covered)
+            {
+                LOG(INFO) << "Memory region " << addr << " overlapped";
+                return -1;
+            }
+        }
+
+        // No overlap, continue
         ibv_mr *mr = ibv_reg_mr(pd_, addr, length, access);
         if (!mr)
         {
