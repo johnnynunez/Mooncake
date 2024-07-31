@@ -4,6 +4,7 @@
 #include <atomic>
 #include <cassert>
 #include <cstddef>
+#include <glog/logging.h>
 #include <memory>
 #include <utility>
 
@@ -18,10 +19,15 @@ namespace mooncake
         return nullptr;
     }
 
-    std::shared_ptr<RdmaEndPoint> FIFOEndpointStore::insertEndpoint(std::string peer_nic_path, RdmaContext* context)
+    std::shared_ptr<RdmaEndPoint> FIFOEndpointStore::insertEndpoint(std::string peer_nic_path, RdmaContext *context)
     {
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
         auto endpoint = std::make_shared<RdmaEndPoint>(*context);
+        if (!endpoint)
+        {
+            PLOG(ERROR) << "Failed to allocate memory for RdmaEndPoint";
+            return nullptr;
+        }
         int ret = endpoint->construct(context->cq());
         if (ret)
             return nullptr;
@@ -72,7 +78,8 @@ namespace mooncake
     {
         RWSpinlock::ReadGuard guard(endpoint_map_lock_);
         auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end()) {
+        if (iter != endpoint_map_.end())
+        {
             iter->second.second.store(true, std::memory_order_relaxed); // This is safe within read lock because of idempotence
             return iter->second.first;
         }
@@ -83,8 +90,13 @@ namespace mooncake
     {
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
         auto endpoint = std::make_shared<RdmaEndPoint>(*context);
+        if (!endpoint)
+        {
+            PLOG(ERROR) << "Failed to allocate memory for RdmaEndPoint";
+            return nullptr;
+        }
         int ret = endpoint->construct(context->cq());
-        if (ret)
+        if (ret) 
             return nullptr;
 
         while (this->getSize() >= max_size_)
@@ -105,7 +117,8 @@ namespace mooncake
         {
             endpoint_map_.erase(iter);
             auto fifo_iter = fifo_map_[peer_nic_path];
-            if (hand_.has_value() && hand_.value() == fifo_iter) {
+            if (hand_.has_value() && hand_.value() == fifo_iter)
+            {
                 fifo_iter == fifo_list_.begin() ? hand_ = std::nullopt : hand_ = std::prev(fifo_iter);
             }
             fifo_list_.erase(fifo_iter);
@@ -116,17 +129,22 @@ namespace mooncake
 
     void SIEVEEndpointStore::evictEndpoint()
     {
-        if (fifo_list_.empty()) {
+        if (fifo_list_.empty())
+        {
             return;
         }
         auto o = hand_.has_value() ? hand_.value() : --fifo_list_.end();
         std::string victim;
-        while (true) {
+        while (true)
+        {
             victim = *o;
-            if (endpoint_map_[victim].second.load(std::memory_order_relaxed)) {
+            if (endpoint_map_[victim].second.load(std::memory_order_relaxed))
+            {
                 endpoint_map_[victim].second.store(false, std::memory_order_relaxed);
                 o = (o == fifo_list_.begin() ? --fifo_list_.end() : std::prev(o));
-            } else {
+            }
+            else
+            {
                 break;
             }
         }

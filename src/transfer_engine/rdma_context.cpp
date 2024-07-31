@@ -46,6 +46,9 @@ namespace mooncake
                                int max_endpoints)
     {
         endpoint_store_ = std::make_shared<SIEVEEndpointStore>(max_endpoints);
+        if (!endpoint_store_)
+            return -1;
+
         if (openRdmaDevice(device_name_, port, gid_index))
             return -1;
 
@@ -62,6 +65,11 @@ namespace mooncake
 
         num_comp_channel_ = num_comp_channels;
         comp_channel_ = new ibv_comp_channel *[num_comp_channels];
+        if (!comp_channel_)
+        {
+            PLOG(ERROR) << "Failed to allocate comp_channel";
+            return -1;
+        }
         for (size_t i = 0; i < num_comp_channels; ++i)
         {
             comp_channel_[i] = ibv_create_comp_channel(context_);
@@ -103,23 +111,35 @@ namespace mooncake
 
         // TODO 确定网卡所属的 NUMA Socket，并且填充到 WorkerPool 的第二个构造函数中
         worker_pool_ = std::make_shared<WorkerPool>(*this);
+        if (!worker_pool_)
+        {
+            PLOG(ERROR) << "Failed to allocate worker pool";
+            return -1;
+        }
         return 0;
     }
 
     int RdmaContext::deconstruct()
     {
         worker_pool_.reset();
-        for (auto &entry : memory_region_list_)
-            ibv_dereg_mr(entry);
+        for (auto &entry : memory_region_list_) {
+            if (ibv_dereg_mr(entry)) {
+                PLOG(ERROR) << "Fail to deregister memory region";
+            }
+        }
         memory_region_list_.clear();
 
-        for (size_t i = 0; i < cq_list_.size(); ++i)
-            ibv_destroy_cq(cq_list_[i]);
+        for (size_t i = 0; i < cq_list_.size(); ++i) {
+            if (ibv_destroy_cq(cq_list_[i])) {
+                PLOG(ERROR) << "Fail to destroy CQ";
+            }
+        }
         cq_list_.clear();
 
         if (event_fd_ >= 0)
         {
-            close(event_fd_);
+            if (close(event_fd_))
+                PLOG(ERROR) << "Fail to close epoll fd";
             event_fd_ = -1;
         }
 
@@ -127,20 +147,23 @@ namespace mooncake
         {
             for (size_t i = 0; i < num_comp_channel_; ++i)
                 if (comp_channel_[i])
-                    ibv_destroy_comp_channel(comp_channel_[i]);
+                    if (ibv_destroy_comp_channel(comp_channel_[i]))
+                        PLOG(ERROR) << "Fail to destroy comp channel";
             delete[] comp_channel_;
             comp_channel_ = nullptr;
         }
 
         if (pd_)
         {
-            ibv_dealloc_pd(pd_);
+            if (ibv_dealloc_pd(pd_))
+                PLOG(ERROR) << "Fail to deallocate PD";
             pd_ = nullptr;
         }
 
         if (context_)
         {
-            ibv_close_device(context_);
+            if (ibv_close_device(context_))
+                PLOG(ERROR) << "Fail to close device";
             context_ = nullptr;
         }
 
@@ -306,7 +329,9 @@ namespace mooncake
             if (ibv_query_port(context, port, &attr))
             {
                 PLOG(WARNING) << "Fail to query port " << port << " on " << device_name;
-                ibv_close_device(context);
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
                 ibv_free_device_list(devices);
                 return -1;
             }
@@ -314,7 +339,9 @@ namespace mooncake
             if (attr.state != IBV_PORT_ACTIVE)
             {
                 LOG(WARNING) << "Device " << device_name << " port not active";
-                ibv_close_device(context);
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
                 ibv_free_device_list(devices);
                 return -1;
             }
@@ -323,7 +350,9 @@ namespace mooncake
             {
                 PLOG(WARNING) << "Device " << device_name
                               << " GID " << gid_index << " not available";
-                ibv_close_device(context);
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
                 ibv_free_device_list(devices);
                 return -1;
             }
