@@ -74,6 +74,12 @@ namespace mooncake
         return endpoint_map_.size();
     }
 
+    int FIFOEndpointStore::destroyQPs() {
+        for (auto &kv : endpoint_map_) {
+            kv.second->destroyQP();
+        }
+    }
+
     std::shared_ptr<RdmaEndPoint> SIEVEEndpointStore::getEndpoint(std::string peer_nic_path)
     {
         RWSpinlock::ReadGuard guard(endpoint_map_lock_);
@@ -154,6 +160,13 @@ namespace mooncake
         LOG(INFO) << victim << " evicted";
         endpoint_map_.erase(victim);
         return;
+    }
+
+    int SIEVEEndpointStore::destroyQPs() {
+        for (auto &kv : endpoint_map_) {
+            kv.second.first->destroyQP();
+        }
+        return 0;
     }
 
     size_t SIEVEEndpointStore::getSize()

@@ -121,6 +121,7 @@ namespace mooncake
 
     int RdmaContext::deconstruct()
     {
+        endpoint_store_->destroyQPs();
         worker_pool_.reset();
         for (auto &entry : memory_region_list_) {
             if (ibv_dereg_mr(entry)) {

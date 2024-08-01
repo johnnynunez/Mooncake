@@ -26,6 +26,8 @@ namespace mooncake {
         virtual int deleteEndpoint(std::string peer_nic_path) = 0;
         virtual void evictEndpoint() = 0;
         virtual size_t getSize() = 0;
+
+        virtual int destroyQPs() = 0;
     };
 
     // FIFO
@@ -38,6 +40,8 @@ namespace mooncake {
             int deleteEndpoint(std::string peer_nic_path);
             void evictEndpoint();
             size_t getSize();
+
+            int destroyQPs();
 
         private:
             RWSpinlock endpoint_map_lock_;
@@ -58,6 +62,8 @@ namespace mooncake {
             int deleteEndpoint(std::string peer_nic_path);
             void evictEndpoint();
             size_t getSize();
+
+            int destroyQPs();
         private:
             RWSpinlock endpoint_map_lock_;
             // The bool represents visited

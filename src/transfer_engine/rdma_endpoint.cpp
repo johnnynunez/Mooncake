@@ -3,6 +3,7 @@
 
 #include "transfer_engine/rdma_endpoint.h"
 #include <cassert>
+#include <cstddef>
 #include <glog/logging.h>
 
 namespace mooncake
@@ -68,13 +69,27 @@ namespace mooncake
 
     int RdmaEndPoint::deconstruct()
     {
-        for (size_t i = 0; i < qp_list_.size(); ++i) {
-            if (ibv_destroy_qp(qp_list_[i])) {
-                PLOG(ERROR) << "Failed to destroy QP";
-            }
-        }
+        // for (size_t i = 0; i < qp_list_.size(); ++i) {
+        //     if (ibv_destroy_qp(qp_list_[i])) {
+        //         PLOG(ERROR) << "Failed to destroy QP";
+        //     }
+        // }
         qp_list_.clear();
         delete[] wr_depth_list_;
+        return 0;
+    }
+
+    int RdmaEndPoint::destroyQP()
+    {
+        for (int i = 0; i < qp_list_.size(); ++i)
+        {
+            LOG(INFO) << "Destroying QP " << i << " size " << qp_list_.size();
+            if (ibv_destroy_qp(qp_list_[i]))
+            {
+                PLOG(ERROR) << "Failed to destroy QP";
+                return -1;
+            }
+        }
         return 0;
     }
 
