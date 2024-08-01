@@ -4,16 +4,16 @@
 #ifndef TRANSFER_ENGINE
 #define TRANSFER_ENGINE
 
-#include <map>
-#include <mutex>
 #include <atomic>
 #include <cstddef>
-#include <memory>
-#include <string>
-#include <vector>
-#include <unordered_set>
-#include <unordered_map>
 #include <infiniband/verbs.h>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "transfer_engine/transfer_metadata.h"
 
@@ -132,6 +132,9 @@ namespace mooncake
         // - 返回值：若成功，返回 0；否则返回负数值。
         int getTransferStatus(BatchID batch_id,
                               std::vector<TransferStatus> &status);
+
+        int getTransferStatus(BatchID batch_id, size_t task_id,
+                              TransferStatus &status);
 
         // 回收 BatchID，之后对此的 submit_transfer 及 get_transfer_status 操作是未定义的。该序号后续可能会被重新使用。
         // - batch_id: 所属的 BatchID ；

@@ -236,6 +236,33 @@ namespace mooncake
         return 0;
     }
 
+    int TransferEngine::getTransferStatus(BatchID batch_id, size_t task_id,
+                                          TransferStatus &status)
+    {
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc.task_list.size();
+        if (task_id >= task_count)
+            return -1;
+        auto &task = batch_desc.task_list[task_id];
+        status.transferred_bytes = task.transferred_bytes;
+        uint64_t success_slice_count = task.success_slice_count;
+        uint64_t failed_slice_count = task.failed_slice_count;
+        if (success_slice_count + failed_slice_count ==
+            (uint64_t)task.slices.size())
+        {
+            if (failed_slice_count)
+                status.s = TransferStatusEnum::FAILED;
+            else
+                status.s = TransferStatusEnum::COMPLETED;
+            task.is_finished = true;
+        }
+        else
+        {
+            status.s = TransferStatusEnum::WAITING;
+        }
+        return 0;
+    }
+
     int TransferEngine::freeBatchID(BatchID batch_id)
     {
         RWSpinlock::WriteGuard guard(batch_desc_lock_);
