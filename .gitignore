@@ -5,6 +5,6 @@ build_ofed4
 old
 thirdparties
 local_test
-checkpoint_engine
+checkpoint
 go.sum
 *.so
