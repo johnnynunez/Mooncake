@@ -69,11 +69,12 @@ namespace mooncake
 
     int RdmaEndPoint::deconstruct()
     {
-        // for (size_t i = 0; i < qp_list_.size(); ++i) {
-        //     if (ibv_destroy_qp(qp_list_[i])) {
-        //         PLOG(ERROR) << "Failed to destroy QP";
-        //     }
-        // }
+        for (size_t i = 0; i < qp_list_.size(); ++i) {
+            if (ibv_destroy_qp(qp_list_[i])) {
+                PLOG(ERROR) << "Failed to destroy QP";
+                return -1;
+            }
+        }
         qp_list_.clear();
         delete[] wr_depth_list_;
         return 0;
@@ -81,16 +82,7 @@ namespace mooncake
 
     int RdmaEndPoint::destroyQP()
     {
-        for (int i = 0; i < qp_list_.size(); ++i)
-        {
-            LOG(INFO) << "Destroying QP " << i << " size " << qp_list_.size();
-            if (ibv_destroy_qp(qp_list_[i]))
-            {
-                PLOG(ERROR) << "Failed to destroy QP";
-                return -1;
-            }
-        }
-        return 0;
+        return deconstruct();
     }
 
     void RdmaEndPoint::setPeerNicPath(const std::string &peer_nic_path)

@@ -78,6 +78,7 @@ namespace mooncake
         for (auto &kv : endpoint_map_) {
             kv.second->destroyQP();
         }
+        return 0;
     }
 
     std::shared_ptr<RdmaEndPoint> SIEVEEndpointStore::getEndpoint(std::string peer_nic_path)
