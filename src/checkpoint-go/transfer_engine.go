@@ -24,7 +24,7 @@ func NewTransferEngine(metadata_uri string, local_server_name string, nic_priori
 	return engine, nil
 }
 
-func (engine *TransferEngine) Destroy() error {
+func (engine *TransferEngine) Close() error {
 	C.destroyTransferEngine(engine.engine)
 	return nil
 }
