@@ -22,6 +22,11 @@ namespace mooncake
     std::shared_ptr<RdmaEndPoint> FIFOEndpointStore::insertEndpoint(std::string peer_nic_path, RdmaContext *context)
     {
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
+        if (endpoint_map_.find(peer_nic_path) != endpoint_map_.end())
+        {
+            LOG(INFO) << "Endpoint " << peer_nic_path << " already exists in FIFOEndpointStore";
+            return endpoint_map_[peer_nic_path];
+        }
         auto endpoint = std::make_shared<RdmaEndPoint>(*context);
         if (!endpoint)
         {
@@ -90,12 +95,18 @@ namespace mooncake
             iter->second.second.store(true, std::memory_order_relaxed); // This is safe within read lock because of idempotence
             return iter->second.first;
         }
+        LOG(INFO) << "Endpoint " << peer_nic_path << " not found in SIEVEEndpointStore";
         return nullptr;
     }
 
     std::shared_ptr<RdmaEndPoint> SIEVEEndpointStore::insertEndpoint(std::string peer_nic_path, RdmaContext *context)
     {
         RWSpinlock::WriteGuard guard(endpoint_map_lock_);
+        if (endpoint_map_.find(peer_nic_path) != endpoint_map_.end())
+        {
+            LOG(INFO) << "Endpoint " << peer_nic_path << " already exists in FIFOEndpointStore";
+            return endpoint_map_[peer_nic_path].first;
+        }
         auto endpoint = std::make_shared<RdmaEndPoint>(*context);
         if (!endpoint)
         {
