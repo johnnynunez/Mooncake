@@ -11,10 +11,16 @@ import (
 
 const kCheckpointMetadataPrefix string = "moonshot/checkpoint/"
 
+type MemoryRange struct {
+	Addr   uint64
+	Length uint64
+}
+
 type CheckpointEngine struct {
 	metadataUri          string
 	goldCheckpointMap    map[string]struct{}
 	replicaCheckpointMap map[string]struct{}
+	memoryRanges         []MemoryRange
 	etcdClient           *clientv3.Client
 	localSegmentName     string
 	transferEngine       *TransferEngine
@@ -103,6 +109,56 @@ func (engine *CheckpointEngine) ToString() string {
 	return "CheckpointEngine: " + engine.metadataUri
 }
 
+// 检查是否有重叠并注册内存
+func (engine *CheckpointEngine) tryRegisterMemory(newRange MemoryRange) error {
+	engine.mu.Lock()
+	defer engine.mu.Unlock()
+
+	var toRegister []MemoryRange // 使用切片来存储需要注册的范围
+
+	for _, existing := range engine.memoryRanges {
+		if newRange.Addr < existing.Addr+existing.Length && existing.Addr < newRange.Addr+newRange.Length {
+			// 有重叠，计算未重叠部分
+			if newRange.Addr < existing.Addr { // 新范围在旧范围左边
+				toRegister = append(toRegister, MemoryRange{Addr: newRange.Addr, Length: existing.Addr - newRange.Addr})
+			}
+			if newRange.Addr+newRange.Length > existing.Addr+existing.Length { // 新范围在旧范围右边
+				toRegister = append(toRegister, MemoryRange{Addr: existing.Addr + existing.Length, Length: newRange.Addr + newRange.Length - (existing.Addr + existing.Length)})
+			}
+		}
+	}
+
+	// 注册新范围中不存在的部分
+	for _, r := range toRegister {
+		if r.Length > 0 {
+			err := engine.transferEngine.registerLocalMemory(uintptr(r.Addr), r.Length, "cpu:0")
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	// 最后注册整个新范围
+	// 检查新范围是否已经完全被覆盖
+	alreadyRegistered := false
+	for _, existing := range engine.memoryRanges {
+		if newRange.Addr >= existing.Addr && newRange.Addr+newRange.Length <= existing.Addr+existing.Length {
+			alreadyRegistered = true
+			break
+		}
+	}
+
+	if !alreadyRegistered {
+		err := engine.transferEngine.registerLocalMemory(uintptr(newRange.Addr), newRange.Length, "cpu:0")
+		if err != nil {
+			return err
+		}
+	}
+
+	engine.memoryRanges = append(engine.memoryRanges, newRange) // 更新已注册的范围
+	return nil
+}
+
 func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintptr, sizeList []uint64, shardSize uint64) error {
 	addrListLen := len(addrList)
 	if len(addrList) != len(sizeList) {
@@ -121,8 +177,11 @@ func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintp
 	checkpoint.ShardSize = shardSize
 	for i := 0; i < addrListLen; i++ {
 		addr, size := addrList[i], sizeList[i]
-		// 需求：transferEngine 需确保如果重复注册交叉的地址空间，也没有副作用
-		err := engine.transferEngine.registerLocalMemory(addr, size, "cpu:0")
+		memoryRange := MemoryRange{
+			Addr:   uint64(addr),
+			Length: size,
+		}
+		err := engine.tryRegisterMemory(memoryRange)
 		if err != nil {
 			return err
 		}
@@ -246,25 +305,28 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 
 	for i := 0; i < addrListLen; i++ {
 		addr, size := addrList[i], sizeList[i]
-		err := engine.transferEngine.registerLocalMemory(addr, size, "cpu:0")
+		memoryRange := MemoryRange{
+			Addr:   uint64(addr),
+			Length: size,
+		}
+		err := engine.tryRegisterMemory(memoryRange)
 		if err != nil {
 			return err
 		}
 		var offset uint64 = 0
 		for ; offset < size; offset += shardSize {
-			replicaLocation := Location{
-				SegmentName: engine.localSegmentName,
-				Offset:      uint64(addr) + offset,
-			}
 			shard := checkpoint.Shards[taskID]
-			location, _ := shard.GetRandomLocation()
+			location, err := shard.GetRandomLocation()
+			if err != nil {
+				return err
+			}
 			targetID, err := engine.transferEngine.getSegmentID(location.SegmentName)
 			if err != nil {
 				return err
 			}
 			request := TransferRequest{
 				Opcode:       OPCODE_READ,
-				Source:       replicaLocation.Offset,
+				Source:       uint64(addr) + offset,
 				TargetID:     targetID,
 				TargetOffset: location.Offset,
 				Length:       shard.Size,
@@ -279,11 +341,16 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 		return err
 	}
 
+	var retryTaskID []int
 	for taskID := 0; taskID < batchSize; taskID++ {
 		for {
 			status, _, err := engine.transferEngine.getTransferStatus(batchID, taskID)
-			if err != nil || status == STATUS_FAILED {
+			if err != nil {
 				return err
+			}
+			if status == STATUS_FAILED {
+				retryTaskID = append(retryTaskID, taskID)
+				break
 			}
 			if status == STATUS_COMPLETED {
 				break
@@ -296,9 +363,60 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 		return err
 	}
 
+	for _, task_id := range retryTaskID {
+		success := false
+		for retryTimes := 0; !success && retryTimes < 4; retryTimes++ {
+			request := requests[task_id]
+			shard := checkpoint.Shards[taskID]
+			location, err := shard.GetLocationWithRetries(retryTimes)
+			if err != nil {
+				return err
+			}
+			targetID, err := engine.transferEngine.getSegmentID(location.SegmentName)
+			if err != nil {
+				return err
+			}
+			request.TargetID = targetID
+			request.TargetOffset = location.Offset
+			batchID, err := engine.transferEngine.allocateBatchID(1)
+			if err != nil {
+				return err
+			}
+			err = engine.transferEngine.submitTransfer(batchID, []TransferRequest{request})
+			if err != nil {
+				return err
+			}
+			for {
+				status, _, err := engine.transferEngine.getTransferStatus(batchID, 0)
+				if err != nil {
+					return err
+				}
+				if status == STATUS_FAILED {
+					break
+				}
+				if status == STATUS_COMPLETED {
+					success = true
+					break
+				}
+			}
+			err = engine.transferEngine.freeBatchID(batchID)
+			if err != nil {
+				return err
+			}
+		}
+		if !success {
+			return errors.New("transfer failed")
+		}
+	}
+
+	return engine.finalizeGetLocalCheckpoint(name, addrList, sizeList, checkpoint, revision)
+}
+
+func (engine *CheckpointEngine) finalizeGetLocalCheckpoint(name string, addrList []uintptr, sizeList []uint64, checkpoint *Checkpoint, revision int64) error {
 	for {
-		taskID = 0
-		for i := 0; i < addrListLen; i++ {
+		taskID := 0
+		shardSize := checkpoint.ShardSize
+		for i := 0; i < len(addrList); i++ {
 			addr, size := addrList[i], sizeList[i]
 			var offset uint64 = 0
 			for ; offset < size; offset += shardSize {
