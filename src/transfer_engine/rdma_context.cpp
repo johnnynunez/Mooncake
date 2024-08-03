@@ -2,6 +2,7 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_context.h"
+#include "transfer_engine/endpoint_store.h"
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
@@ -9,6 +10,7 @@
 #include <atomic>
 #include <cassert>
 #include <fcntl.h>
+#include <memory>
 #include <sys/epoll.h>
 #include <thread>
 
@@ -43,7 +45,10 @@ namespace mooncake
                                size_t max_cqe,
                                int max_endpoints)
     {
-        max_endpoints_ = max_endpoints;
+        endpoint_store_ = std::make_shared<SIEVEEndpointStore>(max_endpoints);
+        if (!endpoint_store_)
+            return -1;
+
         if (openRdmaDevice(device_name_, port, gid_index))
             return -1;
 
@@ -60,6 +65,11 @@ namespace mooncake
 
         num_comp_channel_ = num_comp_channels;
         comp_channel_ = new ibv_comp_channel *[num_comp_channels];
+        if (!comp_channel_)
+        {
+            PLOG(ERROR) << "Failed to allocate comp_channel";
+            return -1;
+        }
         for (size_t i = 0; i < num_comp_channels; ++i)
         {
             comp_channel_[i] = ibv_create_comp_channel(context_);
@@ -101,24 +111,36 @@ namespace mooncake
 
         // TODO 确定网卡所属的 NUMA Socket，并且填充到 WorkerPool 的第二个构造函数中
         worker_pool_ = std::make_shared<WorkerPool>(*this);
+        if (!worker_pool_)
+        {
+            PLOG(ERROR) << "Failed to allocate worker pool";
+            return -1;
+        }
         return 0;
     }
 
     int RdmaContext::deconstruct()
     {
+        endpoint_store_->destroyQPs();
         worker_pool_.reset();
-        endpoint_map_.clear();
-        for (auto &entry : memory_region_list_)
-            ibv_dereg_mr(entry);
+        for (auto &entry : memory_region_list_) {
+            if (ibv_dereg_mr(entry)) {
+                PLOG(ERROR) << "Fail to deregister memory region";
+            }
+        }
         memory_region_list_.clear();
 
-        for (size_t i = 0; i < cq_list_.size(); ++i)
-            ibv_destroy_cq(cq_list_[i]);
+        for (size_t i = 0; i < cq_list_.size(); ++i) {
+            if (ibv_destroy_cq(cq_list_[i])) {
+                PLOG(ERROR) << "Fail to destroy CQ";
+            }
+        }
         cq_list_.clear();
 
         if (event_fd_ >= 0)
         {
-            close(event_fd_);
+            if (close(event_fd_))
+                PLOG(ERROR) << "Fail to close epoll fd";
             event_fd_ = -1;
         }
 
@@ -126,20 +148,23 @@ namespace mooncake
         {
             for (size_t i = 0; i < num_comp_channel_; ++i)
                 if (comp_channel_[i])
-                    ibv_destroy_comp_channel(comp_channel_[i]);
+                    if (ibv_destroy_comp_channel(comp_channel_[i]))
+                        PLOG(ERROR) << "Fail to destroy comp channel";
             delete[] comp_channel_;
             comp_channel_ = nullptr;
         }
 
         if (pd_)
         {
-            ibv_dealloc_pd(pd_);
+            if (ibv_dealloc_pd(pd_))
+                PLOG(ERROR) << "Fail to deallocate PD";
             pd_ = nullptr;
         }
 
         if (context_)
         {
-            ibv_close_device(context_);
+            if (ibv_close_device(context_))
+                PLOG(ERROR) << "Fail to close device";
             context_ = nullptr;
         }
 
@@ -149,6 +174,23 @@ namespace mooncake
 
     int RdmaContext::registerMemoryRegion(void *addr, size_t length, int access)
     {
+        // Currently if the memory region overlaps with existing one, return -1
+        // Or Merge it with existing mr?
+        {
+            RWSpinlock::ReadGuard guard(memory_regions_lock_);
+            for (const auto &entry : memory_region_list_) {
+                bool start_overlapped = entry->addr <= addr && addr < (char *)entry->addr + entry->length;
+                bool end_overlapped = entry->addr < (char *)addr + length && (char *)addr + length <= (char *)entry->addr + entry->length;
+                bool covered = addr <= entry->addr && (char *)entry->addr + entry->length <= (char *)addr + length;
+                if (start_overlapped || end_overlapped || covered)
+                {
+                    LOG(INFO) << "Memory region " << addr << " overlapped";
+                    return -1;
+                }
+            }
+        }
+
+        // No overlap, continue
         ibv_mr *mr = ibv_reg_mr(pd_, addr, length, access);
         if (!mr)
         {
@@ -178,6 +220,11 @@ namespace mooncake
             {
                 if ((*iter)->addr <= addr && addr < (char *)((*iter)->addr) + (*iter)->length)
                 {
+                    if (ibv_dereg_mr(*iter))
+                    {
+                        PLOG(ERROR) << "Fail to deregister memory region";
+                        return -1;
+                    }
                     memory_region_list_.erase(iter);
                     has_removed = true;
                     break;
@@ -216,58 +263,21 @@ namespace mooncake
             LOG(ERROR) << "Invalid peer nic path";
             return nullptr;
         }
-        {
-            RWSpinlock::ReadGuard guard(endpoint_map_lock_);
-            auto iter = endpoint_map_.find(peer_nic_path);
-            if (iter != endpoint_map_.end())
-                return iter->second;
+
+        auto endpoint = endpoint_store_->getEndpoint(peer_nic_path);
+        if (endpoint) {
+            return endpoint;
+        } else {
+            auto endpoint = endpoint_store_->insertEndpoint(peer_nic_path, this);
+            return endpoint;
         }
 
-        RWSpinlock::WriteGuard guard(endpoint_map_lock_);
-        auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end())
-            return iter->second;
-        auto endpoint = std::make_shared<RdmaEndPoint>(*this);
-        int ret = endpoint->construct(cq());
-        if (ret)
-            return nullptr;
-
-        while (endpoint_map_.size() >= max_endpoints_)
-            evictEndpoint();
-
-        endpoint->setPeerNicPath(peer_nic_path);
-        endpoint_map_[peer_nic_path] = endpoint;
-        fifo_list_.push_back(peer_nic_path);
-        auto it = fifo_list_.end();
-        fifo_map_[peer_nic_path] = --it;
-
-        return endpoint;
+        return nullptr;
     }
 
     int RdmaContext::deleteEndpoint(const std::string &peer_nic_path)
     {
-        RWSpinlock::WriteGuard guard(endpoint_map_lock_);
-        auto iter = endpoint_map_.find(peer_nic_path);
-        if (iter != endpoint_map_.end())
-        {
-            endpoint_map_.erase(iter);
-            auto fifo_iter = fifo_map_[peer_nic_path];
-            fifo_list_.erase(fifo_iter);
-            fifo_map_.erase(peer_nic_path);
-        }
-        return 0;
-    }
-
-    void RdmaContext::evictEndpoint()
-    {
-        if (fifo_list_.empty())
-            return;
-        std::string victim = fifo_list_.front();
-        fifo_list_.pop_front();
-        fifo_map_.erase(victim);
-        LOG(INFO) << victim << " evicted";
-        endpoint_map_.erase(victim);
-        return; // All endpoints are in use
+        return endpoint_store_->deleteEndpoint(peer_nic_path);
     }
 
     std::string RdmaContext::nicPath() const
@@ -328,7 +338,9 @@ namespace mooncake
             if (ibv_query_port(context, port, &attr))
             {
                 PLOG(WARNING) << "Fail to query port " << port << " on " << device_name;
-                ibv_close_device(context);
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
                 ibv_free_device_list(devices);
                 return -1;
             }
@@ -336,7 +348,9 @@ namespace mooncake
             if (attr.state != IBV_PORT_ACTIVE)
             {
                 LOG(WARNING) << "Device " << device_name << " port not active";
-                ibv_close_device(context);
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
                 ibv_free_device_list(devices);
                 return -1;
             }
@@ -345,7 +359,9 @@ namespace mooncake
             {
                 PLOG(WARNING) << "Device " << device_name
                               << " GID " << gid_index << " not available";
-                ibv_close_device(context);
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
                 ibv_free_device_list(devices);
                 return -1;
             }

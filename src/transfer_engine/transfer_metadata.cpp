@@ -227,6 +227,11 @@ namespace mooncake
         }
 
         auto desc = std::make_shared<SegmentDesc>();
+        if (!desc)
+        {
+            LOG(ERROR) << "Failed to allocate SegmentDesc object";
+            return nullptr;
+        }
         desc->name = serverJSON["name"].asString();
 
         for (const auto &deviceJSON : serverJSON["devices"])

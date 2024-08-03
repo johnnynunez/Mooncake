@@ -3,6 +3,8 @@
 
 #include "transfer_engine/rdma_endpoint.h"
 #include <cassert>
+#include <cstddef>
+#include <glog/logging.h>
 
 namespace mooncake
 {
@@ -27,13 +29,20 @@ namespace mooncake
                                 size_t max_wr_depth,
                                 size_t max_inline_bytes)
     {
-        if (status_.load(std::memory_order_relaxed) != INITIALIZING)
+        if (status_.load(std::memory_order_relaxed) != INITIALIZING) {
+            PLOG(ERROR) << "Endpoint has already been constructed";
             return -1;
+        }
 
         qp_list_.resize(num_qp_list);
 
         max_wr_depth_ = (int)max_wr_depth;
         wr_depth_list_ = new volatile int[num_qp_list];
+        if (!wr_depth_list_)
+        {
+            PLOG(ERROR) << "Failed to allocate memory";
+            return -1;
+        }
         for (size_t i = 0; i < num_qp_list; ++i)
         {
             wr_depth_list_[i] = 0;
@@ -60,11 +69,20 @@ namespace mooncake
 
     int RdmaEndPoint::deconstruct()
     {
-        for (size_t i = 0; i < qp_list_.size(); ++i)
-            ibv_destroy_qp(qp_list_[i]);
+        for (size_t i = 0; i < qp_list_.size(); ++i) {
+            if (ibv_destroy_qp(qp_list_[i])) {
+                PLOG(ERROR) << "Failed to destroy QP";
+                return -1;
+            }
+        }
         qp_list_.clear();
         delete[] wr_depth_list_;
         return 0;
+    }
+
+    int RdmaEndPoint::destroyQP()
+    {
+        return deconstruct();
     }
 
     void RdmaEndPoint::setPeerNicPath(const std::string &peer_nic_path)
@@ -96,7 +114,6 @@ namespace mooncake
         if (peer_server_name.empty() || peer_nic_name.empty())
         {
             LOG(ERROR) << "Invalid argument " << peer_server_name << " " << peer_nic_name;
-            assert(false);
             return -1;
         }
 
