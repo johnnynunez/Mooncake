@@ -140,6 +140,8 @@ namespace mooncake
     TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
     {
         auto batch_desc = std::make_shared<BatchDesc>();
+        if (!batch_desc)
+            return -1;
         batch_desc->id = BatchID(batch_desc.get());
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
@@ -404,6 +406,9 @@ namespace mooncake
         for (auto &device_name : device_name_list_)
         {
             auto context = std::make_shared<RdmaContext>(*this, device_name);
+            if (!context) {
+                return -1;
+            }
             if (context->construct())
                 return -1;
             device_speed_list.push_back(context->activeSpeed());

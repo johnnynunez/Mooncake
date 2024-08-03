@@ -323,7 +323,7 @@ TaskID CacheAllocator::makeGet(ObjectKey key, PtrType type, std::vector<void *> 
 
 void CacheAllocator::registerBuffer(std::string type, int segment_id, size_t base, size_t size) {
      // 创建新的 BufferAllocator 实例
-    BufferAllocator new_allocator(type, segment_id, base, size);
+    BufferAllocator new_allocator(type, segment_id, base, size, (void*)0x10000000);
 
     // 检查 type 是否存在
     auto type_it = buf_allocators_.find(type);

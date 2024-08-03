@@ -80,6 +80,10 @@ namespace mooncake
         // 下一次可以连接到不同的远端 NIC（本地 NIC 固定）
         void disconnect();
 
+        // 只有 QP 被 destroy 之后，与之关联的 CQ 才能被 destroy
+        // 在 RdmaContext 的析构函数 destroy CQ 之前需要先手动调用该函数 destroy 掉 QP
+        int destroyQP();
+
     private:
         void disconnectUnlocked();
 
