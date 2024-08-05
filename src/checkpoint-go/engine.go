@@ -159,7 +159,7 @@ func (engine *CheckpointEngine) tryRegisterMemory(newRange MemoryRange) error {
 	return nil
 }
 
-func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintptr, sizeList []uint64, shardSize uint64) error {
+func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintptr, sizeList []uint64, maxShardSize uint64) error {
 	addrListLen := len(addrList)
 	if len(addrList) != len(sizeList) {
 		return errors.New("addrList and sizeList must be equal")
@@ -174,7 +174,7 @@ func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintp
 
 	var checkpoint Checkpoint
 	checkpoint.Name = name
-	checkpoint.ShardSize = shardSize
+	checkpoint.MaxShardSize = maxShardSize
 	for i := 0; i < addrListLen; i++ {
 		addr, size := addrList[i], sizeList[i]
 		memoryRange := MemoryRange{
@@ -186,8 +186,8 @@ func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintp
 			return err
 		}
 		var offset uint64 = 0
-		for ; offset < size; offset += shardSize {
-			shardLength := shardSize
+		for ; offset < size; offset += maxShardSize {
+			shardLength := maxShardSize
 			if shardLength > size-offset {
 				shardLength = size - offset
 			}
@@ -242,10 +242,10 @@ func (engine *CheckpointEngine) UnregisterCheckpoint(name string) error {
 }
 
 type CheckpointInfo struct {
-	Name      string
-	ShardSize uint64
-	TotalSize uint64
-	SizeList  []uint64
+	Name         string
+	MaxShardSize uint64
+	TotalSize    uint64
+	SizeList     []uint64
 }
 
 func (engine *CheckpointEngine) GetCheckpointInfo(namePrefix string) ([]CheckpointInfo, error) {
@@ -256,9 +256,9 @@ func (engine *CheckpointEngine) GetCheckpointInfo(namePrefix string) ([]Checkpoi
 	}
 	for _, checkpoint := range checkpoints {
 		checkpointInfo := CheckpointInfo{
-			Name:      checkpoint.Name,
-			TotalSize: checkpoint.Size,
-			ShardSize: checkpoint.ShardSize,
+			Name:         checkpoint.Name,
+			TotalSize:    checkpoint.Size,
+			MaxShardSize: checkpoint.MaxShardSize,
 		}
 		for _, shard := range checkpoint.Shards {
 			checkpointInfo.SizeList = append(checkpointInfo.SizeList, shard.Size)
@@ -295,7 +295,7 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 
 	batchSize := len(checkpoint.Shards)
 	taskID := 0
-	shardSize := checkpoint.ShardSize
+	maxShardSize := checkpoint.MaxShardSize
 	var requests []TransferRequest
 
 	batchID, err := engine.transferEngine.allocateBatchID(batchSize)
@@ -314,7 +314,7 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 			return err
 		}
 		var offset uint64 = 0
-		for ; offset < size; offset += shardSize {
+		for ; offset < size; offset += maxShardSize {
 			shard := checkpoint.Shards[taskID]
 			location, err := shard.GetRandomLocation()
 			if err != nil {
@@ -415,11 +415,11 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 func (engine *CheckpointEngine) finalizeGetLocalCheckpoint(name string, addrList []uintptr, sizeList []uint64, checkpoint *Checkpoint, revision int64) error {
 	for {
 		taskID := 0
-		shardSize := checkpoint.ShardSize
+		maxShardSize := checkpoint.MaxShardSize
 		for i := 0; i < len(addrList); i++ {
 			addr, size := addrList[i], sizeList[i]
 			var offset uint64 = 0
-			for ; offset < size; offset += shardSize {
+			for ; offset < size; offset += maxShardSize {
 				replicaLocation := Location{
 					SegmentName: engine.localSegmentName,
 					Offset:      uint64(addr) + offset,

@@ -42,7 +42,7 @@ type Shard struct {
 type Checkpoint struct {
 	Name      string  `json:"name"`
 	Size      uint64  `json:"size"`
-	ShardSize uint64  `json:"shard_size"`
+	MaxShardSize uint64  `json:"max_shard_size"`
 	Shards    []Shard `json:"shards"`
 }
 
