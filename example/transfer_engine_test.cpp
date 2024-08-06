@@ -28,13 +28,13 @@
 
 */
 
-DEFINE_string(metadata_server, "optane21:12345", "etcd server host address");
+DEFINE_string(metadata_server, "test-8:2379", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
 DEFINE_string(operation, "read", "Operation type: read or write");
-DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}", "NIC priority matrix");
-DEFINE_string(segment_id, "optane20", "Segment ID to access data");
+DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_0\", \"mlx5_1\", \"mlx5_2\", \"mlx5_3\"], []]}", "NIC priority matrix");
+DEFINE_string(segment_id, "test-8", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");
@@ -142,6 +142,7 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
 
         ret = engine->submitTransfer(batch_id, requests);
         LOG_ASSERT(!ret);
+        /*
         std::vector<TransferStatus> status;
         while (true)
         {
@@ -158,6 +159,22 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
                 if (failed)
                     LOG(WARNING) << "Found " << failed << " failures in this batch";
                 break;
+            }
+        }
+        */
+
+        for (int task_id = 0; task_id < FLAGS_batch_size; ++task_id)
+        {
+            bool completed = false;
+            TransferStatus status;
+            while (!completed) 
+            {
+                int ret = engine->getTransferStatus(batch_id, task_id, status);
+                LOG_ASSERT(!ret);
+                if (status.s == TransferStatusEnum::COMPLETED)
+                    completed = true;
+                else if (status.s == TransferStatusEnum::FAILED)
+                    completed = true;
             }
         }
 

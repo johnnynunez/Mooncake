@@ -89,6 +89,16 @@ namespace mooncake
                 entry.second.clear();
                 continue;
             }
+#ifdef USE_FAKE_POST_SEND
+            for (auto &slice : entry.second)
+            {
+                slice->status = TransferEngine::Slice::SUCCESS;
+                __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
+                __sync_fetch_and_add(&slice->task->success_slice_count, 1);
+                processed_slice_count_++;
+            }
+            entry.second.clear();
+#else
             std::vector<TransferEngine::Slice *> failed_slice_list;
             if (endpoint->submitPostSend(entry.second, failed_slice_list))
             {
@@ -96,6 +106,7 @@ namespace mooncake
                     processFailedSlice(slice);
             }
             slice_list_map_size += entry.second.size();
+#endif
         }
         slice_list_map_size_.store(slice_list_map_size, std::memory_order_relaxed);
     }
@@ -184,7 +195,9 @@ namespace mooncake
                 }
             }
             performPostSend();
+#ifndef USE_FAKE_POST_SEND
             performPollCq();
+#endif
         }
     }
 

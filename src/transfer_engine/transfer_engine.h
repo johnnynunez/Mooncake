@@ -179,7 +179,7 @@ namespace mooncake
         int startHandshakeDaemon();
 
     public:
-        static int selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id, int retry_cnt = 0);
+        static int selectDevice(SegmentDesc *desc, uint64_t offset, int &buffer_id, int &device_id, int retry_cnt = 0);
 
     private:
         struct TransferTask;
@@ -221,14 +221,22 @@ namespace mooncake
                 } nvmeof;
             };
 
-            std::shared_ptr<SegmentDesc> peer_segment_desc;
+            // TODO remove it
+            SegmentDesc *peer_segment_desc;
             SliceStatus status;
             TransferTask *task;
         };
 
         struct TransferTask
         {
-            std::vector<std::unique_ptr<Slice>> slices;
+            ~TransferTask() 
+            {
+                for (auto &entry : slices)
+                    delete entry;
+                slices.clear();
+            }
+
+            std::vector<Slice *> slices;
             volatile uint64_t success_slice_count = 0;
             volatile uint64_t failed_slice_count = 0;
             volatile uint64_t transferred_bytes = 0;
