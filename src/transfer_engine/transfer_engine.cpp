@@ -139,15 +139,17 @@ namespace mooncake
 
     TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
     {
-        auto batch_desc = std::make_shared<BatchDesc>();
+        auto batch_desc = new BatchDesc();
         if (!batch_desc)
             return -1;
-        batch_desc->id = BatchID(batch_desc.get());
+        batch_desc->id = BatchID(batch_desc);
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
+#ifdef CONFIG_USE_BATCH_DESC_SET
         batch_desc_lock_.lock();
         batch_desc_set_[batch_desc->id] = batch_desc;
         batch_desc_lock_.unlock();
+#endif
         return batch_desc->id;
     }
 
@@ -178,7 +180,7 @@ namespace mooncake
             const static size_t kBlockSize = 65536;
             for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
             {
-                auto slice = std::make_unique<Slice>();
+                auto slice = new Slice();
                 slice->source_addr = (char *)request.source + offset;
                 slice->length = std::min(request.length - offset, kBlockSize);
                 slice->opcode = request.opcode;
@@ -187,7 +189,7 @@ namespace mooncake
                 auto &local_segment_desc = segment_desc_map[LOCAL_SEGMENT_ID];
                 std::string device_name;
                 int buffer_id = 0, device_id = 0;
-                if (selectDevice(local_segment_desc, (uint64_t)slice->source_addr, buffer_id, device_id))
+                if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Unrecorgnized source address " << slice->source_addr;
                     return -1;
@@ -198,10 +200,10 @@ namespace mooncake
                 slice->rdma.max_retry_cnt = 4;
                 slice->task = &task;
                 slice->status = Slice::PENDING;
-                slice->peer_segment_desc = segment_desc_map[request.target_id];
-                slices_to_post[context].push_back(slice.get());
+                slice->peer_segment_desc = segment_desc_map[request.target_id].get();
+                slices_to_post[context].push_back(slice);
                 task.total_bytes += slice->length;
-                task.slices.push_back(std::move(slice));
+                task.slices.push_back(slice);
             }
         }
         for (auto &entry : slices_to_post)
@@ -267,7 +269,6 @@ namespace mooncake
 
     int TransferEngine::freeBatchID(BatchID batch_id)
     {
-        RWSpinlock::WriteGuard guard(batch_desc_lock_);
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
@@ -278,7 +279,11 @@ namespace mooncake
                 return -1;
             }
         }
+        delete &batch_desc;
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        RWSpinlock::WriteGuard guard(batch_desc_lock_);
         batch_desc_set_.erase(batch_id);
+#endif
         return 0;
     }
 
@@ -439,7 +444,7 @@ namespace mooncake
                       std::placeholders::_1, std::placeholders::_2));
     }
 
-    int TransferEngine::selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id, int retry_count)
+    int TransferEngine::selectDevice(SegmentDesc *desc, uint64_t offset, int &buffer_id, int &device_id, int retry_count)
     {
         for (buffer_id = 0; buffer_id < (int)desc->buffers.size(); ++buffer_id)
         {
