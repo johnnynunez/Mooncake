@@ -74,6 +74,11 @@ namespace mooncake
 
     TransferEngine::~TransferEngine()
     {
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        for (auto &entry : batch_desc_set_)
+            delete entry.second;
+        batch_desc_set_.clear();
+#endif
         removeLocalSegmentDesc();
         segment_id_to_desc_map_.clear();
         segment_name_to_id_map_.clear();
@@ -190,7 +195,7 @@ namespace mooncake
                 auto &local_segment_desc = segment_desc_map[LOCAL_SEGMENT_ID];
                 std::string device_name;
                 int buffer_id = 0, device_id = 0;
-                if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, buffer_id, device_id))
+                if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, slice->length, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Unrecorgnized source address " << slice->source_addr;
                     return -1;
@@ -437,12 +442,12 @@ namespace mooncake
                       std::placeholders::_1, std::placeholders::_2));
     }
 
-    int TransferEngine::selectDevice(SegmentDesc *desc, uint64_t offset, int &buffer_id, int &device_id, int retry_count)
+    int TransferEngine::selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_count)
     {
         for (buffer_id = 0; buffer_id < (int)desc->buffers.size(); ++buffer_id)
         {
             auto &buffer_desc = desc->buffers[buffer_id];
-            if (buffer_desc.addr > offset || offset >= buffer_desc.addr + buffer_desc.length)
+            if (buffer_desc.addr > offset || offset + length >= buffer_desc.addr + buffer_desc.length)
                 continue;
 
             auto &priority = desc->priority_matrix[buffer_desc.name];

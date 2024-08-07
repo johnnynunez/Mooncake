@@ -41,7 +41,7 @@ namespace mooncake
         {
             auto &peer_segment_desc = slice->peer_segment_desc;
             int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, buffer_id, device_id))
+            if (TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, slice->length, buffer_id, device_id))
             {
                 LOG(ERROR) << "Unrecorgnized target address " << slice->rdma.dest_addr << " on " << peer_segment_desc->name;
                 return -1;
@@ -162,7 +162,7 @@ namespace mooncake
             slice->rdma.retry_cnt++;
             auto &peer_segment_desc = slice->peer_segment_desc;
             int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, buffer_id, device_id, slice->rdma.retry_cnt))
+            if (TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
             {
                 slice->status = TransferEngine::Slice::FAILED;
                 __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
