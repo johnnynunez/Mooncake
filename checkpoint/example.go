@@ -8,8 +8,6 @@ import (
 	"unsafe"
 )
 
-// 定义说明，定量表征，优化样例覆盖性不全，结论（做了什么，达到了什么效果）
-
 func main() {
 	if len(os.Args) < 2 {
 		fmt.Printf("Usage: %s [trainer|inferencer]\n", os.Args[0])
@@ -36,7 +34,7 @@ func trainer() {
 	}
 
 	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]]}"
-	checkpointEngine, err := NewCheckpointEngine("http://optane21:2379", hostname, nicPriorityMatrix)
+	checkpointEngine, err := NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
 		os.Exit(1)
@@ -94,7 +92,7 @@ func inferencer() {
 	}
 
 	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]]}"
-	checkpointEngine, err := NewCheckpointEngine("http://optane21:2379", hostname, nicPriorityMatrix)
+	checkpointEngine, err := NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
 		os.Exit(1)

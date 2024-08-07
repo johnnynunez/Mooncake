@@ -40,36 +40,74 @@ type Shard struct {
 }
 
 type Checkpoint struct {
-	Name      string  `json:"name"`
-	Size      uint64  `json:"size"`
+	Name         string  `json:"name"`
+	Size         uint64  `json:"size"`
 	MaxShardSize uint64  `json:"max_shard_size"`
-	Shards    []Shard `json:"shards"`
+	Shards       []Shard `json:"shards"`
 }
 
-func (s *Shard) GetRandomLocation() (*Location, error) {
+func (s *Shard) GetLocation(retryTimes int) *Location {
+	if retryTimes == 0 {
+		return s.getRandomLocation()
+	} else {
+		return s.getRetryLocation(retryTimes - 1)
+	}
+}
+
+func (s *Shard) getRandomLocation() *Location {
 	r := rand.New(rand.NewSource(time.Now().UnixNano()))
 	if len(s.ReplicaList) > 0 {
 		index := r.Intn(len(s.ReplicaList))
-		return &s.ReplicaList[index], nil
+		return &s.ReplicaList[index]
 	} else if len(s.Gold) > 0 {
 		index := r.Intn(len(s.Gold))
-		return &s.Gold[index], nil
+		return &s.Gold[index]
 	}
-	return nil, fmt.Errorf("no locations available")
+	return nil
 }
 
-func (s *Shard) GetLocationWithRetries(retryTimes int) (*Location, error) {
+func (s *Shard) getRetryLocation(retryTimes int) *Location {
 	if len(s.ReplicaList) > retryTimes {
-		return &s.ReplicaList[retryTimes], nil
+		return &s.ReplicaList[retryTimes]
 	}
 	retryTimes -= len(s.ReplicaList)
 	if len(s.Gold) > retryTimes {
-		return &s.Gold[retryTimes], nil
+		return &s.Gold[retryTimes]
 	}
-	return nil, fmt.Errorf("no locations available")
+	return nil
 }
 
-func (engine *CheckpointEngine) putCheckpointMetadata(name string, checkpoint *Checkpoint) error {
+func (s *Checkpoint) IsEmpty() bool {
+	for _, shard := range s.Shards {
+		if len(shard.Gold) != 0 || len(shard.ReplicaList) != 0 {
+			return false
+		}
+	}
+	return true
+}
+
+type Metadata struct {
+	etcdClient *clientv3.Client
+}
+
+func NewMetadata(metadataUri string) (*Metadata, error) {
+	etcdClient, err := clientv3.New(clientv3.Config{
+		Endpoints:   []string{metadataUri},
+		DialTimeout: 5 * time.Second,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &Metadata{etcdClient: etcdClient}, nil
+}
+
+func (metadata *Metadata) Close() error {
+	return metadata.etcdClient.Close()
+}
+
+func (metadata *Metadata) Create(name string, checkpoint *Checkpoint) error {
 	jsonData, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
@@ -77,7 +115,7 @@ func (engine *CheckpointEngine) putCheckpointMetadata(name string, checkpoint *C
 	key := kCheckpointMetadataPrefix + name
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	txnResp, err := engine.etcdClient.Txn(ctx).
+	txnResp, err := metadata.etcdClient.Txn(ctx).
 		If(clientv3.Compare(clientv3.Version(key), "=", 0)).
 		Then(clientv3.OpPut(key, string(jsonData))).
 		Commit()
@@ -90,7 +128,7 @@ func (engine *CheckpointEngine) putCheckpointMetadata(name string, checkpoint *C
 	return nil
 }
 
-func (engine *CheckpointEngine) forcePutCheckpointMetadata(name string, checkpoint *Checkpoint) error {
+func (metadata *Metadata) Put(name string, checkpoint *Checkpoint) error {
 	jsonData, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
@@ -98,34 +136,44 @@ func (engine *CheckpointEngine) forcePutCheckpointMetadata(name string, checkpoi
 	key := kCheckpointMetadataPrefix + name
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	_, err = engine.etcdClient.Put(ctx, key, string(jsonData))
+	_, err = metadata.etcdClient.Put(ctx, key, string(jsonData))
 	return err
 }
 
-func (engine *CheckpointEngine) updateCheckpointMetadata(name string, checkpoint *Checkpoint, revision int64) (bool, error) {
-	jsonData, err := json.Marshal(checkpoint)
-	if err != nil {
-		return false, err
-	}
+func (metadata *Metadata) Update(name string, checkpoint *Checkpoint, revision int64) (bool, error) {
 	key := kCheckpointMetadataPrefix + name
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	txnResp, err := engine.etcdClient.Txn(ctx).
-		If(clientv3.Compare(clientv3.ModRevision(key), "=", revision)).
-		Then(clientv3.OpPut(key, string(jsonData))).
-		Commit()
-	if err != nil {
-		return false, err
+	if checkpoint.IsEmpty() {
+		txnResp, err := metadata.etcdClient.Txn(ctx).
+			If(clientv3.Compare(clientv3.ModRevision(key), "=", revision)).
+			Then(clientv3.OpDelete(key)).
+			Commit()
+		if err != nil {
+			return false, err
+		}
+		return txnResp.Succeeded, nil
+	} else {
+		jsonData, err := json.Marshal(checkpoint)
+		if err != nil {
+			return false, err
+		}
+		txnResp, err := metadata.etcdClient.Txn(ctx).
+			If(clientv3.Compare(clientv3.ModRevision(key), "=", revision)).
+			Then(clientv3.OpPut(key, string(jsonData))).
+			Commit()
+		if err != nil {
+			return false, err
+		}
+		return txnResp.Succeeded, nil
 	}
-	return txnResp.Succeeded, nil
 }
 
-// 问题：如果传入的 etcd uri 关闭了，engine.etcdClient.Get 会被永久性阻塞。为何？
-func (engine *CheckpointEngine) getCheckpointMetadata(name string) (*Checkpoint, int64, error) {
+func (metadata *Metadata) Get(name string) (*Checkpoint, int64, error) {
 	key := kCheckpointMetadataPrefix + name
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	response, err := engine.etcdClient.Get(ctx, key)
+	response, err := metadata.etcdClient.Get(ctx, key)
 	if err != nil {
 		return nil, -1, err
 	}
@@ -140,12 +188,12 @@ func (engine *CheckpointEngine) getCheckpointMetadata(name string) (*Checkpoint,
 	return nil, -1, nil
 }
 
-func (engine *CheckpointEngine) listCheckpointMetadata(namePrefix string) ([]*Checkpoint, error) {
+func (metadata *Metadata) List(namePrefix string) ([]*Checkpoint, error) {
 	startRange := kCheckpointMetadataPrefix + namePrefix
 	stopRange := kCheckpointMetadataPrefix + namePrefix + string([]byte{0xFF})
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	response, err := engine.etcdClient.Get(ctx, startRange, clientv3.WithRange(stopRange))
+	response, err := metadata.etcdClient.Get(ctx, startRange, clientv3.WithRange(stopRange))
 	if err != nil {
 		return nil, err
 	}
