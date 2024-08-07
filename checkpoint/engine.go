@@ -42,11 +42,11 @@ func NewCheckpointEngine(metadataUri string, localSegmentName string, nicPriorit
 }
 
 func (engine *CheckpointEngine) Close() error {
-	err := engine.metadata.Close()
+	err := engine.transferEngine.Close()
 	if err != nil {
 		return err
 	}
-	err = engine.transferEngine.Close()
+	err = engine.metadata.Close()
 	if err != nil {
 		return err
 	}
@@ -78,6 +78,7 @@ func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintp
 	var checkpoint Checkpoint
 	checkpoint.Name = name
 	checkpoint.MaxShardSize = maxShardSize
+	checkpoint.SizeList = sizeList
 	for i := 0; i < addrListLen; i++ {
 		addr, size := addrList[i], sizeList[i]
 		err := engine.registeredMemory.Add(addr, size)
@@ -157,10 +158,10 @@ func (engine *CheckpointEngine) UnregisterCheckpoint(name string) error {
 }
 
 type CheckpointInfo struct {
-	Name         string
-	MaxShardSize uint64
-	TotalSize    uint64
-	SizeList     []uint64
+	Name         string   // Checkpoint 文件的完整名称
+	MaxShardSize uint64   // RegisterCheckpoint 传入的 maxShardSize
+	TotalSize    uint64   // RegisterCheckpoint 传入的 sizeList 累加起来的总长度
+	SizeList     []uint64 // RegisterCheckpoint 传入的 sizeList
 }
 
 func (engine *CheckpointEngine) GetCheckpointInfo(namePrefix string) ([]CheckpointInfo, error) {
@@ -174,12 +175,8 @@ func (engine *CheckpointEngine) GetCheckpointInfo(namePrefix string) ([]Checkpoi
 			Name:         checkpoint.Name,
 			TotalSize:    checkpoint.Size,
 			MaxShardSize: checkpoint.MaxShardSize,
+			SizeList:     checkpoint.SizeList,
 		}
-		for _, shard := range checkpoint.Shards {
-			checkpointInfo.SizeList = append(checkpointInfo.SizeList, shard.Size)
-			checkpointInfo.TotalSize += shard.Size
-		}
-
 		result = append(result, checkpointInfo)
 	}
 	return result, nil

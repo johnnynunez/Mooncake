@@ -13,7 +13,8 @@ import (
 // key = ckpt_name/xxx
 // value = {
 // 	size: 1GB
-// 	shard_size: 128MB
+// 	max_shard_size: 128MB
+//  size_list: [X, X, X,...]
 // 	shards: [
 // 	{
 // 		size: addrSize[0]
@@ -25,7 +26,7 @@ import (
 // 		gold: [{ segment_name: 'megatron_segment_name', offset: addrList[1]}]
 // 		replica_list: [{segment_name: X, offset: Y}, {segment_name: X, offset: Y}]
 // 	}
-// 	]
+// 	],
 // };
 
 type Location struct {
@@ -40,10 +41,11 @@ type Shard struct {
 }
 
 type Checkpoint struct {
-	Name         string  `json:"name"`
-	Size         uint64  `json:"size"`
-	MaxShardSize uint64  `json:"max_shard_size"`
-	Shards       []Shard `json:"shards"`
+	Name         string   `json:"name"`
+	Size         uint64   `json:"size"`
+	SizeList     []uint64 `json:"size_list"`
+	MaxShardSize uint64   `json:"max_shard_size"`
+	Shards       []Shard  `json:"shards"`
 }
 
 func (s *Shard) GetLocation(retryTimes int) *Location {
