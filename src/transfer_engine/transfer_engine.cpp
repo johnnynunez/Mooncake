@@ -4,6 +4,7 @@
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
+#include "transfer_engine/config.h"
 
 #include <cassert>
 #include <cstddef>
@@ -414,21 +415,13 @@ namespace mooncake
             if (!context) {
                 return -1;
             }
-            const static size_t kNumCqList = 1;
-            size_t kNumCompChannels = 1;
-            uint8_t port = 1;
-            int gid_index = 3;
-            const char* port_env = std::getenv("NCCL_IB_PORT");
-            if (port_env)
-            {
-                int val = atoi(port_env);
-                if (val >= 0 && val < 256) 
-                    port = uint8_t(val);
-            }
-            const char* gid_index_env = std::getenv("NCCL_IB_GID_INDEX");
-            if (gid_index_env)
-                gid_index = atoi(gid_index_env);
-            if (context->construct(kNumCqList, kNumCompChannels, port, gid_index))
+            auto &config = globalConfig();
+            if (context->construct(config.num_cq_per_ctx, 
+                                   config.num_comp_channels_per_ctx, 
+                                   config.port, 
+                                   config.gid_index,
+                                   config.max_cqe,
+                                   config.max_ep_per_ctx))
                 return -1;
             device_speed_list.push_back(context->activeSpeed());
             context_list_.push_back(context);

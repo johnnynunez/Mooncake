@@ -6,6 +6,7 @@
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
+#include "transfer_engine/config.h"
 
 #include <atomic>
 #include <cassert>
