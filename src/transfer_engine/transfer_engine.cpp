@@ -447,7 +447,7 @@ namespace mooncake
         for (buffer_id = 0; buffer_id < (int)desc->buffers.size(); ++buffer_id)
         {
             auto &buffer_desc = desc->buffers[buffer_id];
-            if (buffer_desc.addr > offset || offset + length >= buffer_desc.addr + buffer_desc.length)
+            if (buffer_desc.addr > offset || offset + length > buffer_desc.addr + buffer_desc.length)
                 continue;
 
             auto &priority = desc->priority_matrix[buffer_desc.name];
