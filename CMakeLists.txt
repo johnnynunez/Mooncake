@@ -1,8 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
-project(mooncake CXX)
+project(mooncake C CXX)
 
+set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
-set(CMAKE_CXX_FLAGS "-O3 -g -Wall --std=c++17")
+set(CAMEK_C_FLAGS "-O3 -g -Wall")
+set(CMAKE_CXX_FLAGS "-O3 -g -Wall")
+
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 

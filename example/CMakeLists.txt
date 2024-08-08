@@ -18,3 +18,6 @@ target_link_libraries(gpu_test_client PUBLIC transfer_engine)
 
 add_executable(endpoint_test endpoint_test.cpp)
 target_link_libraries(endpoint_test PUBLIC transfer_engine)
+
+add_executable(xport_test xport_test.c)
+target_link_libraries(xport_test PUBLIC transfer_engine)

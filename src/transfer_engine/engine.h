@@ -57,7 +57,7 @@ struct transfer_status
 struct transfer_segment
 {
     /// @brief transport instance
-    Transport *xport;
+    transport *xport;
     /// @brief transport-specific context
     void *context;
 };
@@ -65,7 +65,7 @@ struct transfer_segment
 struct transfer_batch
 {
     /// @brief transfer batch, should be a Transport*
-    Transport *xport;
+    transport *xport;
     /// @brief maximum number of outstanding work requests
     unsigned max_nr;
     /// @brief transport-specific context
