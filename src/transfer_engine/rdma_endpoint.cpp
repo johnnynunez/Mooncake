@@ -101,8 +101,8 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(lock_);
         if (connected())
         {
-            LOG(WARNING) << "Previous connection is discarded";
-            disconnectUnlocked();
+            LOG(WARNING) << "Connection already connected";
+            return 0;
         }
         HandShakeDesc local_desc, peer_desc;
         local_desc.local_nic_path = context_.nicPath();
@@ -214,7 +214,7 @@ namespace mooncake
                                      std::vector<TransferEngine::Slice *> &failed_slice_list)
     {
         RWSpinlock::WriteGuard guard(lock_);
-        int qp_index = lrand48() % qp_list_.size();
+        int qp_index = SimpleRandom::Get().next(qp_list_.size());
         int wr_count = std::min(max_wr_depth_ - wr_depth_list_[qp_index], (int)slice_list.size());
         if (wr_count == 0)
             return 0;

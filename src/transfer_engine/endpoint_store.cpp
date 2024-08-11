@@ -101,7 +101,7 @@ namespace mooncake
             iter->second.second.store(true, std::memory_order_relaxed); // This is safe within read lock because of idempotence
             return iter->second.first;
         }
-        LOG(INFO) << "Endpoint " << peer_nic_path << " not found in SIEVEEndpointStore";
+        // LOG(INFO) << "Endpoint " << peer_nic_path << " not found in SIEVEEndpointStore";
         return nullptr;
     }
 

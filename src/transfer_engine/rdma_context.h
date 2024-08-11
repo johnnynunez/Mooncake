@@ -92,9 +92,9 @@ namespace mooncake
 
         int eventFd() const { return event_fd_; }
 
-        ibv_cq *cq() const { return cq_list_[0]; }
+        ibv_cq *cq();
 
-        int cqCount() const { return 1; }
+        int cqCount() const { return cq_list_.size(); }
 
         int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
 
@@ -134,6 +134,7 @@ namespace mooncake
 
         std::atomic<int> next_comp_channel_index_;
         std::atomic<int> next_comp_vector_index_;
+        std::atomic<int> next_cq_list_index_;
 
         std::shared_ptr<WorkerPool> worker_pool_;
     };

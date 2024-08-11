@@ -459,10 +459,11 @@ namespace mooncake
 
             if (retry_count == 0)
             {
+                int rand_value = SimpleRandom::Get().next();
                 if (preferred_rnic_list_len)
-                    device_id = priority.preferred_rnic_id_list[lrand48() % preferred_rnic_list_len];
+                    device_id = priority.preferred_rnic_id_list[rand_value % preferred_rnic_list_len];
                 else
-                    device_id = priority.available_rnic_id_list[lrand48() % available_rnic_list_len];
+                    device_id = priority.available_rnic_id_list[rand_value % available_rnic_list_len];
             }
             else
             {
