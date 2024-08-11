@@ -1,9 +1,11 @@
-package main
+package checkpoint
 
 import (
+	"context"
 	"errors"
 	"log"
 	"sync"
+	"time"
 )
 
 const kCheckpointMetadataPrefix string = "moonshot/checkpoint/"
@@ -75,6 +77,9 @@ func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintp
 		return errors.New("has gold or replica checkpoint")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var checkpoint Checkpoint
 	checkpoint.Name = name
 	checkpoint.MaxShardSize = maxShardSize
@@ -104,7 +109,7 @@ func (engine *CheckpointEngine) RegisterCheckpoint(name string, addrList []uintp
 		}
 	}
 
-	err := engine.metadata.Put(name, &checkpoint)
+	err := engine.metadata.Put(name, &checkpoint, ctx)
 	if err != nil {
 		return err
 	}
@@ -125,8 +130,11 @@ func (engine *CheckpointEngine) UnregisterCheckpoint(name string) error {
 		return errors.New("checkpoint seems not registered")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	for {
-		checkpoint, revision, err := engine.metadata.Get(name)
+		checkpoint, revision, err := engine.metadata.Get(name, ctx)
 		if err != nil {
 			return err
 		}
@@ -139,7 +147,7 @@ func (engine *CheckpointEngine) UnregisterCheckpoint(name string) error {
 			checkpoint.Shards[index].Gold = nil
 		}
 
-		success, err := engine.metadata.Update(name, checkpoint, revision)
+		success, err := engine.metadata.Update(name, checkpoint, revision, ctx)
 		if err != nil {
 			return err
 		}
@@ -165,8 +173,11 @@ type CheckpointInfo struct {
 }
 
 func (engine *CheckpointEngine) GetCheckpointInfo(namePrefix string) ([]CheckpointInfo, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	var result []CheckpointInfo
-	checkpoints, err := engine.metadata.List(namePrefix)
+	checkpoints, err := engine.metadata.List(namePrefix, ctx)
 	if err != nil {
 		return result, err
 	}
@@ -201,7 +212,10 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 		return errors.New("has gold and/or replica checkpoint")
 	}
 
-	checkpoint, revision, err := engine.metadata.Get(name)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	checkpoint, revision, err := engine.metadata.Get(name, ctx)
 	if err != nil {
 		return err
 	}
@@ -244,7 +258,7 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(name string, addrList []uintp
 		return asyncError
 	}
 
-	return engine.finalizeGetLocalCheckpoint(name, addrList, sizeList, checkpoint, revision)
+	return engine.finalizeGetLocalCheckpoint(name, addrList, sizeList, checkpoint, revision, ctx)
 }
 
 func (engine *CheckpointEngine) performTransfer(shardEntry ShardEntry) error {
@@ -303,7 +317,7 @@ func (engine *CheckpointEngine) performTransfer(shardEntry ShardEntry) error {
 	return errors.New("retry times exceed the limit")
 }
 
-func (engine *CheckpointEngine) finalizeGetLocalCheckpoint(name string, addrList []uintptr, sizeList []uint64, checkpoint *Checkpoint, revision int64) error {
+func (engine *CheckpointEngine) finalizeGetLocalCheckpoint(name string, addrList []uintptr, sizeList []uint64, checkpoint *Checkpoint, revision int64, ctx context.Context) error {
 	for {
 		taskID := 0
 		maxShardSize := checkpoint.MaxShardSize
@@ -320,7 +334,7 @@ func (engine *CheckpointEngine) finalizeGetLocalCheckpoint(name string, addrList
 			}
 		}
 
-		success, err := engine.metadata.Update(name, checkpoint, revision)
+		success, err := engine.metadata.Update(name, checkpoint, revision, ctx)
 		if err != nil {
 			return err
 		}
@@ -334,7 +348,7 @@ func (engine *CheckpointEngine) finalizeGetLocalCheckpoint(name string, addrList
 			engine.catalog.Add(name, params)
 			return nil
 		} else {
-			checkpoint, revision, err = engine.metadata.Get(name)
+			checkpoint, revision, err = engine.metadata.Get(name, ctx)
 			if err != nil {
 				return err
 			}
@@ -352,8 +366,11 @@ func (engine *CheckpointEngine) DeleteLocalCheckpoint(name string) error {
 		return errors.New("checkpoint seems not registered")
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
 	for {
-		checkpoint, revision, err := engine.metadata.Get(name)
+		checkpoint, revision, err := engine.metadata.Get(name, ctx)
 		if err != nil {
 			return err
 		}
@@ -370,7 +387,7 @@ func (engine *CheckpointEngine) DeleteLocalCheckpoint(name string) error {
 			}
 			shard.ReplicaList = newReplicaList
 		}
-		success, err := engine.metadata.Update(name, checkpoint, revision)
+		success, err := engine.metadata.Update(name, checkpoint, revision, ctx)
 		if err != nil {
 			return err
 		}

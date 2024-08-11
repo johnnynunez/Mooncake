@@ -1,4 +1,4 @@
-package main
+package checkpoint
 
 import (
 	"context"
@@ -109,14 +109,12 @@ func (metadata *Metadata) Close() error {
 	return metadata.etcdClient.Close()
 }
 
-func (metadata *Metadata) Create(name string, checkpoint *Checkpoint) error {
+func (metadata *Metadata) Create(name string, checkpoint *Checkpoint, ctx context.Context) error {
 	jsonData, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
 	}
 	key := kCheckpointMetadataPrefix + name
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	txnResp, err := metadata.etcdClient.Txn(ctx).
 		If(clientv3.Compare(clientv3.Version(key), "=", 0)).
 		Then(clientv3.OpPut(key, string(jsonData))).
@@ -130,22 +128,18 @@ func (metadata *Metadata) Create(name string, checkpoint *Checkpoint) error {
 	return nil
 }
 
-func (metadata *Metadata) Put(name string, checkpoint *Checkpoint) error {
+func (metadata *Metadata) Put(name string, checkpoint *Checkpoint, ctx context.Context) error {
 	jsonData, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
 	}
 	key := kCheckpointMetadataPrefix + name
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	_, err = metadata.etcdClient.Put(ctx, key, string(jsonData))
 	return err
 }
 
-func (metadata *Metadata) Update(name string, checkpoint *Checkpoint, revision int64) (bool, error) {
+func (metadata *Metadata) Update(name string, checkpoint *Checkpoint, revision int64, ctx context.Context) (bool, error) {
 	key := kCheckpointMetadataPrefix + name
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	if checkpoint.IsEmpty() {
 		txnResp, err := metadata.etcdClient.Txn(ctx).
 			If(clientv3.Compare(clientv3.ModRevision(key), "=", revision)).
@@ -171,10 +165,8 @@ func (metadata *Metadata) Update(name string, checkpoint *Checkpoint, revision i
 	}
 }
 
-func (metadata *Metadata) Get(name string) (*Checkpoint, int64, error) {
+func (metadata *Metadata) Get(name string, ctx context.Context) (*Checkpoint, int64, error) {
 	key := kCheckpointMetadataPrefix + name
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	response, err := metadata.etcdClient.Get(ctx, key)
 	if err != nil {
 		return nil, -1, err
@@ -190,11 +182,9 @@ func (metadata *Metadata) Get(name string) (*Checkpoint, int64, error) {
 	return nil, -1, nil
 }
 
-func (metadata *Metadata) List(namePrefix string) ([]*Checkpoint, error) {
+func (metadata *Metadata) List(namePrefix string, ctx context.Context) ([]*Checkpoint, error) {
 	startRange := kCheckpointMetadataPrefix + namePrefix
 	stopRange := kCheckpointMetadataPrefix + namePrefix + string([]byte{0xFF})
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
 	response, err := metadata.etcdClient.Get(ctx, startRange, clientv3.WithRange(stopRange))
 	if err != nil {
 		return nil, err

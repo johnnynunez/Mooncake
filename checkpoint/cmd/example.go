@@ -1,6 +1,7 @@
 package main
 
 import (
+	"checkpoint"
 	"fmt"
 	"os"
 	"syscall"
@@ -34,7 +35,7 @@ func trainer() {
 	}
 
 	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]]}"
-	checkpointEngine, err := NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
+	checkpointEngine, err := checkpoint.NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
 		os.Exit(1)
@@ -82,6 +83,8 @@ func trainer() {
 		fmt.Fprintf(os.Stderr, "Shutdown failed: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Println("ALL DONE")
 }
 
 func inferencer() {
@@ -92,7 +95,7 @@ func inferencer() {
 	}
 
 	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]]}"
-	checkpointEngine, err := NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
+	checkpointEngine, err := checkpoint.NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
 		os.Exit(1)
@@ -125,4 +128,6 @@ func inferencer() {
 		fmt.Fprintf(os.Stderr, "Munmap failed: %v\n", err)
 		os.Exit(1)
 	}
+
+	fmt.Println("ALL DONE")
 }
