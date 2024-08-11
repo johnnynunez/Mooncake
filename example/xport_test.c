@@ -1,8 +1,12 @@
+#include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
-#include "transfer_engine/engine.h"
+#include "transfer_engine/transfer_engine_c.h"
+
+#define WRITE 1
+#define READ 0
 
 void error_and_die(const char *msg)
 {
@@ -10,30 +14,37 @@ void error_and_die(const char *msg)
     exit(EXIT_FAILURE);
 }
 
+void** init_args() {
+    void **args = (void**)malloc(2 * sizeof(void*));
+    args[0] = malloc(16);
+    args[1] = malloc(16);
+    memset(args[0], 'a', 16);
+    memset(args[1], 'b', 16);
+    ((char*)args[0])[15] = '\0';
+    ((char*)args[1])[15] = '\0';
+    return args;
+}
+
 int main(void)
 {
-    transfer_engine *engine = init_transfer_engine();
+    transfer_engine_t *engine = createTransferEngine();
     if (!engine)
     {
         error_and_die("init_transfer_engine");
     }
-    transport *xport = install_transport(engine, "dummy", "file", NULL);
+    void **args = init_args();
+    transport_t *xport = installTransport(engine, "dummy", "", args);
     if (!xport)
     {
         error_and_die("install_transport");
     }
-    struct transfer_segment *seg = open_segment(engine, "file:/dev/zero");
+    segment_id_t seg = openSegment(xport, "file:/dev/zero");
     if (!seg)
     {
         error_and_die("open_segment");
     }
-    struct transfer_segment *seg_stdout = open_segment(engine, "file:/dev/stdout");
-    if (!seg_stdout)
-    {
-        error_and_die("open_segment");
-    }
-    const int batch_size = 8;
-    struct transfer_batch *batch = alloc_transfer_batch(xport, batch_size);
+    const size_t batch_size = 16;
+    batch_id_t batch = allocateBatchID(xport, batch_size);
     if (!batch)
     {
         error_and_die("alloc_transfer_batch");
@@ -46,33 +57,23 @@ int main(void)
     for (int i = 0; i < batch_size; i++)
     {
         transfers[i] = (struct transfer_request){
-            .opcode = READ,
-            .buffer = buf + i * 1024,
-            .segment = seg,
-            .offset = 0,
+            .opcode = WRITE,
+            .source = buf + i * 1024,
+            .target_id = seg,
+            .target_offset = 0,
             .length = 1024,
         };
     }
-    {
-        char *buf = "hello, world!\n";
-        transfers[batch_size] = (struct transfer_request){
-            .opcode = WRITE,
-            .buffer = buf,
-            .segment = seg_stdout,
-            .offset = 0,
-            .length = strlen(buf),
-
-        };
-    }
-    if (submit_transfers(batch, batch_size + 1, transfers) != batch_size + 1)
+    if (submitTransfer(xport, batch, transfers, batch_size) != batch_size)
     {
         error_and_die("submit_transfers");
     }
 
-    for (int i = 0; i < batch_size + 1; i++)
+    for (int i = 0; i < batch_size; i++)
     {
         struct transfer_status status;
         int ret;
+        getTransferStatus(xport, batch, i, &status);
         // while ((ret = get_transfer_status(&transfers[i], &status)) == 0)
         // {
         //     // busy waiting
@@ -81,19 +82,12 @@ int main(void)
         {
             error_and_die("get_transfer_status");
         }
-        printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.code);
+        printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
     }
 
-    // if (buf[0] == 0 && memcmp(buf, buf + 1, 1024 * batch_size - 1) == 0)
-    // {
-    //     printf("OK: buf is zeroed\n");
-    // }
-    // else
-    // {
-    //     printf("ERROR: buf is not zeroed\n");
-    // }
-
-    free_transfer_batch(batch);
-    uninstall_transport(engine, xport);
-    free_transfer_engine(engine);
+    closeSegment(xport, seg);
+    freeBatchID(xport, batch);
+    uninstallTransport(engine, xport);
+    destroyTransferEngine(engine);
+    return 0;
 }

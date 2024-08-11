@@ -286,3 +286,66 @@ RdmaEndPoint 表示本地 NIC1 (由所属的 RdmaContext 确定) 与远端 NIC2 
 
   完成上述操作后，RdmaEndPoint 状态被设置为 CONNECTED
   用户主动调用 disconnect() 或内部检测到错误时，连接作废，RdmaEndPoint 状态被设置为 UNCONNECTED。此时可以重新触发握手流程
+
+## 支持多种 Transport
+
+为了实现对于多种传输协议的支持，将 `TransferEngine` 的功能进一步拆分为两个类，即 `MultiTransferEngine` 和 `Transport`（虚基类），其中`MultiTransferEngine` 用于进行多后端的管理，`Transport`用于实现某种特定协议的传输逻辑（实际上就对应了之前部分中`TransferEngine`的功能）。
+
+### Transport
+
+Transport 基类的接口如下：
+
+```cpp
+  struct Transport
+    {
+        virtual int install(void **args) = 0;
+        /// @brief Register a memory region for use with this transport.
+        virtual int registerLocalMemory(void *addr, size_t size, const std::string &location) = 0;
+        /// @brief Unregister a memory region for use with this transport.
+        virtual int unregisterLocalMemory(void *addr) = 0;
+        /// @brief Open the segment with specified path.
+        virtual SegmentID openSegment(const std::string &path) = 0;
+        /// @brief Close the segment.
+        virtual int closeSegment(SegmentID segment_id) = 0;
+        /// @brief Create a batch with specified maximum outstanding transfers.
+        virtual BatchID allocateBatchID(size_t batch_size) = 0;
+        /// @brief Free an allocated batch.
+        virtual int freeBatchID(BatchID batch_id) = 0;
+        /// @brief Submit a batch of transfer requests to the batch.
+        /// @return The number of successfully submitted transfers on success. If that number is less than nr, errno is set.
+        virtual int submitTransfer(BatchID batch_id,
+                                   const std::vector<TransferRequest> &entries) = 0;
+        /// @brief Get the status of a submitted transfer. This function shall not be called again after completion.
+        /// @return Return 1 on completed (either success or failure); 0 if still in progress.
+        virtual int getTransferStatus(BatchID batch_id, size_t task_id,
+                                      TransferStatus &status) = 0;
+    };
+```
+
+除 `install `外的函数功能基本均与之前介绍的`TransferEngine`相同，在此不再赘述。唯一值得注意的是，为了实现对后端资源的更加灵活管理，将原本的`getSegmentID`接口扩充为`openSegment`和`closeSegment`，`openSegment`的语义包括：1）若该 Transport 的后端为 remote 文件，则将文件挂载到本地；2）获得用于传输的 `segment_id`。`closeSegment`的语义包括：若该 Transport 的后端为 remote 文件，则将文件从本地卸载。
+
+`install`函数用于进行传输资源的初始化，如对于 RDMA 连接初始化本地的 memory region 等。由于不同的后端资源所需的初始化参数不同，传入的参数为`void**`类型，实现 `Transport` 的开发者需要手动对其进行unpack。
+
+实现对于一种后端的支持时，需要继承 `Transport` 类并实现相应接口。值得注意的是，后端的构造函数不应接受任何参数且不进行资源初始化，对资源的初始化统一通过`install`函数完成。（这样设计的原因是 C++ 不支持构造函数的运行时多态）。
+
+### MultiTransferEngine
+
+`MultiTransferEngine` 管理多种后端，其底层数据结构是一个`vector<Transport*>`。其为用户提供了如下接口：
+
+```cpp
+struct MultiTransferEngine {
+  	Transport *installTransport(const char *proto, const char *path_prefix, void **args);
+  	int uninstallTransport(Transport *xport);
+    SegmentID openSegment(const char *path);
+    int closeSegment(SegmentID seg_id);
+  
+  	std::vector<Transport *> installed_transports;
+}
+
+```
+
+其中，`installTransport`用于初始化特定`proto`传输协议下的`Transport`，`path_prefix`代表了远端文件的挂载点（TODO：确定用 RDMA 时的语义），`args`将被传入用于`Transport`的初始化。`uninstallTransport`用于从 Engine 中删除某个`Transport`并释放资源。
+
+`openSegment`和`clostSegment`与 `Transport`类中的相应函数语义相同，其会根据 `path`自动确定该 `segment` 应由哪个 `Transport ` 负责，并相应调用`Transport`的`openSegment`函数。
+
+（TODO：需要记录 `seg_id` 与 `Transport` 的对应关系用于 `close`，比如`SegmentID`里记个指针）

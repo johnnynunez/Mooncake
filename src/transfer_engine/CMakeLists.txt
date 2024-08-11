@@ -2,6 +2,7 @@ add_library(transfer_engine transfer_engine.cpp
                             transfer_metadata.cpp
                             rdma_context.cpp
                             rdma_endpoint.cpp
+                            rdma_transport.cpp
                             worker_pool.cpp
                             endpoint_store.cpp
                             transfer_engine_c.cpp
