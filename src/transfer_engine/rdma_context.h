@@ -86,13 +86,17 @@ namespace mooncake
 
         int activeSpeed() const { return active_speed_; }
 
+        ibv_mtu maxMTU() const { return max_mtu_; }
+
         ibv_comp_channel *compChannel();
 
         int compVector();
 
-        ibv_cq *cq() const { return cq_list_[0]; }
+        int eventFd() const { return event_fd_; }
 
-        int cqCount() const { return 1; }
+        ibv_cq *cq();
+
+        int cqCount() const { return cq_list_.size(); }
 
         int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
 
@@ -119,6 +123,7 @@ namespace mooncake
         uint16_t lid_ = 0;
         int gid_index_ = -1;
         int active_speed_ = -1;
+        ibv_mtu max_mtu_;
         ibv_gid gid_;
 
         RWSpinlock memory_regions_lock_;
@@ -132,6 +137,7 @@ namespace mooncake
 
         std::atomic<int> next_comp_channel_index_;
         std::atomic<int> next_comp_vector_index_;
+        std::atomic<int> next_cq_list_index_;
 
         std::shared_ptr<WorkerPool> worker_pool_;
     };

@@ -6,6 +6,7 @@
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
+#include "transfer_engine/config.h"
 
 #include <atomic>
 #include <cassert>
@@ -21,6 +22,7 @@ namespace mooncake
           engine_(engine),
           next_comp_channel_index_(0),
           next_comp_vector_index_(0),
+          next_cq_list_index_(0),
           worker_pool_(nullptr)
     {
         static std::once_flag g_once_flag;
@@ -121,8 +123,9 @@ namespace mooncake
 
     int RdmaContext::deconstruct()
     {
-        endpoint_store_->destroyQPs();
         worker_pool_.reset();
+        endpoint_store_->destroyQPs();
+
         for (auto &entry : memory_region_list_) {
             if (ibv_dereg_mr(entry)) {
                 PLOG(ERROR) << "Fail to deregister memory region";
@@ -299,6 +302,11 @@ namespace mooncake
         return gid_str;
     }
 
+    ibv_cq *RdmaContext::cq() { 
+        int index = (next_cq_list_index_++) % cq_list_.size();
+        return cq_list_[index];
+    }
+
     ibv_comp_channel *RdmaContext::compChannel()
     {
         int index = (next_comp_channel_index_++) % num_comp_channel_;
@@ -369,6 +377,7 @@ namespace mooncake
             context_ = context;
             port_ = port;
             lid_ = attr.lid;
+            max_mtu_ = attr.max_mtu;
             active_speed_ = attr.active_speed;
             gid_index_ = gid_index;
 

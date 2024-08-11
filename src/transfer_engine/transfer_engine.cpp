@@ -4,6 +4,7 @@
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
+#include "transfer_engine/config.h"
 
 #include <cassert>
 #include <cstddef>
@@ -73,6 +74,11 @@ namespace mooncake
 
     TransferEngine::~TransferEngine()
     {
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        for (auto &entry : batch_desc_set_)
+            delete entry.second;
+        batch_desc_set_.clear();
+#endif
         removeLocalSegmentDesc();
         segment_id_to_desc_map_.clear();
         segment_name_to_id_map_.clear();
@@ -139,15 +145,17 @@ namespace mooncake
 
     TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
     {
-        auto batch_desc = std::make_shared<BatchDesc>();
+        auto batch_desc = new BatchDesc();
         if (!batch_desc)
             return -1;
-        batch_desc->id = BatchID(batch_desc.get());
+        batch_desc->id = BatchID(batch_desc);
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
+#ifdef CONFIG_USE_BATCH_DESC_SET
         batch_desc_lock_.lock();
         batch_desc_set_[batch_desc->id] = batch_desc;
         batch_desc_lock_.unlock();
+#endif
         return batch_desc->id;
     }
 
@@ -178,7 +186,7 @@ namespace mooncake
             const static size_t kBlockSize = 65536;
             for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
             {
-                auto slice = std::make_unique<Slice>();
+                auto slice = new Slice();
                 slice->source_addr = (char *)request.source + offset;
                 slice->length = std::min(request.length - offset, kBlockSize);
                 slice->opcode = request.opcode;
@@ -187,7 +195,7 @@ namespace mooncake
                 auto &local_segment_desc = segment_desc_map[LOCAL_SEGMENT_ID];
                 std::string device_name;
                 int buffer_id = 0, device_id = 0;
-                if (selectDevice(local_segment_desc, (uint64_t)slice->source_addr, buffer_id, device_id))
+                if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, slice->length, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Unrecorgnized source address " << slice->source_addr;
                     return -1;
@@ -198,10 +206,10 @@ namespace mooncake
                 slice->rdma.max_retry_cnt = 4;
                 slice->task = &task;
                 slice->status = Slice::PENDING;
-                slice->peer_segment_desc = segment_desc_map[request.target_id];
-                slices_to_post[context].push_back(slice.get());
+                slice->peer_segment_desc = segment_desc_map[request.target_id].get();
+                slices_to_post[context].push_back(slice);
                 task.total_bytes += slice->length;
-                task.slices.push_back(std::move(slice));
+                task.slices.push_back(slice);
             }
         }
         for (auto &entry : slices_to_post)
@@ -238,9 +246,35 @@ namespace mooncake
         return 0;
     }
 
+    int TransferEngine::getTransferStatus(BatchID batch_id, size_t task_id,
+                                          TransferStatus &status)
+    {
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc.task_list.size();
+        if (task_id >= task_count)
+            return -1;
+        auto &task = batch_desc.task_list[task_id];
+        status.transferred_bytes = task.transferred_bytes;
+        uint64_t success_slice_count = task.success_slice_count;
+        uint64_t failed_slice_count = task.failed_slice_count;
+        if (success_slice_count + failed_slice_count ==
+            (uint64_t)task.slices.size())
+        {
+            if (failed_slice_count)
+                status.s = TransferStatusEnum::FAILED;
+            else
+                status.s = TransferStatusEnum::COMPLETED;
+            task.is_finished = true;
+        }
+        else
+        {
+            status.s = TransferStatusEnum::WAITING;
+        }
+        return 0;
+    }
+
     int TransferEngine::freeBatchID(BatchID batch_id)
     {
-        RWSpinlock::WriteGuard guard(batch_desc_lock_);
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
@@ -251,7 +285,11 @@ namespace mooncake
                 return -1;
             }
         }
+        delete &batch_desc;
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        RWSpinlock::WriteGuard guard(batch_desc_lock_);
         batch_desc_set_.erase(batch_id);
+#endif
         return 0;
     }
 
@@ -382,7 +420,13 @@ namespace mooncake
             if (!context) {
                 return -1;
             }
-            if (context->construct())
+            auto &config = globalConfig();
+            if (context->construct(config.num_cq_per_ctx, 
+                                   config.num_comp_channels_per_ctx, 
+                                   config.port, 
+                                   config.gid_index,
+                                   config.max_cqe,
+                                   config.max_ep_per_ctx))
                 return -1;
             device_speed_list.push_back(context->activeSpeed());
             context_list_.push_back(context);
@@ -398,12 +442,12 @@ namespace mooncake
                       std::placeholders::_1, std::placeholders::_2));
     }
 
-    int TransferEngine::selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id, int retry_count)
+    int TransferEngine::selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_count)
     {
         for (buffer_id = 0; buffer_id < (int)desc->buffers.size(); ++buffer_id)
         {
             auto &buffer_desc = desc->buffers[buffer_id];
-            if (buffer_desc.addr > offset || offset >= buffer_desc.addr + buffer_desc.length)
+            if (buffer_desc.addr > offset || offset + length > buffer_desc.addr + buffer_desc.length)
                 continue;
 
             auto &priority = desc->priority_matrix[buffer_desc.name];
@@ -415,10 +459,11 @@ namespace mooncake
 
             if (retry_count == 0)
             {
+                int rand_value = SimpleRandom::Get().next();
                 if (preferred_rnic_list_len)
-                    device_id = priority.preferred_rnic_id_list[lrand48() % preferred_rnic_list_len];
+                    device_id = priority.preferred_rnic_id_list[rand_value % preferred_rnic_list_len];
                 else
-                    device_id = priority.available_rnic_id_list[lrand48() % available_rnic_list_len];
+                    device_id = priority.available_rnic_id_list[rand_value % available_rnic_list_len];
             }
             else
             {

@@ -2,6 +2,8 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_endpoint.h"
+#include "transfer_engine/config.h"
+
 #include <cassert>
 #include <cstddef>
 #include <glog/logging.h>
@@ -101,8 +103,8 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(lock_);
         if (connected())
         {
-            LOG(WARNING) << "Previous connection is discarded";
-            disconnectUnlocked();
+            LOG(WARNING) << "Connection already connected";
+            return 0;
         }
         HandShakeDesc local_desc, peer_desc;
         local_desc.local_nic_path = context_.nicPath();
@@ -214,7 +216,7 @@ namespace mooncake
                                      std::vector<TransferEngine::Slice *> &failed_slice_list)
     {
         RWSpinlock::WriteGuard guard(lock_);
-        int qp_index = lrand48() % qp_list_.size();
+        int qp_index = SimpleRandom::Get().next(qp_list_.size());
         int wr_count = std::min(max_wr_depth_ - wr_depth_list_[qp_index], (int)slice_list.size());
         if (wr_count == 0)
             return 0;
@@ -318,7 +320,9 @@ namespace mooncake
         // INIT -> RTR
         memset(&attr, 0, sizeof(attr));
         attr.qp_state = IBV_QPS_RTR;
-        attr.path_mtu = IBV_MTU_4096; // TODO Does it supported by RoCE2?
+        attr.path_mtu = (ibv_mtu) std::min(
+            int(context_.maxMTU()), 
+            int(globalConfig().mtu_length));
         ibv_gid peer_gid_raw;
         std::istringstream iss(peer_gid);
         for (int i = 0; i < 16; ++i)

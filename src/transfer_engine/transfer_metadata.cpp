@@ -3,7 +3,9 @@
 
 #include "transfer_engine/transfer_metadata.h"
 #include "transfer_engine/common.h"
-
+#include <arpa/inet.h>
+#include <netdb.h>
+#include <sys/socket.h>
 #include <set>
 
 namespace mooncake
@@ -22,7 +24,6 @@ namespace mooncake
         bool get(const std::string &key, Json::Value &value)
         {
             Json::Reader reader;
-            uint32_t flags = 0;
             auto resp = client_.get(key);
             if (!resp.is_ok())
             {

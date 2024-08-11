@@ -4,16 +4,16 @@
 #ifndef TRANSFER_ENGINE
 #define TRANSFER_ENGINE
 
-#include <map>
-#include <mutex>
 #include <atomic>
 #include <cstddef>
-#include <memory>
-#include <string>
-#include <vector>
-#include <unordered_set>
-#include <unordered_map>
 #include <infiniband/verbs.h>
+#include <map>
+#include <memory>
+#include <mutex>
+#include <string>
+#include <unordered_map>
+#include <unordered_set>
+#include <vector>
 
 #include "transfer_engine/transfer_metadata.h"
 
@@ -133,6 +133,9 @@ namespace mooncake
         int getTransferStatus(BatchID batch_id,
                               std::vector<TransferStatus> &status);
 
+        int getTransferStatus(BatchID batch_id, size_t task_id,
+                              TransferStatus &status);
+
         // 回收 BatchID，之后对此的 submit_transfer 及 get_transfer_status 操作是未定义的。该序号后续可能会被重新使用。
         // - batch_id: 所属的 BatchID ；
         // - 返回值：若成功，返回 0；否则返回负数值。
@@ -176,7 +179,7 @@ namespace mooncake
         int startHandshakeDaemon();
 
     public:
-        static int selectDevice(std::shared_ptr<SegmentDesc> &desc, uint64_t offset, int &buffer_id, int &device_id, int retry_cnt = 0);
+        static int selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_cnt = 0);
 
     private:
         struct TransferTask;
@@ -218,14 +221,22 @@ namespace mooncake
                 } nvmeof;
             };
 
-            std::shared_ptr<SegmentDesc> peer_segment_desc;
+            // TODO remove it
+            SegmentDesc *peer_segment_desc;
             SliceStatus status;
             TransferTask *task;
         };
 
         struct TransferTask
         {
-            std::vector<std::unique_ptr<Slice>> slices;
+            ~TransferTask() 
+            {
+                for (auto &entry : slices)
+                    delete entry;
+                slices.clear();
+            }
+
+            std::vector<Slice *> slices;
             volatile uint64_t success_slice_count = 0;
             volatile uint64_t failed_slice_count = 0;
             volatile uint64_t transferred_bytes = 0;

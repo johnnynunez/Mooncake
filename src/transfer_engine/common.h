@@ -308,6 +308,33 @@ namespace mooncake
         std::atomic<int64_t> lock_;
         uint64_t padding_[15];
     };
+
+    class SimpleRandom {
+    public:
+        SimpleRandom(uint32_t seed) : current(seed) {}
+
+        static SimpleRandom &Get() {
+            thread_local SimpleRandom g_random(time(NULL));
+            return g_random;
+        }
+
+        // 生成下一个伪随机数
+        uint32_t next() {
+            current = (a * current + c) % m;
+            return current;
+        }
+
+        // 生成0到max之间的伪随机数
+        uint32_t next(uint32_t max) {
+            return next() % max;
+        }
+
+    private:
+        uint32_t current; // 当前状态
+        static const uint32_t a = 1664525; // 乘法因子
+        static const uint32_t c = 1013904223; // 加法因子
+        static const uint32_t m = 0xFFFFFFFF; // 模数
+    };
 }
 
 #endif // COMMON_H

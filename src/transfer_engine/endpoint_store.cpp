@@ -1,6 +1,7 @@
 #include "transfer_engine/endpoint_store.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
+#include "transfer_engine/config.h"
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -33,7 +34,12 @@ namespace mooncake
             PLOG(ERROR) << "Failed to allocate memory for RdmaEndPoint";
             return nullptr;
         }
-        int ret = endpoint->construct(context->cq());
+        auto &config = globalConfig();
+        int ret = endpoint->construct(context->cq(), 
+                                      config.num_qp_per_ep,
+                                      config.max_sge,
+                                      config.max_wr,
+                                      config.max_inline);
         if (ret)
             return nullptr;
 
@@ -95,7 +101,7 @@ namespace mooncake
             iter->second.second.store(true, std::memory_order_relaxed); // This is safe within read lock because of idempotence
             return iter->second.first;
         }
-        LOG(INFO) << "Endpoint " << peer_nic_path << " not found in SIEVEEndpointStore";
+        // LOG(INFO) << "Endpoint " << peer_nic_path << " not found in SIEVEEndpointStore";
         return nullptr;
     }
 
@@ -113,7 +119,12 @@ namespace mooncake
             PLOG(ERROR) << "Failed to allocate memory for RdmaEndPoint";
             return nullptr;
         }
-        int ret = endpoint->construct(context->cq());
+        auto &config = globalConfig();
+        int ret = endpoint->construct(context->cq(), 
+                                      config.num_qp_per_ep,
+                                      config.max_sge,
+                                      config.max_wr,
+                                      config.max_inline);
         if (ret) 
             return nullptr;
 
