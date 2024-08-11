@@ -86,6 +86,8 @@ namespace mooncake
 
         int activeSpeed() const { return active_speed_; }
 
+        ibv_mtu maxMTU() const { return max_mtu_; }
+
         ibv_comp_channel *compChannel();
 
         int compVector();
@@ -121,6 +123,7 @@ namespace mooncake
         uint16_t lid_ = 0;
         int gid_index_ = -1;
         int active_speed_ = -1;
+        ibv_mtu max_mtu_;
         ibv_gid gid_;
 
         RWSpinlock memory_regions_lock_;

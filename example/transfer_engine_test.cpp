@@ -28,6 +28,18 @@
 
 */
 
+static std::string getHostname()
+{
+    char hostname[256];
+    if (gethostname(hostname, 256))
+    {
+        PLOG(ERROR) << "Failed to get hostname";
+        return "";
+    }
+    return hostname;
+}
+
+DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
 DEFINE_string(metadata_server, "test-8:2379", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
@@ -41,17 +53,6 @@ DEFINE_int32(duration, 10, "Test duration in seconds");
 DEFINE_int32(threads, 4, "Task submission threads");
 
 using namespace mooncake;
-
-static std::string getHostname()
-{
-    char hostname[256];
-    if (gethostname(hostname, 256))
-    {
-        PLOG(ERROR) << "Failed to get hostname";
-        return "";
-    }
-    return hostname;
-}
 
 static void *allocateMemoryPool(size_t size, int socket_id)
 {
@@ -194,7 +195,7 @@ int initiator()
 
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   getHostname(),
+                                                   FLAGS_local_server_name,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
 
@@ -243,7 +244,7 @@ int target()
 
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   getHostname(),
+                                                   FLAGS_local_server_name,
                                                    FLAGS_nic_priority_matrix);
     LOG_ASSERT(engine);
 

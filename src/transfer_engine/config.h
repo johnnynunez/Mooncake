@@ -9,6 +9,7 @@
 #include <mutex>
 #include <glog/logging.h>
 #include <jsoncpp/json/json.h>
+#include <infiniband/verbs.h>
 
 namespace mooncake
 {
@@ -23,6 +24,7 @@ namespace mooncake
         size_t max_sge = 4;
         size_t max_wr = 256;
         size_t max_inline = 64;
+        ibv_mtu mtu_length = IBV_MTU_4096;
     };
 
     void loadGlobalConfig(GlobalConfig &config);

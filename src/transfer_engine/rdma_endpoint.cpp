@@ -2,6 +2,8 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_endpoint.h"
+#include "transfer_engine/config.h"
+
 #include <cassert>
 #include <cstddef>
 #include <glog/logging.h>
@@ -318,7 +320,9 @@ namespace mooncake
         // INIT -> RTR
         memset(&attr, 0, sizeof(attr));
         attr.qp_state = IBV_QPS_RTR;
-        attr.path_mtu = IBV_MTU_4096; // TODO Does it supported by RoCE2?
+        attr.path_mtu = (ibv_mtu) std::min(
+            int(context_.maxMTU()), 
+            int(globalConfig().mtu_length));
         ibv_gid peer_gid_raw;
         std::istringstream iss(peer_gid);
         for (int i = 0; i < 16; ++i)
