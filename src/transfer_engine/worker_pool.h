@@ -38,7 +38,7 @@ namespace mooncake
         RdmaContext &context_;
         const int numa_socket_id_;
 
-        const static int kTransferWorkerCount = 2;
+        const static int kTransferWorkerCount = 1;
 
         std::vector<std::thread> worker_thread_;
         std::atomic<bool> workers_running_;
@@ -47,7 +47,7 @@ namespace mooncake
         std::mutex cond_mutex_;
         std::condition_variable cond_var_;
 
-        const static int kShardCount = 8;
+        const static int kShardCount = 1;
         RWSpinlock slice_list_lock_[kShardCount];
 
         using SliceList = std::vector<TransferEngine::Slice *>;
