@@ -31,8 +31,8 @@ namespace mooncake
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot parse nic "
-                          "priority matrix";
+            LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot parse NIC priority matrix";
+            LOG(ERROR) << "*** nic_priority_matrix " << nic_priority_matrix;
             exit(EXIT_FAILURE);
         }
 
@@ -43,31 +43,30 @@ namespace mooncake
         ret = initializeRdmaResources();
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot initialize "
-                          "rdma resources";
+            LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot initialize RDMA resources";
             exit(EXIT_FAILURE);
         }
 
         ret = allocateLocalSegmentID(local_priority_matrix);
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot allocate local segment";
+            LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot allocate local segment";
             exit(EXIT_FAILURE);
         }
 
         ret = startHandshakeDaemon();
         if (ret)
         {
-            LOG(ERROR) << "Transfer engine cannot be initialized: cannot start "
-                          "handshake daemon";
+            LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot start handshake daemon";
+            LOG(ERROR) << "*** Try to set environment variable MC_HANDSHAKE_PORT to another value";
             exit(EXIT_FAILURE);
         }
 
         ret = updateLocalSegmentDesc();
         if (ret)
         {
-            LOG(ERROR)
-                << "Transfer engine cannot be initialized: cannot publish segments";
+            LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot publish segments";
+            LOG(ERROR) << "*** Check the connectivity between this server and metadata server (etcd/memcached)";
             exit(EXIT_FAILURE);
         }
     }
@@ -107,7 +106,10 @@ namespace mooncake
             RWSpinlock::WriteGuard guard(segment_lock_);
             auto new_segment_desc = std::make_shared<SegmentDesc>();
             if (!new_segment_desc)
+            {
+                LOG(ERROR) << "Failed to allocate segment description";
                 return -1;
+            }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
@@ -122,7 +124,10 @@ namespace mooncake
             RWSpinlock::WriteGuard guard(segment_lock_);
             auto new_segment_desc = std::make_shared<SegmentDesc>();
             if (!new_segment_desc)
+            {
+                LOG(ERROR) << "Failed to allocate segment description";
                 return -1;
+            }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
@@ -164,7 +169,10 @@ namespace mooncake
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
+        {
+            LOG(ERROR) << "Exceed the limitation of current batch's capacity";
             return -1;
+        }
 
         std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
         size_t task_id = batch_desc.task_list.size();
@@ -439,7 +447,8 @@ namespace mooncake
     {
         return metadata_->startHandshakeDaemon(
             std::bind(&TransferEngine::onSetupRdmaConnections, this,
-                      std::placeholders::_1, std::placeholders::_2));
+                      std::placeholders::_1, std::placeholders::_2),
+            globalConfig().handshake_port);
     }
 
     int TransferEngine::selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_count)

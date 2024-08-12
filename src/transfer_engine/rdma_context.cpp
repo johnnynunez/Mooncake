@@ -29,7 +29,7 @@ namespace mooncake
         auto fork_init = []()
         {
             if (ibv_fork_init())
-                PLOG(ERROR) << "ibv_fork_init failed";
+                PLOG(ERROR) << "RDMA context setup failed: fork compatibility";
         };
         std::call_once(g_once_flag, fork_init);
     }
@@ -48,20 +48,22 @@ namespace mooncake
                                int max_endpoints)
     {
         endpoint_store_ = std::make_shared<SIEVEEndpointStore>(max_endpoints);
-        if (!endpoint_store_)
+        if (!endpoint_store_) 
+        {
+            PLOG(ERROR) << "RDMA context setup failed: endpoint store";
             return -1;
+        }
 
         if (openRdmaDevice(device_name_, port, gid_index))
+        {
+            PLOG(ERROR) << "RDMA context setup failed: open device";
             return -1;
-
-        LOG(INFO) << "RDMA device: " << context_->device->name
-                  << ", LID: " << lid_
-                  << ", GID: (" << gid_index_ << ") " << gid();
+        }
 
         pd_ = ibv_alloc_pd(context_);
         if (!pd_)
         {
-            PLOG(ERROR) << "Failed to allocate pd";
+            PLOG(ERROR) << "RDMA context setup failed: protection domain";
             return -1;
         }
 
@@ -69,7 +71,7 @@ namespace mooncake
         comp_channel_ = new ibv_comp_channel *[num_comp_channels];
         if (!comp_channel_)
         {
-            PLOG(ERROR) << "Failed to allocate comp_channel";
+            PLOG(ERROR) << "RDMA context setup failed: completion channel array";
             return -1;
         }
         for (size_t i = 0; i < num_comp_channels; ++i)
@@ -77,7 +79,7 @@ namespace mooncake
             comp_channel_[i] = ibv_create_comp_channel(context_);
             if (!comp_channel_[i])
             {
-                PLOG(ERROR) << "Failed to allocate comp_channel";
+                PLOG(ERROR) << "RDMA context setup failed: completion channel";
                 return -1;
             }
         }
@@ -85,16 +87,22 @@ namespace mooncake
         event_fd_ = epoll_create1(0);
         if (event_fd_ < 0)
         {
-            PLOG(ERROR) << "Failed to create epoll fd";
+            PLOG(ERROR) << "RDMA context setup failed: event file descriptor";
             return -1;
         }
 
         if (joinNonblockingPollList(event_fd_, context_->async_fd))
+        {
+            PLOG(ERROR) << "RDMA context setup failed: register event file descriptor"; 
             return -1;
+        }
 
         for (size_t i = 0; i < num_comp_channel_; ++i)
             if (joinNonblockingPollList(event_fd_, comp_channel_[i]->fd))
+            {
+                PLOG(ERROR) << "RDMA context setup failed: register event file descriptor"; 
                 return -1;
+            }
 
         cq_list_.resize(num_cq_list);
         for (size_t i = 0; i < num_cq_list; ++i)
@@ -106,7 +114,7 @@ namespace mooncake
                                         compVector());
             if (!cq_list_[i])
             {
-                PLOG(ERROR) << "Failed to allocate completion queue";
+                PLOG(ERROR) << "RDMA context setup failed: completion queue"; 
                 return -1;
             }
         }
@@ -115,27 +123,33 @@ namespace mooncake
         worker_pool_ = std::make_shared<WorkerPool>(*this);
         if (!worker_pool_)
         {
-            PLOG(ERROR) << "Failed to allocate worker pool";
+            PLOG(ERROR) << "RDMA context setup failed: worker pool"; 
             return -1;
         }
+
+        LOG(INFO) << "RDMA device: " << context_->device->name
+                  << ", LID: " << lid_
+                  << ", GID: (" << gid_index_ << ") " << gid();
+
         return 0;
     }
 
     int RdmaContext::deconstruct()
     {
         worker_pool_.reset();
+
         endpoint_store_->destroyQPs();
 
         for (auto &entry : memory_region_list_) {
             if (ibv_dereg_mr(entry)) {
-                PLOG(ERROR) << "Fail to deregister memory region";
+                PLOG(ERROR) << "Fail to unregister memory region";
             }
         }
         memory_region_list_.clear();
 
         for (size_t i = 0; i < cq_list_.size(); ++i) {
             if (ibv_destroy_cq(cq_list_[i])) {
-                PLOG(ERROR) << "Fail to destroy CQ";
+                PLOG(ERROR) << "Fail to destroy completion queue";
             }
         }
         cq_list_.clear();
@@ -152,7 +166,7 @@ namespace mooncake
             for (size_t i = 0; i < num_comp_channel_; ++i)
                 if (comp_channel_[i])
                     if (ibv_destroy_comp_channel(comp_channel_[i]))
-                        PLOG(ERROR) << "Fail to destroy comp channel";
+                        PLOG(ERROR) << "Fail to destroy completion channel";
             delete[] comp_channel_;
             comp_channel_ = nullptr;
         }
@@ -160,18 +174,20 @@ namespace mooncake
         if (pd_)
         {
             if (ibv_dealloc_pd(pd_))
-                PLOG(ERROR) << "Fail to deallocate PD";
+                PLOG(ERROR) << "Fail to deallocate protection domain";
             pd_ = nullptr;
         }
 
         if (context_)
         {
             if (ibv_close_device(context_))
-                PLOG(ERROR) << "Fail to close device";
+                PLOG(ERROR) << "Fail to close device context";
             context_ = nullptr;
         }
 
-        LOG(INFO) << "Release resources of RDMA device: " << device_name_;
+        if (globalConfig().verbose)
+            LOG(INFO) << "Release resources of RDMA device: " << device_name_;
+
         return 0;
     }
 
@@ -187,7 +203,7 @@ namespace mooncake
                 bool covered = addr <= entry->addr && (char *)entry->addr + entry->length <= (char *)addr + length;
                 if (start_overlapped || end_overlapped || covered)
                 {
-                    LOG(INFO) << "Memory region " << addr << " overlapped";
+                    LOG(ERROR) << "Fail to register memory " << addr << ": overlap existing memory regions";
                     return -1;
                 }
             }
@@ -203,11 +219,15 @@ namespace mooncake
 
         RWSpinlock::WriteGuard guard(memory_regions_lock_);
         memory_region_list_.push_back(mr);
-        LOG(INFO) << "Memory region: " << addr << " -- " << (void *)((uintptr_t)addr + length)
-                  << ", Device name: " << device_name_
-                  << ", Length: " << length << " (" << length / 1024 / 1024 << " MB)"
-                  << ", Permission: " << access << std::hex
-                  << ", LKey: " << mr->lkey << ", RKey: " << mr->rkey;
+
+        if (globalConfig().verbose)
+        {
+            LOG(INFO) << "Memory region: " << addr << " -- " << (void *)((uintptr_t)addr + length)
+                    << ", Device name: " << device_name_
+                    << ", Length: " << length << " (" << length / 1024 / 1024 << " MB)"
+                    << ", Permission: " << access << std::hex
+                    << ", LKey: " << mr->lkey << ", RKey: " << mr->rkey;
+        }
 
         return 0;
     }
@@ -225,7 +245,7 @@ namespace mooncake
                 {
                     if (ibv_dereg_mr(*iter))
                     {
-                        PLOG(ERROR) << "Fail to deregister memory region";
+                        PLOG(ERROR) << "Fail to unregister memory " << addr;
                         return -1;
                     }
                     memory_region_list_.erase(iter);
@@ -244,7 +264,7 @@ namespace mooncake
             if ((*iter)->addr <= addr && addr < (char *)((*iter)->addr) + (*iter)->length)
                 return (*iter)->rkey;
 
-        LOG(ERROR) << "address " << addr << " rkey not found for " << deviceName();
+        LOG(ERROR) << "Address " << addr << " rkey not found for " << deviceName();
         return 0;
     }
 
@@ -255,7 +275,7 @@ namespace mooncake
             if ((*iter)->addr <= addr && addr < (char *)((*iter)->addr) + (*iter)->length)
                 return (*iter)->lkey;
 
-        LOG(ERROR) << "address " << addr << " lkey not found for " << deviceName();
+        LOG(ERROR) << "Address " << addr << " lkey not found for " << deviceName();
         return 0;
     }
 
@@ -263,7 +283,7 @@ namespace mooncake
     {
         if (peer_nic_path.empty())
         {
-            LOG(ERROR) << "Invalid peer nic path";
+            LOG(ERROR) << "Invalid peer NIC path";
             return nullptr;
         }
 
@@ -363,6 +383,19 @@ namespace mooncake
                 return -1;
             }
 
+            ibv_device_attr device_attr;
+            if (ibv_query_device(context, &device_attr))
+            {
+                PLOG(WARNING) << "Fail to query attributes on " << device_name;
+                if (ibv_close_device(context)) {
+                    PLOG(ERROR) << "Fail to close device " << device_name;
+                }
+                ibv_free_device_list(devices);
+                return -1;
+            }
+
+            updateGlobalConfig(device_attr);
+
             if (ibv_query_gid(context, port, gid_index, &gid_))
             {
                 PLOG(WARNING) << "Device " << device_name
@@ -398,12 +431,12 @@ namespace mooncake
         int flags = fcntl(data_fd, F_GETFL, 0);
         if (flags == -1)
         {
-            PLOG(ERROR) << "Get F_GETFL failed";
+            PLOG(ERROR) << "Get file descriptor flags failed";
             return -1;
         }
         if (fcntl(data_fd, F_SETFL, flags | O_NONBLOCK) == -1)
         {
-            PLOG(ERROR) << "Set F_GETFL failed";
+            PLOG(ERROR) << "Set file descriptor nonblocking failed";
             return -1;
         }
 
@@ -411,7 +444,7 @@ namespace mooncake
         event.data.fd = data_fd;
         if (epoll_ctl(event_fd, EPOLL_CTL_ADD, event.data.fd, &event))
         {
-            PLOG(ERROR) << "Failed to register data fd to epoll";
+            PLOG(ERROR) << "Failed to register file descriptor to epoll";
             close(event_fd);
             return -1;
         }

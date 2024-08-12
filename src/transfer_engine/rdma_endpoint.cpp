@@ -42,7 +42,7 @@ namespace mooncake
         wr_depth_list_ = new volatile int[num_qp_list];
         if (!wr_depth_list_)
         {
-            PLOG(ERROR) << "Failed to allocate memory";
+            PLOG(ERROR) << "Failed to allocate memory for work request depth list";
             return -1;
         }
         for (size_t i = 0; i < num_qp_list; ++i)
@@ -115,7 +115,7 @@ namespace mooncake
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
         if (peer_server_name.empty() || peer_nic_name.empty())
         {
-            LOG(ERROR) << "Invalid argument " << peer_server_name << " " << peer_nic_name;
+            LOG(ERROR) << "Parse peer nic path failed: " << peer_nic_path_;
             return -1;
         }
 
@@ -128,7 +128,7 @@ namespace mooncake
 
         if (peer_desc.local_nic_path != peer_nic_path_ || peer_desc.peer_nic_path != local_desc.local_nic_path)
         {
-            LOG(ERROR) << "Invalid argument";
+            LOG(ERROR) << "Invalid argument: received packet mismatch";
             return -1;
         }
 
@@ -137,7 +137,7 @@ namespace mooncake
             if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
 
-        LOG(INFO) << "NIC " << peer_nic_name << " not found in server desc";
+        LOG(ERROR) << "Peer NIC " << peer_nic_name << " not found in " << peer_server_name;
         return -1;
     }
 
@@ -146,14 +146,14 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(lock_);
         if (connected())
         {
-            LOG(WARNING) << "Previous connection is discarded";
+            LOG(WARNING) << "Discard connection: " << toString();
             disconnectUnlocked();
         }
 
         peer_nic_path_ = peer_desc.local_nic_path;
         if (peer_desc.peer_nic_path != context_.nicPath())
         {
-            LOG(ERROR) << "Invalid argument";
+            LOG(ERROR) << "Invalid argument: received packet mismatch";
             return -1;
         }
 
@@ -161,8 +161,7 @@ namespace mooncake
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
         if (peer_server_name.empty() || peer_nic_name.empty())
         {
-            LOG(ERROR) << "Invalid argument " << peer_server_name << " " << peer_nic_name;
-            assert(false);
+            LOG(ERROR) << "Parse peer nic path failed: " << peer_nic_path_;
             return -1;
         }
 
@@ -175,7 +174,7 @@ namespace mooncake
             if (nic.name == peer_nic_name)
                 return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
 
-        LOG(INFO) << "NIC " << peer_nic_name << " not found in server desc";
+        LOG(ERROR) << "Peer NIC " << peer_nic_name << " not found in " << peer_server_name;
         return -1;
     }
 
