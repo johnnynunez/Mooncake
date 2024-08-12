@@ -14,6 +14,7 @@
 #include <memory>
 #include <sys/epoll.h>
 #include <thread>
+#include <fstream>
 
 namespace mooncake
 {
@@ -119,8 +120,7 @@ namespace mooncake
             }
         }
 
-        // TODO 确定网卡所属的 NUMA Socket，并且填充到 WorkerPool 的第二个构造函数中
-        worker_pool_ = std::make_shared<WorkerPool>(*this);
+        worker_pool_ = std::make_shared<WorkerPool>(*this, socketId());
         if (!worker_pool_)
         {
             PLOG(ERROR) << "RDMA context setup failed: worker pool"; 
@@ -132,6 +132,20 @@ namespace mooncake
                   << ", GID: (" << gid_index_ << ") " << gid();
 
         return 0;
+    }
+
+    int RdmaContext::socketId()
+    {
+        std::string path = "/sys/class/infiniband/" + device_name_ + "/device/numa_node";
+        std::ifstream file(path);
+        if (file.is_open()) {
+            int socket_id;
+            file >> socket_id;
+            file.close();
+            return socket_id;
+        } else {
+            return 0;
+        }
     }
 
     int RdmaContext::deconstruct()

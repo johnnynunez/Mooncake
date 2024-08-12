@@ -100,6 +100,8 @@ namespace mooncake
 
         int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
 
+        int socketId();
+
     private:
         int openRdmaDevice(const std::string &device_name, uint8_t port, int gid_index);
 
