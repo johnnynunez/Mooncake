@@ -8,32 +8,48 @@
 #define WRITE 1
 #define READ 0
 
-void **init_args()
+void error_and_die(const char *msg)
 {
-    void **args = (void **)malloc(2 * sizeof(void *));
+    perror(msg);
+    exit(EXIT_FAILURE);
+}
+
+void** init_args() {
+    void **args = (void**)malloc(2 * sizeof(void*));
     args[0] = malloc(16);
     args[1] = malloc(16);
     memset(args[0], 'a', 16);
     memset(args[1], 'b', 16);
-    ((char *)args[0])[15] = '\0';
-    ((char *)args[1])[15] = '\0';
+    ((char*)args[0])[15] = '\0';
+    ((char*)args[1])[15] = '\0';
     return args;
 }
 
 int main(void)
 {
-    char *metadata = "meta_server_addr";
-    char *local = "local_server";
+    char* metadata = "meta";
+    char* local = "optane";
     transfer_engine_t *engine = createTransferEngine(metadata, local);
+    if (!engine)
+    {
+        error_and_die("init_transfer_engine");
+    }
     void **args = init_args();
     installTransport(engine, "dummy", "dummy", args);
-    
-    registerSegment(engine, (void*)0x1000, 0x1000, "aaa");
     transport_t xport;
     segment_id_t seg = openSegment(engine, "dummy", &xport);
+    if (!seg)
+    {
+        error_and_die("open_segment");
+    }
     const size_t batch_size = 16;
     batch_id_t batch = allocateBatchID(xport, batch_size);
-    char *buf = (char *)malloc(1024 * batch_size);
+    if (!batch)
+    {
+        error_and_die("alloc_transfer_batch");
+    }
+
+    char *buf = (char*)malloc(1024 * batch_size);
     memset(buf, 1, 1024 * batch_size);
 
     struct transfer_request transfers[batch_size + 1];
@@ -47,21 +63,27 @@ int main(void)
             .length = 1024,
         };
     }
-    submitTransfer(xport, batch, transfers, batch_size);
+    if (submitTransfer(xport, batch, transfers, batch_size) != batch_size)
+    {
+        error_and_die("submit_transfers");
+    }
 
     for (int i = 0; i < batch_size; i++)
     {
         struct transfer_status status;
         int ret;
-        // getTransferStatus(xport, batch, i, &status);
-        while ((ret = getTransferStatus(xport, batch, i, &status)) == 0)
+        getTransferStatus(xport, batch, i, &status);
+        // while ((ret = get_transfer_status(&transfers[i], &status)) == 0)
+        // {
+        //     // busy waiting
+        // };
+        if (ret < 0)
         {
-            // busy waiting
-        };
+            error_and_die("get_transfer_status");
+        }
         printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
     }
 
-    unregisterSegment(engine, (void*)0x1000);
     closeSegment(xport, seg);
     freeBatchID(xport, batch);
     uninstallTransport(engine, xport);

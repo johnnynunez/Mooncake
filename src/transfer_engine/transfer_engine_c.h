@@ -45,6 +45,29 @@ extern "C"
         uint64_t transferred_bytes;
     };
 
+    struct segment_desc
+    {
+        int type; // RDMA / NVMeoF
+        union
+        {
+            struct
+            {
+                void *addr;
+                uint64_t size;
+                const char *location;
+            } rdma;
+            struct
+            {
+                const char *file_path;
+                const char *subsystem_name;
+                const char *proto;
+                const char *ip;
+                uint64_t port;
+                // maybe more needed for mount
+            } nvmeof;
+        } desc_;
+    };
+
     typedef struct transfer_status transfer_status_t;
 
     struct buffer_entry
@@ -54,10 +77,13 @@ extern "C"
     };
     typedef struct buffer_entry buffer_entry_t;
 
+    typedef struct segment_desc segment_desc_t;
     typedef void *transfer_engine_t;
     typedef void *transport_t;
 
-    transfer_engine_t createTransferEngine();
+
+    transfer_engine_t createTransferEngine(const char *metadata_uri,
+                                           const char *local_server_name);
 
     transport_t installTransport(transfer_engine_t engine,
                                  const char *proto,
@@ -66,15 +92,15 @@ extern "C"
 
     int uninstallTransport(transfer_engine_t engine, transport_t xport);
 
-    segment_id_t openSegment(transport_t xport, const char *segment_name);
+    segment_id_t openSegment(transfer_engine_t engine, const char *segment_name, transport_t *transport);
     // segment_id_t getSegmentID(transfer_engine_t engine, const char *segment_name);
-    int closeSegment(transport_t xport, segment_id_t seg_id);
+    int closeSegment(transfer_engine_t engine, segment_id_t segment_id);
 
     void destroyTransferEngine(transfer_engine_t engine);
 
-    int registerLocalMemory(transport_t xport, void *addr, size_t length, const char *location);
+    int registerSegment(transfer_engine_t engine, void *addr, size_t length, const char *location);
 
-    int unregisterLocalMemory(transport_t xport, void *addr);
+    int unregisterSegment(transfer_engine_t engine, void *addr);
 
     int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location);
 

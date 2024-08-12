@@ -4,18 +4,22 @@
 #include "transfer_engine/transfer_engine_c.h"
 #include "transfer_engine/multi_transfer_engine.h"
 #include "transfer_engine/transport.h"
+#include <memory>
 
 
 using namespace mooncake;
 
-transfer_engine_t createTransferEngine() {
-    MultiTransferEngine *native = new MultiTransferEngine();
+transfer_engine_t createTransferEngine(const char *metadata_uri,
+                                       const char *local_server_name)
+{
+    auto metadata_client = std::make_shared<TransferMetadata>(metadata_uri);
+    MultiTransferEngine *native = new MultiTransferEngine(local_server_name, metadata_client);
     return (transfer_engine_t) native;
 }
 
 transport_t installTransport(transfer_engine_t engine, const char *proto, const char *path_prefix, void **args) {
     MultiTransferEngine *native = (MultiTransferEngine *) engine;
-    return (transport_t)native->installTransport(proto, path_prefix, args);
+    return (transport_t)native->installTransport(proto, path_prefix, native->local_name, native->meta, args);
 }
 
 int uninstallTransport(transfer_engine_t engine, transport_t transport) {
@@ -29,28 +33,35 @@ void destroyTransferEngine(transfer_engine_t engine)
     delete native;
 }
 
-segment_id_t openSegment(transport_t xport, const char *segment_name)
+segment_id_t openSegment(transfer_engine_t engine, const char *segment_name, transport_t* transport)
 {
-    Transport *native = (Transport *)xport;
-    return (segment_id_t)native->openSegment(segment_name);
+    MultiTransferEngine *native = (MultiTransferEngine *)engine;
+
+    auto p = native->openSegment(segment_name);
+    *transport = (transport_t)p.second;
+    return p.first;
 }
 
-int closeSegment(transport_t xport, segment_id_t segment_id)
+int closeSegment(transfer_engine_t engine, segment_id_t segment_id)
 {
-    Transport *native = (Transport *)xport;
+    MultiTransferEngine *native = (MultiTransferEngine *)engine;
     return native->closeSegment(segment_id);
 }
 
-int registerLocalMemory(transport_t xport, void *addr, size_t length, const char *location)
+int registerSegment(transfer_engine_t engine, void *addr, size_t length, const char *location)
 {
-    Transport *native = (Transport *)xport;
-    return native->registerLocalMemory(addr, length, location);
+    MultiTransferEngine *native = (MultiTransferEngine *)engine;
+    MultiTransferEngine::SegmentDesc desc = {.type = 0, .desc_ = {.rdma = {addr, length, location}}};
+    // TODO
+    return native->registerSegment(desc);
 }
 
-int unregisterLocalMemory(transport_t xport, void *addr)
+int unregisterSegment(transfer_engine_t engine, void *addr)
 {
-    Transport *native = (Transport *)xport;
-    return native->unregisterLocalMemory(addr);
+    MultiTransferEngine *native = (MultiTransferEngine *)engine;
+    MultiTransferEngine::SegmentDesc desc = {.type = 0, .desc_ = {.rdma = {addr, 0, ""}}};
+
+    return native->unregisterSegment(desc);
 }
 
 int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location)

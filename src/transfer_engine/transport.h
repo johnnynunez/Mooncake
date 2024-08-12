@@ -64,19 +64,7 @@ namespace mooncake
     public:
         /// @brief install the transport with specified args. The args parameter is interpreted by the
         /// transport implementation.
-        virtual int install(void **args) = 0;
-
-        /// @brief Register a memory region for use with this transport.
-        virtual int registerLocalMemory(void *addr, size_t size, const std::string &location) = 0;
-
-        /// @brief Unegister a memory region for use with this transport.
-        virtual int unregisterLocalMemory(void *addr) = 0;
-
-        /// @brief Open the segment with specified path.
-        virtual SegmentID openSegment(const std::string &path) = 0;
-
-        /// @brief Close the segment.
-        virtual int closeSegment(SegmentID segment_id) = 0;
+        virtual int install(const std::string &local_name, std::shared_ptr<TransferMetadata> meta, void **args) = 0;
 
         /// @brief Create a batch with specified maximum outstanding transfers.
         virtual BatchID allocateBatchID(size_t batch_size) = 0;
@@ -95,42 +83,20 @@ namespace mooncake
                                       TransferStatus &status) = 0;
 
     private:
+        virtual int openSegment(const std::string path) = 0;
+
         virtual const char *getName() = 0;
     };
 
     class DummyTransport : public Transport
     {
     public:
-        int install(void **args) override
+        int install(const std::string &local_name, std::shared_ptr<TransferMetadata> meta, void **args) override
         {
             // 1. get
             char* arg1 = (char*)args[0];
             char* arg2 = (char*)args[1];
-            std::cout << "install, arg1: " << arg1 << ", arg2: " << arg2 << std::endl;
-            return 0;
-        }
-
-        int registerLocalMemory(void *addr, size_t size, const std::string &location) override
-        {
-            std::cout << "registerLocalMemory, addr: " << addr << ", size: " << size << ", location: " << location << std::endl;
-            return 0;
-        }
-
-        int unregisterLocalMemory(void *addr) override
-        {   
-            std::cout << "unregisterLocalMemory, addr: " << addr << std::endl;
-            return 0;
-        }
-
-        SegmentID openSegment(const std::string &path) override
-        {
-            std::cout << "openSegment, path: " << path << std::endl;
-            return 1;
-        }
-
-        int closeSegment(SegmentID segment_id) override
-        {
-            std::cout << "closeSegment, segment_id: " << segment_id << std::endl;
+            std::cout << "local name " << local_name << "install, arg1: " << arg1 << ", arg2: " << arg2 << std::endl;
             return 0;
         }
 
@@ -159,10 +125,16 @@ namespace mooncake
             std::cout << "getTransferStatus, batch_id: " << batch_id << ", task_id: " << task_id << std::endl;
             status.s = COMPLETED;
             status.transferred_bytes = 100;
-            return 0;
+            return 1;
         }
 
     private:
+        int openSegment(const std::string path) override
+        {
+            std::cout << "openSegment, path: " << path << std::endl;
+            return 0;
+        }
+
         const char *getName() override
         {
             return "dummy";
