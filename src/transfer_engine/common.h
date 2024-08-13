@@ -237,8 +237,13 @@ namespace mooncake
 
         void writeLockNice()
         {
+            uint32_t count = 0;
             while (!tryLock())
-                ;
+            {
+                PAUSE();
+                if (++count > 1000)
+                    std::this_thread::yield();
+            }
         }
 
         void unlockAndLockShared()
@@ -261,8 +266,8 @@ namespace mooncake
             uint_fast32_t count = 0;
             while (!tryLockShared())
             {
-                _mm_pause();
-                if ((++count & 1023) == 0)
+                PAUSE();
+                if (++count > 1000)
                     std::this_thread::yield();
             }
         }

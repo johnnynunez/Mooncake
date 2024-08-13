@@ -38,7 +38,7 @@ namespace mooncake
         RdmaContext &context_;
         const int numa_socket_id_;
 
-        const static int kTransferWorkerCount = 2;
+        const static int kTransferWorkerCount = 4;
 
         std::vector<std::thread> worker_thread_;
         std::atomic<bool> workers_running_;
