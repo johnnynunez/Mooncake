@@ -8,4 +8,5 @@ add_library(transfer_engine transfer_engine.cpp
                             config.cpp)
 add_compile_definitions(transfer_engine PUBLIC MOONCAKE_USE_ETCD)
 target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa etcd-cpp-api)
+#target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa etcd-cpp-api-core protobuf grpc++ grpc)
 #target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa memcached)

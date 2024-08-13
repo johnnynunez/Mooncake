@@ -2,8 +2,11 @@
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
+#include <fstream>
 #include <iomanip>
 #include <sys/time.h>
+
+#define NR_SOCKETS (2)
 
 /*
   测试用例使用方法
@@ -108,7 +111,7 @@ std::atomic<size_t> total_batch_count(0);
 
 int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id, void *addr)
 {
-    bindToSocket(0);
+    bindToSocket(thread_id % NR_SOCKETS);
     TransferRequest::OpCode opcode;
     if (FLAGS_operation == "read")
         opcode = TransferRequest::READ;
@@ -121,7 +124,7 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
     }
 
     auto segment_desc = engine->getSegmentDescByID(segment_id);
-    uint64_t remote_base = (uint64_t)segment_desc->buffers[0].addr;
+    uint64_t remote_base = (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
 
     size_t batch_count = 0;
     while (running)
@@ -143,27 +146,6 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
 
         ret = engine->submitTransfer(batch_id, requests);
         LOG_ASSERT(!ret);
-        /*
-        std::vector<TransferStatus> status;
-        while (true)
-        {
-            ret = engine->getTransferStatus(batch_id, status);
-            LOG_ASSERT(!ret);
-            int completed = 0, failed = 0;
-            for (int i = 0; i < FLAGS_batch_size; ++i)
-                if (status[i].s == TransferStatusEnum::COMPLETED)
-                    completed++;
-                else if (status[i].s == TransferStatusEnum::FAILED)
-                    failed++;
-            if (completed + failed == FLAGS_batch_size)
-            {
-                if (failed)
-                    LOG(WARNING) << "Found " << failed << " failures in this batch";
-                break;
-            }
-        }
-        */
-
         for (int task_id = 0; task_id < FLAGS_batch_size; ++task_id)
         {
             bool completed = false;
@@ -188,19 +170,37 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
     return 0;
 }
 
+std::string loadNicPriorityMatrix(const std::string &path)
+{
+    std::ifstream file(path);
+    if (file.is_open()) {
+        std::string content((std::istreambuf_iterator<char>(file)), 
+                             std::istreambuf_iterator<char>());
+        file.close();
+        return content;
+    } else {
+        return path;
+    }
+}
+
 int initiator()
 {
     auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
+    auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
                                                    FLAGS_local_server_name,
-                                                   FLAGS_nic_priority_matrix);
+                                                   nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr = allocateMemoryPool(dram_buffer_size, 0);
-    engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
+    void *addr[NR_SOCKETS] = { nullptr };
+    for (int i = 0; i < NR_SOCKETS; ++i) {
+        addr[i] = allocateMemoryPool(dram_buffer_size, i);
+        int rc = engine->registerLocalMemory(addr[i], dram_buffer_size, "cpu:" + std::to_string(i));
+        LOG_ASSERT(!rc);
+    }
 
     auto segment_id = engine->getSegmentID(FLAGS_segment_id);
     LOG_ASSERT(segment_id >= 0);
@@ -211,7 +211,7 @@ int initiator()
     gettimeofday(&start_tv, nullptr);
 
     for (int i = 0; i < FLAGS_threads; ++i)
-        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i, addr);
+        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i, addr[i % NR_SOCKETS]);
 
     sleep(FLAGS_duration);
     running = false;
@@ -231,8 +231,11 @@ int initiator()
               << ", throughput "
               << (batch_count * FLAGS_batch_size * FLAGS_block_size) / duration / 1000000000.0;
 
-    engine->unregisterLocalMemory(addr);
-    freeMemoryPool(addr, dram_buffer_size);
+    for (int i = 0; i < NR_SOCKETS; ++i)
+    {
+        engine->unregisterLocalMemory(addr[i]);
+        freeMemoryPool(addr[i], dram_buffer_size);
+    }
 
     return 0;
 }
@@ -242,20 +245,29 @@ int target()
     auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
+    auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
+
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
                                                    FLAGS_local_server_name,
-                                                   FLAGS_nic_priority_matrix);
+                                                   nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr = allocateMemoryPool(dram_buffer_size, 0);
-    engine->registerLocalMemory(addr, dram_buffer_size, "cpu:0");
+    void *addr[2] = { nullptr };
+    for (int i = 0; i < NR_SOCKETS; ++i) {
+        addr[i] = allocateMemoryPool(dram_buffer_size, i);
+        int rc = engine->registerLocalMemory(addr[i], dram_buffer_size, "cpu:" + std::to_string(i));
+        LOG_ASSERT(!rc);
+    }
 
     while (true)
         sleep(1);
 
-    engine->unregisterLocalMemory(addr);
-    freeMemoryPool(addr, dram_buffer_size);
+    for (int i = 0; i < NR_SOCKETS; ++i)
+    {
+        engine->unregisterLocalMemory(addr[i]);
+        freeMemoryPool(addr[i], dram_buffer_size);
+    }
 
     return 0;
 }

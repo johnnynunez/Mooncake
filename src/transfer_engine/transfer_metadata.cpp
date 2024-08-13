@@ -1,8 +1,10 @@
 // transfer_metadata.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/transfer_metadata.h"
 #include "transfer_engine/common.h"
+#include "transfer_engine/config.h"
+#include "transfer_engine/transfer_metadata.h"
+
 #include <arpa/inet.h>
 #include <netdb.h>
 #include <sys/socket.h>
@@ -37,7 +39,8 @@ namespace mooncake
             auto json_file = resp.value().as_string();
             if (!reader.parse(json_file, value))
                 return false;
-            LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
+            if (globalConfig().verbose)
+                LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
             return true;
         }
 
@@ -45,7 +48,8 @@ namespace mooncake
         {
             Json::FastWriter writer;
             const std::string json_file = writer.write(value);
-            LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
+            if (globalConfig().verbose)
+                LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
             auto resp = client_.put(key, json_file);
             if (!resp.is_ok())
             {
@@ -105,7 +109,8 @@ namespace mooncake
             char *json_file = memcached_get(client_, key.c_str(), key.length(), &length, &flags, &rc);
             if (!json_file || !reader.parse(json_file, json_file + length, value))
                 return false;
-            LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
+            if (globalConfig().verbose)
+                LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
             free(json_file);
             return true;
         }
@@ -114,7 +119,8 @@ namespace mooncake
         {
             Json::FastWriter writer;
             const std::string json_file = writer.write(value);
-            LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
+            if (globalConfig().verbose)
+                LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
             memcached_return_t rc = memcached_set(client_, key.c_str(), key.length(), &json_file[0], json_file.size(), 0, 0);
             return memcached_success(rc);
         }
@@ -314,7 +320,8 @@ namespace mooncake
         root["qp_num"] = qpNums;
         Json::FastWriter writer;
         auto serialized = writer.write(root);
-        LOG(INFO) << "Send Endpoint Handshake Info: " << serialized;
+        if (globalConfig().verbose)
+            LOG(INFO) << "Send Endpoint Handshake Info: " << serialized;
         return serialized;
     }
 
@@ -326,7 +333,8 @@ namespace mooncake
         if (serialized.empty() || !reader.parse(serialized, root))
             return -1;
 
-        LOG(INFO) << "Receive Endpoint Handshake Info: " << serialized;
+        if (globalConfig().verbose)
+            LOG(INFO) << "Receive Endpoint Handshake Info: " << serialized;
         desc.local_nic_path = root["local_nic_path"].asString();
         desc.peer_nic_path = root["peer_nic_path"].asString();
         for (const auto &qp : root["qp_num"])
@@ -423,7 +431,8 @@ namespace mooncake
                         continue;
                     }
 
-                    LOG(INFO) << "New connection: " << inet_str << ":" << ntohs(addr.sin_port) << ", fd: " << conn_fd;
+                    if (globalConfig().verbose)
+                        LOG(INFO) << "New connection: " << inet_str << ":" << ntohs(addr.sin_port) << ", fd: " << conn_fd;
 
                     HandShakeDesc local_desc, peer_desc;
                     int ret = decode(readString(conn_fd), peer_desc);

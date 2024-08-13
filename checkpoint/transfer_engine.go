@@ -1,4 +1,4 @@
-package main
+package checkpoint
 
 //#cgo LDFLAGS: -L../build/src/transfer_engine -ltransfer_engine -lstdc++ -lnuma -lglog -libverbs -ljsoncpp -letcd-cpp-api
 //#include "../src/transfer_engine/transfer_engine_c.h"

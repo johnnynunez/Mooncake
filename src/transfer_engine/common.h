@@ -20,10 +20,18 @@
 #define PAUSE()
 #endif
 
+#define likely(x) __glibc_likely(x)
+#define unlikely(x) __glibc_unlikely(x)
+
 namespace mooncake
 {
     static inline int bindToSocket(int socket_id)
     {
+        if (unlikely(numa_available() < 0))
+        {
+            LOG(ERROR) << "The platform does not support NUMA";
+            return -1;
+        }
         cpu_set_t cpu_set;
         CPU_ZERO(&cpu_set);
         int num_nodes = numa_num_configured_nodes();
@@ -39,7 +47,7 @@ namespace mooncake
         numa_free_cpumask(cpu_list);
         if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set))
         {
-            LOG(ERROR) << "Failed to set affinity";
+            LOG(ERROR) << "Failed to set socket affinity";
             return -1;
         }
         return 0;
@@ -68,11 +76,15 @@ namespace mooncake
                 continue;
             else if (rc < 0)
             {
-                PLOG(ERROR) << "Write failed";
+                PLOG(ERROR) << "Socket write failed";
                 return rc;
             }
-            else if (rc == 0)
+            else if (rc == 0) 
+            {
+                LOG(WARNING) << "Socket write incompleted: expected " << len
+                             << " bytes, actual " << len - nbytes << " bytes";
                 return len - nbytes;
+            }
             pos += rc;
             nbytes -= rc;
         }
@@ -90,11 +102,15 @@ namespace mooncake
                 continue;
             else if (rc < 0)
             {
-                PLOG(ERROR) << "Read failed";
+                PLOG(ERROR) << "Socket read failed";
                 return rc;
             }
-            else if (rc == 0)
+            else if (rc == 0) 
+            {
+                LOG(WARNING) << "Socket read incompleted: expected " << len
+                             << " bytes, actual " << len - nbytes << " bytes";
                 return len - nbytes;
+            }
             pos += rc;
             nbytes -= rc;
         }
@@ -221,8 +237,13 @@ namespace mooncake
 
         void writeLockNice()
         {
+            uint32_t count = 0;
             while (!tryLock())
-                ;
+            {
+                PAUSE();
+                if (++count > 1000)
+                    std::this_thread::yield();
+            }
         }
 
         void unlockAndLockShared()
@@ -245,8 +266,8 @@ namespace mooncake
             uint_fast32_t count = 0;
             while (!tryLockShared())
             {
-                _mm_pause();
-                if ((++count & 1023) == 0)
+                PAUSE();
+                if (++count > 1000)
                     std::this_thread::yield();
             }
         }

@@ -86,7 +86,7 @@ namespace mooncake
 
         int activeSpeed() const { return active_speed_; }
 
-        ibv_mtu maxMTU() const { return max_mtu_; }
+        ibv_mtu activeMTU() const { return active_mtu_; }
 
         ibv_comp_channel *compChannel();
 
@@ -99,6 +99,8 @@ namespace mooncake
         int cqCount() const { return cq_list_.size(); }
 
         int poll(int num_entries, ibv_wc *wc, int cq_index = 0);
+
+        int socketId();
 
     private:
         int openRdmaDevice(const std::string &device_name, uint8_t port, int gid_index);
@@ -123,7 +125,7 @@ namespace mooncake
         uint16_t lid_ = 0;
         int gid_index_ = -1;
         int active_speed_ = -1;
-        ibv_mtu max_mtu_;
+        ibv_mtu active_mtu_;
         ibv_gid gid_;
 
         RWSpinlock memory_regions_lock_;
