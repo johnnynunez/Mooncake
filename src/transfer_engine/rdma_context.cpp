@@ -424,7 +424,7 @@ namespace mooncake
             context_ = context;
             port_ = port;
             lid_ = attr.lid;
-            max_mtu_ = attr.max_mtu;
+            active_mtu_ = attr.active_mtu;
             active_speed_ = attr.active_speed;
             gid_index_ = gid_index;
 

@@ -320,7 +320,7 @@ namespace mooncake
         memset(&attr, 0, sizeof(attr));
         attr.qp_state = IBV_QPS_RTR;
         attr.path_mtu = (ibv_mtu) std::min(
-            int(context_.maxMTU()), 
+            int(context_.activeMTU()), 
             int(globalConfig().mtu_length));
         ibv_gid peer_gid_raw;
         std::istringstream iss(peer_gid);

@@ -138,6 +138,16 @@ namespace mooncake {
                 LOG(WARNING) << "Ignore value from environment variable MC_HANDSHAKE_PORT";
         }
 
+        const char* workers_per_ctx_env = std::getenv("MC_WORKERS_PER_CTX");
+        if (workers_per_ctx_env)
+        {
+            size_t val = atoi(workers_per_ctx_env);
+            if (val > 0 && val <= 8) 
+                config.workers_per_ctx = val;
+            else
+                LOG(WARNING) << "Ignore value from environment variable MC_WORKERS_PER_CTX";
+        }
+
         const char* verbose_env = std::getenv("MC_VERBOSE");
         if (verbose_env)
         {

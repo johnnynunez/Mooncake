@@ -26,6 +26,7 @@ namespace mooncake
         size_t max_inline = 64;
         ibv_mtu mtu_length = IBV_MTU_4096;
         uint16_t handshake_port = 12001;
+        int workers_per_ctx = 2;
         bool verbose = false;
     };
 

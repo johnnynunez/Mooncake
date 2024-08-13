@@ -3,6 +3,7 @@
 
 #include <sys/epoll.h>
 
+#include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
@@ -10,6 +11,9 @@
 
 namespace mooncake
 {
+    
+    const static int kTransferWorkerCount = globalConfig().workers_per_ctx;
+
     WorkerPool::WorkerPool(RdmaContext &context, int numa_socket_id)
         : context_(context),
           numa_socket_id_(numa_socket_id),
