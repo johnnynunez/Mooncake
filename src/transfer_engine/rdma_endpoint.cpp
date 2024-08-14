@@ -319,9 +319,9 @@ namespace mooncake
         // INIT -> RTR
         memset(&attr, 0, sizeof(attr));
         attr.qp_state = IBV_QPS_RTR;
-        attr.path_mtu = (ibv_mtu) std::min(
-            int(context_.activeMTU()), 
-            int(globalConfig().mtu_length));
+        attr.path_mtu = context_.activeMTU();
+        if (globalConfig().mtu_length < attr.path_mtu)
+            attr.path_mtu = globalConfig().mtu_length;
         ibv_gid peer_gid_raw;
         std::istringstream iss(peer_gid);
         for (int i = 0; i < 16; ++i)
