@@ -11,7 +11,7 @@
 
 namespace mooncake
 {
-    
+
     const static int kTransferWorkerCount = globalConfig().workers_per_ctx;
 
     WorkerPool::WorkerPool(RdmaContext &context, int numa_socket_id)
@@ -61,7 +61,7 @@ namespace mooncake
             slice_list_map[peer_nic_path].push_back(slice);
         }
 
-        for (auto &entry : slice_list_map) 
+        for (auto &entry : slice_list_map)
         {
             int index = std::hash<std::string>{}(entry.first) % kShardCount;
             slice_list_lock_[index].lock();
@@ -74,7 +74,7 @@ namespace mooncake
         submitted_slice_count_ += submitted_slice_count;
         if (suspended_flag_.load(std::memory_order_relaxed))
             cond_var_.notify_all();
-    
+
         return 0;
     }
 
@@ -83,7 +83,7 @@ namespace mooncake
         auto slice_list_size = 0;
         if (slice_list_size_[shard_id].load(std::memory_order_relaxed) == 0 || !slice_list_lock_[shard_id].tryLock())
             return;
- 
+
         SliceList failed_slice_list;
         for (auto &entry : slice_list_map_[shard_id])
         {
@@ -121,7 +121,7 @@ namespace mooncake
         if (slice_list_size)
             slice_list_size_[shard_id].store(slice_list_size, std::memory_order_relaxed);
         slice_list_lock_[shard_id].unlock();
-        
+
         if (!failed_slice_list.empty())
         {
             slice_list_lock_[0].lock();
