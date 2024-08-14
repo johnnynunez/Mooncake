@@ -44,20 +44,34 @@ namespace mooncake
     {
         std::unordered_map<std::string, SliceList> slice_list_map;
         uint64_t submitted_slice_count = slice_list.size();
+
+        std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
         for (auto &slice : slice_list)
         {
-            auto &peer_segment_desc = slice->peer_segment_desc;
+            auto target_id = slice->target_id;
+            if (!segment_desc_map.count(target_id))
+                segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id);
+        }
+
+        for (auto &slice : slice_list)
+        {
+            auto &peer_segment_desc = segment_desc_map[slice->target_id];
             int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, slice->length, buffer_id, device_id))
+            if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
             {
-                LOG(ERROR) << "Failed to select remote NIC for address " << slice->rdma.dest_addr;
-                slice->status = TransferEngine::Slice::FAILED;
-                __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
-                submitted_slice_count--;
-                continue;
+                peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
+                if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
+                {
+                    LOG(ERROR) << "Failed to select remote NIC for address " << slice->rdma.dest_addr;
+                    slice->status = TransferEngine::Slice::FAILED;
+                    __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
+                    submitted_slice_count--;
+                    continue;
+                }
             }
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
+            slice->peer_nic_path = peer_nic_path;
             slice_list_map[peer_nic_path].push_back(slice);
         }
 
@@ -87,6 +101,9 @@ namespace mooncake
         SliceList failed_slice_list;
         for (auto &entry : slice_list_map_[shard_id])
         {
+            if (entry.second.empty())
+                continue;
+            
             auto endpoint = context_.endpoint(entry.first);
             if (!endpoint)
             {
@@ -156,6 +173,7 @@ namespace mooncake
                                << ", length: " << slice->length
                                << ", dest_addr: " << slice->rdma.dest_addr
                                << "): " << ibv_wc_status_str(wc[i].status);
+                    context_.deleteEndpoint(slice->peer_nic_path);
                     slice_list_lock_[0].lock();
                     processFailedSlice(slice);
                     slice_list_size_[0].fetch_add(1, std::memory_order_relaxed);
@@ -185,9 +203,9 @@ namespace mooncake
         else
         {
             slice->rdma.retry_cnt++;
-            auto &peer_segment_desc = slice->peer_segment_desc;
+            auto peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
             int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc, slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
+            if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
             {
                 slice->status = TransferEngine::Slice::FAILED;
                 __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
@@ -196,9 +214,11 @@ namespace mooncake
             }
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
+            slice->peer_nic_path = peer_nic_path;
             slice_list_map_[0][peer_nic_path].push_back(slice);
             slice_list_size_[0].fetch_add(1, std::memory_order_relaxed);
-            LOG(INFO) << "Retry " << peer_nic_path << " retry cnt" << slice->rdma.retry_cnt;
+            if (globalConfig().verbose)
+                LOG(INFO) << "Retry transmission to " << peer_nic_path << " for " << slice->rdma.retry_cnt << "-th attempt";
         }
     }
 

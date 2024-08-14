@@ -257,11 +257,11 @@ namespace mooncake
             }
             slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
             return rc;
+        } else {
+            posted_slice_count_.fetch_add(wr_count, std::memory_order_relaxed);
+            slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
+            return 0;
         }
-
-        posted_slice_count_.fetch_add(wr_count, std::memory_order_relaxed);
-        slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
-        return 0;
     }
 
     std::vector<uint32_t> RdmaEndPoint::qpNum() const

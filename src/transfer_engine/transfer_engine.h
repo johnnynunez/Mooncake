@@ -221,8 +221,8 @@ namespace mooncake
                 } nvmeof;
             };
 
-            // TODO remove it
-            SegmentDesc *peer_segment_desc;
+            SegmentID target_id;
+            std::string peer_nic_path;
             SliceStatus status;
             TransferTask *task;
         };

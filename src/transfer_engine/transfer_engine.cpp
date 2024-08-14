@@ -180,12 +180,6 @@ namespace mooncake
 
         std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
         segment_desc_map[LOCAL_SEGMENT_ID] = getSegmentDescByID(LOCAL_SEGMENT_ID);
-        for (auto &request : entries)
-        {
-            auto target_id = request.target_id;
-            if (!segment_desc_map.count(target_id))
-                segment_desc_map[target_id] = getSegmentDescByID(target_id);
-        }
 
         for (auto &request : entries)
         {
@@ -213,8 +207,8 @@ namespace mooncake
                 slice->rdma.retry_cnt = 0;
                 slice->rdma.max_retry_cnt = 4;
                 slice->task = &task;
+                slice->target_id = request.target_id;
                 slice->status = Slice::PENDING;
-                slice->peer_segment_desc = segment_desc_map[request.target_id].get();
                 slices_to_post[context].push_back(slice);
                 task.total_bytes += slice->length;
                 task.slices.push_back(slice);
