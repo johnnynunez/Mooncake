@@ -2,6 +2,7 @@ package main
 
 import (
 	"checkpoint"
+	"context"
 	"fmt"
 	"os"
 	"syscall"
@@ -28,6 +29,9 @@ func main() {
 }
 
 func trainer() {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting hostname: %v\n", err)
@@ -50,13 +54,13 @@ func trainer() {
 
 	addrList := []uintptr{uintptr(unsafe.Pointer(&addr[0]))}
 	sizeList := []uint64{uint64(memoryMappedSize)}
-	err = checkpointEngine.RegisterCheckpoint("foo/bar", addrList, sizeList, 64*1024*1024)
+	err = checkpointEngine.RegisterCheckpoint(ctx, "foo/bar", addrList, sizeList, 64*1024*1024)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
 		os.Exit(1)
 	}
 
-	checkpointInfoList, err := checkpointEngine.GetCheckpointInfo("foo")
+	checkpointInfoList, err := checkpointEngine.GetCheckpointInfo(ctx, "foo")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GetCheckpointInfo failed: %v\n", err)
 		os.Exit(1)
@@ -67,7 +71,7 @@ func trainer() {
 	time.Sleep(100 * time.Second)
 	fmt.Println("========================= IDLE ========================= ")
 
-	err = checkpointEngine.UnregisterCheckpoint("foo/bar")
+	err = checkpointEngine.UnregisterCheckpoint(ctx, "foo/bar")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
 		os.Exit(1)
@@ -88,6 +92,9 @@ func trainer() {
 }
 
 func inferencer() {
+	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
 	hostname, err := os.Hostname()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error getting hostname: %v\n", err)
@@ -110,7 +117,7 @@ func inferencer() {
 
 	addrList := []uintptr{uintptr(unsafe.Pointer(&addr[0]))}
 	sizeList := []uint64{uint64(memoryMappedSize)}
-	err = checkpointEngine.GetLocalCheckpoint("foo/bar", addrList, sizeList)
+	err = checkpointEngine.GetLocalCheckpoint(ctx, "foo/bar", addrList, sizeList)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
 		os.Exit(1)
@@ -118,7 +125,7 @@ func inferencer() {
 
 	// Cloned
 
-	err = checkpointEngine.DeleteLocalCheckpoint("foo/bar")
+	err = checkpointEngine.DeleteLocalCheckpoint(ctx, "foo/bar")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
 		os.Exit(1)
