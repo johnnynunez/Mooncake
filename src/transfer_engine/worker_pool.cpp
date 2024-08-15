@@ -104,6 +104,21 @@ namespace mooncake
             if (entry.second.empty())
                 continue;
             
+            if (entry.second[0]->target_id == TransferEngine::LOCAL_SEGMENT_ID)
+            {
+                for (auto &slice : entry.second)
+                {
+                    LOG_ASSERT(slice->target_id == TransferEngine::LOCAL_SEGMENT_ID);
+                    memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
+                    slice->status = TransferEngine::Slice::SUCCESS;
+                    __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
+                    __sync_fetch_and_add(&slice->task->success_slice_count, 1);
+                }
+                processed_slice_count_.fetch_add(entry.second.size());
+                entry.second.clear();
+                continue;
+            }
+
             auto endpoint = context_.endpoint(entry.first);
             if (!endpoint)
             {

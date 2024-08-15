@@ -211,14 +211,6 @@ namespace mooncake
                     uint32_t retry_cnt;
                     uint32_t max_retry_cnt;
                 } rdma;
-                struct
-                {
-                    void *dest_addr;
-                } local;
-                struct
-                {
-                    // TBD
-                } nvmeof;
             };
 
             SegmentID target_id;
