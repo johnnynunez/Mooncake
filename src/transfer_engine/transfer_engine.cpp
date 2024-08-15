@@ -177,9 +177,7 @@ namespace mooncake
         std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
-
-        std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
-        segment_desc_map[LOCAL_SEGMENT_ID] = getSegmentDescByID(LOCAL_SEGMENT_ID);
+        auto local_segment_desc = getSegmentDescByID(LOCAL_SEGMENT_ID);
 
         for (auto &request : entries)
         {
@@ -193,25 +191,31 @@ namespace mooncake
                 slice->length = std::min(request.length - offset, kBlockSize);
                 slice->opcode = request.opcode;
                 slice->rdma.dest_addr = request.target_offset + offset;
-
-                auto &local_segment_desc = segment_desc_map[LOCAL_SEGMENT_ID];
-                std::string device_name;
-                int buffer_id = 0, device_id = 0;
-                if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, slice->length, buffer_id, device_id))
-                {
-                    LOG(ERROR) << "Unrecorgnized source address " << slice->source_addr;
-                    return -1;
-                }
-                auto &context = context_list_[device_id];
-                slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
                 slice->rdma.retry_cnt = 0;
                 slice->rdma.max_retry_cnt = 4;
                 slice->task = &task;
                 slice->target_id = request.target_id;
                 slice->status = Slice::PENDING;
-                slices_to_post[context].push_back(slice);
-                task.total_bytes += slice->length;
-                task.slices.push_back(slice);
+
+                int buffer_id = -1, device_id = -1, retry_cnt = 0;
+                while (retry_cnt < 16)
+                {
+                    if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, slice->length, buffer_id, device_id, retry_cnt++))
+                        continue;
+                    auto &context = context_list_[device_id];
+                    if (!context->active())
+                        continue;
+                    slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
+                    slices_to_post[context].push_back(slice);
+                    task.total_bytes += slice->length;
+                    task.slices.push_back(slice);
+                    break;
+                }
+                if (device_id < 0) 
+                {
+                    LOG(ERROR) << "Address not registered by any device(s) " << slice->source_addr;
+                    return -1;
+                }
             }
         }
         for (auto &entry : slices_to_post)
@@ -238,7 +242,6 @@ namespace mooncake
                     status[task_id].s = TransferStatusEnum::FAILED;
                 else
                     status[task_id].s = TransferStatusEnum::COMPLETED;
-                task.is_finished = true;
             }
             else
             {
@@ -266,7 +269,6 @@ namespace mooncake
                 status.s = TransferStatusEnum::FAILED;
             else
                 status.s = TransferStatusEnum::COMPLETED;
-            task.is_finished = true;
         }
         else
         {
@@ -281,7 +283,8 @@ namespace mooncake
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
         {
-            if (!batch_desc.task_list[task_id].is_finished)
+            auto &task = batch_desc.task_list[task_id];   
+            if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
             {
                 LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
                 return -1;

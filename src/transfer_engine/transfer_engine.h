@@ -17,6 +17,8 @@
 
 #include "transfer_engine/transfer_metadata.h"
 
+#define LOCAL_SEGMENT_ID (0)
+
 namespace mooncake
 {
 
@@ -34,10 +36,7 @@ namespace mooncake
 
     public:
         using SegmentID = int32_t;
-        const static SegmentID LOCAL_SEGMENT_ID = 0;
-
         using BatchID = uint64_t;
-        const static BatchID INVALID_BATCH_ID = UINT64_MAX;
 
         struct TransferRequest
         {
@@ -89,7 +88,7 @@ namespace mooncake
         TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                        const std::string &local_server_name,
                        const std::string &nic_priority_matrix,
-                       bool dummy = false);
+                       bool dry_run = false);
 
         // 回收分配的所有类型资源。
         ~TransferEngine();
@@ -198,6 +197,10 @@ namespace mooncake
             void *source_addr;
             size_t length;
             TransferRequest::OpCode opcode;
+            SegmentID target_id;
+            std::string peer_nic_path;
+            SliceStatus status;
+            TransferTask *task;
 
             union
             {
@@ -213,10 +216,19 @@ namespace mooncake
                 } rdma;
             };
 
-            SegmentID target_id;
-            std::string peer_nic_path;
-            SliceStatus status;
-            TransferTask *task;
+        public:
+            void markSuccess()
+            {
+                status = TransferEngine::Slice::SUCCESS;
+                __sync_fetch_and_add(&task->transferred_bytes, length);
+                __sync_fetch_and_add(&task->success_slice_count, 1);
+            }
+
+            void markFailed()
+            {
+                status = TransferEngine::Slice::FAILED;
+                __sync_fetch_and_add(&task->failed_slice_count, 1);
+            }
         };
 
         struct TransferTask
@@ -231,8 +243,8 @@ namespace mooncake
             std::vector<Slice *> slices;
             volatile uint64_t success_slice_count = 0;
             volatile uint64_t failed_slice_count = 0;
+
             volatile uint64_t transferred_bytes = 0;
-            volatile bool is_finished = false;
             uint64_t total_bytes = 0;
         };
 

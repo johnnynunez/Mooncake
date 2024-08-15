@@ -43,8 +43,6 @@ namespace mooncake
     int WorkerPool::submitPostSend(const SliceList &slice_list)
     {
         std::unordered_map<std::string, SliceList> slice_list_map;
-        uint64_t submitted_slice_count = slice_list.size();
-
         std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
         for (auto &slice : slice_list)
         {
@@ -63,9 +61,7 @@ namespace mooncake
                 if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Failed to select remote NIC for address " << slice->rdma.dest_addr;
-                    slice->status = TransferEngine::Slice::FAILED;
-                    __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
-                    submitted_slice_count--;
+                    slice->markFailed();
                     continue;
                 }
             }
@@ -75,17 +71,19 @@ namespace mooncake
             slice_list_map[peer_nic_path].push_back(slice);
         }
 
+        uint64_t submitted_slice_count = 0;
         for (auto &entry : slice_list_map)
         {
             int index = std::hash<std::string>{}(entry.first) % kShardCount;
             slice_list_lock_[index].lock();
             for (auto &slice : entry.second)
                 slice_list_map_[index][entry.first].push_back(slice);
+            submitted_slice_count += entry.second.size();
             slice_list_size_[index].fetch_add(entry.second.size());
             slice_list_lock_[index].unlock();
         }
 
-        submitted_slice_count_ += submitted_slice_count;
+        submitted_slice_count_.fetch_add(submitted_slice_count, std::memory_order_relaxed);
         if (suspended_flag_.load(std::memory_order_relaxed))
             cond_var_.notify_all();
 
@@ -104,15 +102,13 @@ namespace mooncake
             if (entry.second.empty())
                 continue;
             
-            if (entry.second[0]->target_id == TransferEngine::LOCAL_SEGMENT_ID)
+            if (entry.second[0]->target_id == LOCAL_SEGMENT_ID)
             {
                 for (auto &slice : entry.second)
                 {
-                    LOG_ASSERT(slice->target_id == TransferEngine::LOCAL_SEGMENT_ID);
+                    LOG_ASSERT(slice->target_id == LOCAL_SEGMENT_ID);
                     memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
-                    slice->status = TransferEngine::Slice::SUCCESS;
-                    __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
-                    __sync_fetch_and_add(&slice->task->success_slice_count, 1);
+                    slice->markSuccess();
                 }
                 processed_slice_count_.fetch_add(entry.second.size());
                 entry.second.clear();
@@ -138,11 +134,7 @@ namespace mooncake
             }
 #ifdef USE_FAKE_POST_SEND
             for (auto &slice : entry.second)
-            {
-                slice->status = TransferEngine::Slice::SUCCESS;
-                __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
-                __sync_fetch_and_add(&slice->task->success_slice_count, 1);
-            }
+                slice->markSuccess();
             processed_slice_count_.fetch_add(entry.second.size());
             entry.second.clear();
 #else
@@ -196,9 +188,7 @@ namespace mooncake
                 }
                 else
                 {
-                    slice->status = TransferEngine::Slice::SUCCESS;
-                    __sync_fetch_and_add(&slice->task->transferred_bytes, slice->length);
-                    __sync_fetch_and_add(&slice->task->success_slice_count, 1);
+                    slice->markSuccess();
                     processed_slice_count++;
                 }
             }
@@ -211,8 +201,7 @@ namespace mooncake
     {
         if (slice->rdma.retry_cnt == slice->rdma.max_retry_cnt)
         {
-            slice->status = TransferEngine::Slice::FAILED;
-            __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
+            slice->markFailed();
             processed_slice_count_++;
         }
         else
@@ -222,8 +211,7 @@ namespace mooncake
             int buffer_id, device_id;
             if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
             {
-                slice->status = TransferEngine::Slice::FAILED;
-                __sync_fetch_and_add(&slice->task->failed_slice_count, 1);
+                slice->markFailed();
                 processed_slice_count_++;
                 return;
             }
@@ -273,11 +261,9 @@ namespace mooncake
         ibv_async_event event;
         if (ibv_get_async_event(context_.context(), &event) < 0)
             return -1;
-        LOG(INFO) << "Received context async event: " << ibv_event_type_str(event.event_type);
-        // TODO 处理策略？
-        // - 鸵鸟（只打印警告？）
-        // - 杀掉进程？
-        // - 完全删除该 Context 并重新创建？
+        LOG(ERROR) << "Received context async event: " << ibv_event_type_str(event.event_type) 
+                   << " for context " << context_.deviceName() << ". It will be inactive.";
+        context_.inactive();
         ibv_ack_async_event(&event);
         return 0;
     }

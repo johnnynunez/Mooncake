@@ -24,7 +24,8 @@ namespace mooncake
           next_comp_channel_index_(0),
           next_comp_vector_index_(0),
           next_cq_list_index_(0),
-          worker_pool_(nullptr)
+          worker_pool_(nullptr),
+          active_(true)
     {
         static std::once_flag g_once_flag;
         auto fork_init = []()
@@ -207,6 +208,12 @@ namespace mooncake
 
     int RdmaContext::registerMemoryRegion(void *addr, size_t length, int access)
     {
+        if (!active_)
+        {
+            LOG(ERROR) << "Endpoint not longer active";
+            return -1;
+        }
+
         // Currently if the memory region overlaps with existing one, return -1
         // Or Merge it with existing mr?
         {
@@ -295,6 +302,12 @@ namespace mooncake
 
     std::shared_ptr<RdmaEndPoint> RdmaContext::endpoint(const std::string &peer_nic_path)
     {
+        if (!active_)
+        {
+            LOG(ERROR) << "Endpoint not longer active";
+            return nullptr;
+        }
+
         if (peer_nic_path.empty())
         {
             LOG(ERROR) << "Invalid peer NIC path";

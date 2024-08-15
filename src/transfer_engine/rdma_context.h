@@ -55,6 +55,10 @@ namespace mooncake
 
         uint32_t lkey(void *addr);
 
+        bool active() const { return active_; }
+
+        void inactive() { active_ = false; }
+
     public:
         // EndPoint 管理
         std::shared_ptr<RdmaEndPoint> endpoint(const std::string &peer_nic_path);
@@ -142,6 +146,8 @@ namespace mooncake
         std::atomic<int> next_cq_list_index_;
 
         std::shared_ptr<WorkerPool> worker_pool_;
+
+        volatile bool active_;
     };
 
 }
