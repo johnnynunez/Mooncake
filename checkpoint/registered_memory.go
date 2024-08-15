@@ -1,124 +1,99 @@
 package checkpoint
 
 import (
-	"sort"
+	"errors"
 	"sync"
 )
 
-type MemoryRegionEntry struct {
-	Addr     uintptr
-	Length   uint64
-	RefCount int
+type memoryRegion struct {
+	addr     uintptr
+	length   uint64
+	refCount int
 }
 
 type RegisteredMemory struct {
-	entries        []MemoryRegionEntry
-	transferEngine *TransferEngine
-	mu             sync.Mutex
+	transferEngine   *TransferEngine
+	memoryRegionList []memoryRegion
+	mu               sync.Mutex
 }
 
 func NewRegisteredMemory(transferEngine *TransferEngine) *RegisteredMemory {
 	return &RegisteredMemory{transferEngine: transferEngine}
 }
 
-func (memory *RegisteredMemory) Add(addr uintptr, length uint64) error {
+const maxChunkSize uint64 = 4096 * 1024 * 1024
+
+func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize uint64) error {
+	var wg sync.WaitGroup
+	var asyncError error
+	if maxChunkSize%maxShardSize != 0 {
+		return errors.New("maxShardSize should be pow of 2")
+	}
+
 	memory.mu.Lock()
-	defer memory.mu.Unlock()
-
-	var newEntries []MemoryRegionEntry
-
-	// assert: current.Addr + current.length == addr + length
-	current := MemoryRegionEntry{
-		Addr:     addr,
-		Length:   length,
-		RefCount: 1,
+	for idx, entry := range memory.memoryRegionList {
+		if entry.addr == addr && entry.length == length {
+			memory.memoryRegionList[idx].refCount++
+			memory.mu.Unlock()
+			return nil
+		}
 	}
+	memory.memoryRegionList = append(memory.memoryRegionList,
+		memoryRegion{addr: addr, length: length, refCount: 1})
+	memory.mu.Unlock()
 
-	currentEndAddr := addr + uintptr(length)
-	for _, existing := range memory.entries {
-		existingEndAddr := existing.Addr + uintptr(existing.Length)
-
-		if currentEndAddr <= existing.Addr {
-			break
+	for offset := uint64(0); offset < length; offset += maxChunkSize {
+		chunkSize := maxChunkSize
+		if chunkSize > length-offset {
+			chunkSize = length - offset
 		}
-
-		if current.Addr >= existingEndAddr {
-			continue
-		}
-
-		// Overlapped
-		if current.Addr < existing.Addr {
-			newEntries = append(newEntries, MemoryRegionEntry{
-				Addr:     current.Addr,
-				Length:   uint64(existing.Addr - current.Addr),
-				RefCount: 1,
-			})
-		}
-
-		if currentEndAddr > existingEndAddr {
-			current.Addr = existingEndAddr
-			current.Length = uint64(currentEndAddr - current.Addr)
-		} else {
-			current.Length = 0
-		}
-
-		existing.RefCount++
+		wg.Add(1)
+		go func(baseAddr uintptr) {
+			defer wg.Done()
+			err := memory.transferEngine.registerLocalMemory(baseAddr, chunkSize, "cpu:0")
+			if err != nil {
+				asyncError = err
+			}
+		}(addr + uintptr(offset))
 	}
-
-	if current.Length != 0 {
-		newEntries = append(newEntries, current)
-	}
-
-	for _, currentRange := range newEntries {
-		err := memory.transferEngine.registerLocalMemory(currentRange.Addr, currentRange.Length, "cpu:0")
-		if err != nil {
-			return err
-		}
-
-		insertIndex := sort.Search(len(memory.entries), func(i int) bool {
-			return memory.entries[i].Addr >= currentRange.Addr
-		})
-
-		// Insert new range at the found index
-		memory.entries = append(memory.entries[:insertIndex],
-			append([]MemoryRegionEntry{currentRange}, memory.entries[insertIndex:]...)...)
-	}
-
-	return nil
+	wg.Wait()
+	return asyncError
 }
 
-func (memory *RegisteredMemory) Remove(addr uintptr, length uint64) error {
+func (memory *RegisteredMemory) Remove(addr uintptr, length uint64, maxShardSize uint64) error {
+	var wg sync.WaitGroup
+	var asyncError error
+	if maxChunkSize%maxShardSize != 0 {
+		return errors.New("maxShardSize should be pow of 2")
+	}
+
 	memory.mu.Lock()
-	defer memory.mu.Unlock()
-
-	var removeEntries []MemoryRegionEntry
-	var nextEntries []MemoryRegionEntry
-
-	currentAddr := addr
-	currentEndAddr := addr + uintptr(length)
-
-	for _, existing := range memory.entries {
-		existingEndAddr := existing.Addr + uintptr(existing.Length)
-		if existing.Addr < currentEndAddr && existing.Addr == currentAddr {
-			existing.RefCount--
-			if existing.RefCount == 0 {
-				removeEntries = append(removeEntries, existing)
+	for idx, entry := range memory.memoryRegionList {
+		if entry.addr == addr && entry.length == length {
+			entry := &memory.memoryRegionList[idx]
+			entry.refCount--
+			if entry.refCount == 0 {
+				memory.memoryRegionList = append(memory.memoryRegionList[:idx],
+					memory.memoryRegionList[idx+1:]...)
+				break
 			} else {
-				nextEntries = append(nextEntries, existing)
+				memory.mu.Unlock()
+				return nil
 			}
-			currentAddr = existingEndAddr
-		} else {
-			nextEntries = append(nextEntries, existing)
 		}
 	}
+	memory.mu.Unlock()
 
-	memory.entries = nextEntries
-	for _, currentRange := range removeEntries {
-		err := memory.transferEngine.unregisterLocalMemory(currentRange.Addr)
-		if err != nil {
-			return err
-		}
+	for offset := uint64(0); offset < length; offset += maxShardSize {
+		wg.Add(1)
+		go func(baseAddr uintptr) {
+			defer wg.Done()
+			err := memory.transferEngine.unregisterLocalMemory(addr + uintptr(offset))
+			if err != nil {
+				asyncError = err
+			}
+		}(addr + uintptr(offset))
 	}
-
-	return nil
+	wg.Wait()
+	return asyncError
 }

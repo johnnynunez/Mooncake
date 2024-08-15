@@ -82,7 +82,7 @@ func (engine *CheckpointEngine) RegisterCheckpoint(ctx context.Context, name str
 	checkpoint.SizeList = sizeList
 	for i := 0; i < addrListLen; i++ {
 		addr, size := addrList[i], sizeList[i]
-		err := engine.registeredMemory.Add(addr, size)
+		err := engine.registeredMemory.Add(addr, size, maxShardSize)
 		if err != nil {
 			return err
 		}
@@ -148,7 +148,7 @@ func (engine *CheckpointEngine) UnregisterCheckpoint(ctx context.Context, name s
 		if success {
 			engine.catalog.Remove(name)
 			for index := 0; index < len(params.AddrList); index++ {
-				err = engine.registeredMemory.Remove(params.AddrList[index], params.SizeList[index])
+				err = engine.registeredMemory.Remove(params.AddrList[index], params.SizeList[index], params.MaxShardSize)
 				if err != nil {
 					return err
 				}
@@ -218,7 +218,7 @@ func (engine *CheckpointEngine) GetLocalCheckpoint(ctx context.Context, name str
 	maxShardSize := checkpoint.MaxShardSize
 	for i := 0; i < addrListLen; i++ {
 		addr, size := addrList[i], sizeList[i]
-		err := engine.registeredMemory.Add(addr, size)
+		err := engine.registeredMemory.Add(addr, size, maxShardSize)
 		if err != nil {
 			return err
 		}
@@ -378,7 +378,7 @@ func (engine *CheckpointEngine) DeleteLocalCheckpoint(ctx context.Context, name 
 		if success {
 			engine.catalog.Remove(name)
 			for index := 0; index < len(params.AddrList); index++ {
-				err = engine.registeredMemory.Remove(params.AddrList[index], params.SizeList[index])
+				err = engine.registeredMemory.Remove(params.AddrList[index], params.SizeList[index], params.MaxShardSize)
 				if err != nil {
 					return err
 				}

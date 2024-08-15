@@ -60,7 +60,7 @@ namespace mooncake
                 peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
                 if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
                 {
-                    LOG(ERROR) << "Failed to select remote NIC for address " << slice->rdma.dest_addr;
+                    LOG(ERROR) << "Failed to select remote NIC for address " << (void *) slice->rdma.dest_addr;
                     slice->markFailed();
                     continue;
                 }
