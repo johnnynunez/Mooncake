@@ -9,22 +9,29 @@
 
 using namespace mooncake;
 
-transfer_engine_t createTransferEngine(const char *metadata_uri,
-                                       const char *local_server_name)
+transfer_engine_t createTransferEngine(const char *metadata_uri)
 {
     auto metadata_client = std::make_shared<TransferMetadata>(metadata_uri);
-    MultiTransferEngine *native = new MultiTransferEngine(local_server_name, metadata_client);
+    MultiTransferEngine *native = new MultiTransferEngine(metadata_client);
     return (transfer_engine_t) native;
 }
 
-transport_t installTransport(transfer_engine_t engine, const char *proto, const char *path_prefix, void **args) {
-    MultiTransferEngine *native = (MultiTransferEngine *) engine;
-    return (transport_t)native->installTransport(proto, path_prefix, native->local_name, native->meta, args);
+int initTransferEngine(transfer_engine_t engine, const char *local_server_name)
+{
+    MultiTransferEngine *native = (MultiTransferEngine *)engine;
+    native->init(local_server_name);
+    return 0;
 }
 
-int uninstallTransport(transfer_engine_t engine, transport_t transport) {
+transport_t installOrGetTransport(transfer_engine_t engine, const char *proto, void **args) {
     MultiTransferEngine *native = (MultiTransferEngine *) engine;
-    return native->uninstallTransport((Transport *)transport);
+    return (transport_t)native->installOrGetTransport(proto, args);
+}
+
+int uninstallTransport(transfer_engine_t engine, const char *proto)
+{
+    MultiTransferEngine *native = (MultiTransferEngine *) engine;
+    return native->uninstallTransport(proto);
 }
 
 void destroyTransferEngine(transfer_engine_t engine)
@@ -33,13 +40,10 @@ void destroyTransferEngine(transfer_engine_t engine)
     delete native;
 }
 
-segment_id_t openSegment(transfer_engine_t engine, const char *segment_name, transport_t* transport)
+segment_id_t openSegment(transfer_engine_t engine, const char *segment_name)
 {
     MultiTransferEngine *native = (MultiTransferEngine *)engine;
-
-    auto p = native->openSegment(segment_name);
-    *transport = (transport_t)p.second;
-    return p.first;
+    return native->openSegment(segment_name);
 }
 
 int closeSegment(transfer_engine_t engine, segment_id_t segment_id)
@@ -48,20 +52,14 @@ int closeSegment(transfer_engine_t engine, segment_id_t segment_id)
     return native->closeSegment(segment_id);
 }
 
-int registerSegment(transfer_engine_t engine, void *addr, size_t length, const char *location)
-{
+int registerLocalMemory(transfer_engine_t engine, void *addr, size_t length, const char *location, int remote_accessible) {
     MultiTransferEngine *native = (MultiTransferEngine *)engine;
-    MultiTransferEngine::SegmentDesc desc = {.type = 0, .desc_ = {.rdma = {addr, length, location}}};
-    // TODO
-    return native->registerSegment(desc);
+    return native->registerLocalMemory(addr, length, location, remote_accessible);
 }
 
-int unregisterSegment(transfer_engine_t engine, void *addr)
-{
+int unregisterLocalMemory(transfer_engine_t engine, void *addr, int remote_accessible) {
     MultiTransferEngine *native = (MultiTransferEngine *)engine;
-    MultiTransferEngine::SegmentDesc desc = {.type = 0, .desc_ = {.rdma = {addr, 0, ""}}};
-
-    return native->unregisterSegment(desc);
+    return native->unregisterLocalMemory(addr, remote_accessible);
 }
 
 int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location)

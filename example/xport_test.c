@@ -8,63 +8,78 @@
 #define WRITE 1
 #define READ 0
 
-void **init_args()
-{
-    void **args = (void **)malloc(2 * sizeof(void *));
-    args[0] = malloc(16);
-    args[1] = malloc(16);
-    memset(args[0], 'a', 16);
-    memset(args[1], 'b', 16);
-    ((char *)args[0])[15] = '\0';
-    ((char *)args[1])[15] = '\0';
-    return args;
-}
-
 int main(void)
 {
-    char *metadata = "meta_server_addr";
-    char *local = "local_server";
-    transfer_engine_t *engine = createTransferEngine(metadata, local);
-    void **args = init_args();
-    installTransport(engine, "dummy", "dummy", args);
-    
-    registerSegment(engine, (void*)0x1000, 0x1000, "aaa");
-    transport_t xport;
-    segment_id_t seg = openSegment(engine, "dummy", &xport);
-    const size_t batch_size = 16;
-    batch_id_t batch = allocateBatchID(xport, batch_size);
-    char *buf = (char *)malloc(1024 * batch_size);
-    memset(buf, 1, 1024 * batch_size);
+    char *metadata = "etcd_server:2379";
+    char *server_name = "optane10";
+    transfer_engine_t *engine = createTransferEngine(metadata);
+    void** args = (void**)malloc(sizeof(void*));
+    // args[0] = malloc(16);
+    args[0] = "matrix";
+    // strcpy(args[0], "matrix");
+    initTransferEngine(engine, server_name);
 
-    struct transfer_request transfers[batch_size + 1];
+    transport_t rdma_xport = installOrGetTransport(engine, "rdma", args);
+    transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", NULL);
+
+    segment_handle_t rdma_seg = openSegment(engine, "ram/optane11");
+    segment_handle_t nvmeof_seg = openSegment(engine, "nvmeof/optane11");
+
+    const size_t batch_size = 16;
+    batch_id_t rdma_batch = allocateBatchID(rdma_xport, batch_size);
+    batch_id_t nvmeof_batch = allocateBatchID(nvmeof_xport, batch_size);
+    int length = batch_size * 1024 * 2;
+    char *buf = (char *)malloc(1024 * batch_size * 2);
+
+    memset(buf, 1, 1024 * batch_size);
+    registerLocalMemory(engine, buf, length, "", 0);
+
+    struct transfer_request rdma_transfers[batch_size], nvmeof_transfers[batch_size];
     for (int i = 0; i < batch_size; i++)
     {
-        transfers[i] = (struct transfer_request){
+        rdma_transfers[i] = (struct transfer_request){
             .opcode = WRITE,
             .source = buf + i * 1024,
-            .target_id = seg,
-            .target_offset = 0,
+            .target_id = rdma_seg,
+            .target_offset = i * 1024,
+            .length = 1024,
+        };
+        nvmeof_transfers[i] = (struct transfer_request){
+            .opcode = READ,
+            .source = buf + (batch_size + i) * 1024,
+            .target_id = nvmeof_seg,
+            .target_offset = i * 1024,
             .length = 1024,
         };
     }
-    submitTransfer(xport, batch, transfers, batch_size);
+    submitTransfer(rdma_xport, rdma_batch, rdma_transfers, batch_size);
+    submitTransfer(nvmeof_xport, nvmeof_batch, nvmeof_transfers, batch_size);
 
     for (int i = 0; i < batch_size; i++)
     {
         struct transfer_status status;
         int ret;
         // getTransferStatus(xport, batch, i, &status);
-        while ((ret = getTransferStatus(xport, batch, i, &status)) == 0)
+        while ((ret = getTransferStatus(nvmeof_xport, nvmeof_batch, i, &status)) == 0)
         {
-            // busy waiting
+            // busy waiting for nvme
+        };
+        while ((ret = getTransferStatus(rdma_xport, rdma_batch, i, &status)) == 0)
+        {
+            // busy waiting for rdma
         };
         printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
     }
 
-    unregisterSegment(engine, (void*)0x1000);
-    closeSegment(xport, seg);
-    freeBatchID(xport, batch);
-    uninstallTransport(engine, xport);
+    unregisterLocalMemory(engine, buf, 0);
+
+    closeSegment(rdma_xport, rdma_seg);
+    closeSegment(nvmeof_xport, nvmeof_seg);
+
+    freeBatchID(rdma_xport, rdma_batch);
+    freeBatchID(nvmeof_xport, nvmeof_batch);
+    uninstallTransport(engine, "rdma");
+    uninstallTransport(engine, "nvmeof");
     destroyTransferEngine(engine);
     return 0;
 }

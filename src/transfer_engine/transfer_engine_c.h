@@ -12,6 +12,7 @@ extern "C"
 {
 #endif // __cplusplus
 
+#define segment_handle_t int32_t
 #define segment_id_t int32_t
 #define batch_id_t uint64_t
 #define LOCAL_SEGMENT (0)
@@ -82,25 +83,25 @@ extern "C"
     typedef void *transport_t;
 
 
-    transfer_engine_t createTransferEngine(const char *metadata_uri,
-                                           const char *local_server_name);
+    transfer_engine_t createTransferEngine(const char *metadata_uri);
 
-    transport_t installTransport(transfer_engine_t engine,
-                                 const char *proto,
-                                 const char *path_prefix,
-                                 void** args);
+    int initTransferEngine(transfer_engine_t engine, const char *local_server_name);
 
-    int uninstallTransport(transfer_engine_t engine, transport_t xport);
+    transport_t installOrGetTransport(transfer_engine_t engine,
+                                     const char *proto,
+                                     void **args);
 
-    segment_id_t openSegment(transfer_engine_t engine, const char *segment_name, transport_t *transport);
+    int uninstallTransport(transfer_engine_t engine, const char *proto);
+
+    segment_id_t openSegment(transfer_engine_t engine, const char *segment_name);
     // segment_id_t getSegmentID(transfer_engine_t engine, const char *segment_name);
     int closeSegment(transfer_engine_t engine, segment_id_t segment_id);
 
     void destroyTransferEngine(transfer_engine_t engine);
 
-    int registerSegment(transfer_engine_t engine, void *addr, size_t length, const char *location);
+    int registerLocalMemory(transfer_engine_t engine, void *addr, size_t length, const char *location, int remote_accessible);
 
-    int unregisterSegment(transfer_engine_t engine, void *addr);
+    int unregisterLocalMemory(transfer_engine_t engine, void *addr, int remote_accessible);
 
     int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location);
 

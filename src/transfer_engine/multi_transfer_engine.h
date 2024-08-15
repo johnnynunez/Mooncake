@@ -2,6 +2,7 @@
 #define MULTI_TRANSFER_ENGINE_H_
 
 #include <asm-generic/errno-base.h>
+#include <cstddef>
 #include <cstdint>
 #include <limits.h>
 #include <string.h>
@@ -44,38 +45,38 @@ namespace mooncake
         };
 
     public:
-        MultiTransferEngine(const char *name, std::shared_ptr<TransferMetadata> meta)
-            : local_name(name), meta(meta) {}
+        MultiTransferEngine(std::shared_ptr<TransferMetadata> meta)
+            : meta(meta) {}
 
-        int freeEngine()
-        {
-            while (!installed_transports.empty())
-            {
-                if (uninstallTransport(installed_transports.back()) < 0)
-                {
-                    return -1;
-                }
-            }
+        int init(const char *name) {
+            // TODO
+            local_name = name;
             return 0;
         }
 
-        Transport *installTransport(const std::string& proto, const std::string& path_prefix, 
-                              const std::string& local_name, std::shared_ptr<TransferMetadata> meta,
-                             void** args)
+        int freeEngine()
         {
-            if (findName(path_prefix.c_str()) != NULL)
-            {
-                errno = EEXIST;
-                return NULL;
-            }
-            Transport *xport = initTransport(path_prefix.c_str());
+            // while (!installed_transports.empty())
+            // {
+            //     if (uninstallTransport(installed_transports.back()) < 0)
+            //     {
+            //         return -1;
+            //     }
+            // }
+            return 0;
+        }
+
+        Transport *installOrGetTransport(const std::string& proto, void** args)
+        {
+            // TODO: dedpulicaete
+            Transport *xport = initTransport(proto.c_str());
             if (!xport)
             {
                 errno = ENOMEM;
                 return NULL;
             }
 
-            if (xport->install(local_name, meta, args) < 0)
+            if (xport->install(args) < 0)
             {
                 goto fail;
             }
@@ -86,33 +87,25 @@ namespace mooncake
             return NULL;
         }
 
-        int uninstallTransport(Transport *xport)
+        int uninstallTransport(const std::string &proto)
         {
-            for (auto it = installed_transports.begin(); it != installed_transports.end(); ++it)
-            {
-                if (*it == xport)
-                {
-                    delete xport;
-                    installed_transports.erase(it);
-                    return 0;
-                }
-            }
-            errno = EINVAL;
-            return -1;
+            return 0;
+            // for (auto it = installed_transports.begin(); it != installed_transports.end(); ++it)
+            // {
+            //     if (*it == xport)
+            //     {
+            //         delete xport;
+            //         installed_transports.erase(it);
+            //         return 0;
+            //     }
+            // }
+            // errno = EINVAL;
+            // return -1;
         }
 
-        int registerSegment(const SegmentDesc &seg_desc) {
-            // TODO
-            return 0;
-        }
-        int unregisterSegment(const SegmentDesc &seg_desc) {
-            // TODO
-            return 0;
-        }
-
-        std::pair<SegmentID, Transport *> openSegment(const char *path)
+        Transport::SegmentHandle openSegment(const char *path)
         {
-            return std::make_pair(1, installed_transports[0]);
+            return 1;
         //     const char *pos = NULL;
         //     if (path == NULL || (pos = strchr(path, ':')) == NULL)
         //     {
@@ -153,8 +146,13 @@ namespace mooncake
             return 0;
         }
 
-        string local_name;
-        std::shared_ptr<TransferMetadata> meta;
+        int registerLocalMemory(void* addr, size_t length, const std::string& location, bool remote_accessible = false) {
+            return 0;
+        }
+
+        int unregisterLocalMemory(void *addr, bool remote_accessible = false) {
+            return 0;
+        }
 
     private:
 
@@ -174,13 +172,18 @@ namespace mooncake
         Transport *initTransport(const char *proto)
         {
             // TODO: return a transport object according to protocol
-            if (std::string(proto) == "dummy")
+            if (std::string(proto) == "rdma")
             {
-                return new DummyTransport();
+                return new RDMATransport();
+            } else if (std::string(proto) == "nvmeof")
+            {
+                return new NVMeoFTransport();
             }
         }
 
         std::vector<Transport *> installed_transports;
+        string local_name;
+        std::shared_ptr<TransferMetadata> meta;
     };
 }
 
