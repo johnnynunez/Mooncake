@@ -148,6 +148,16 @@ namespace mooncake {
                 LOG(WARNING) << "Ignore value from environment variable MC_WORKERS_PER_CTX";
         }
 
+        const char* slice_size_env = std::getenv("MC_SLICE_SIZE");
+        if (slice_size_env)
+        {
+            size_t val = atoi(slice_size_env);
+            if (val > 0) 
+                config.slice_size = val;
+            else
+                LOG(WARNING) << "Ignore value from environment variable MC_SLICE_SIZE";
+        }
+
         const char* verbose_env = std::getenv("MC_VERBOSE");
         if (verbose_env)
         {

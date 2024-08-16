@@ -178,12 +178,12 @@ namespace mooncake
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
         auto local_segment_desc = getSegmentDescByID(LOCAL_SEGMENT_ID);
+        const size_t kBlockSize = globalConfig().slice_size;
 
         for (auto &request : entries)
         {
             TransferTask &task = batch_desc.task_list[task_id];
             ++task_id;
-            const static size_t kBlockSize = 65536;
             for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
             {
                 auto slice = new Slice();

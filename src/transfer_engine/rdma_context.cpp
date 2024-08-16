@@ -231,15 +231,15 @@ namespace mooncake
         }
 
         // No overlap, continue
-        auto t1 = getCurrentTimeInNano();
+        // auto t1 = getCurrentTimeInNano();
         ibv_mr *mr = ibv_reg_mr(pd_, addr, length, access);
         if (!mr)
         {
             PLOG(ERROR) << "Fail to register memory " << addr;
             return -1;
         }
-        auto t2 = getCurrentTimeInNano();
-        LOG(INFO) << t2 - t1;
+        // auto t2 = getCurrentTimeInNano();
+        // LOG(INFO) << t2 - t1;
 
         RWSpinlock::WriteGuard guard(memory_regions_lock_);
         memory_region_list_.push_back(mr);

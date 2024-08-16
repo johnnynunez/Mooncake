@@ -28,6 +28,7 @@ namespace mooncake
         uint16_t handshake_port = 12001;
         int workers_per_ctx = 2;
         bool verbose = false;
+        size_t slice_size = 65536;
     };
 
     void loadGlobalConfig(GlobalConfig &config);
