@@ -2,98 +2,145 @@ package checkpoint
 
 import (
 	"errors"
+	"log"
 	"sync"
 )
 
-type memoryRegion struct {
+type physicalMemoryRegion struct {
 	addr     uintptr
 	length   uint64
 	refCount int
 }
 
 type RegisteredMemory struct {
-	transferEngine   *TransferEngine
-	memoryRegionList []memoryRegion
-	mu               sync.Mutex
+	engine       *TransferEngine
+	regionList   []physicalMemoryRegion
+	mu           sync.Mutex
+	maxChunkSize uint64
 }
 
-func NewRegisteredMemory(transferEngine *TransferEngine) *RegisteredMemory {
-	return &RegisteredMemory{transferEngine: transferEngine}
+func NewRegisteredMemory(transferEngine *TransferEngine, maxChunkSize uint64) *RegisteredMemory {
+	return &RegisteredMemory{engine: transferEngine, maxChunkSize: maxChunkSize}
 }
 
-const maxChunkSize uint64 = 4096 * 1024 * 1024
-
+// 将地址 [addr, addr + length] 加入注册列表。如果地址已注册，则引用计数+1。暂不支持相交（但不一致）的内存区域注册
 func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize uint64) error {
-	var wg sync.WaitGroup
-	var asyncError error
-	if maxChunkSize%maxShardSize != 0 {
-		return errors.New("maxShardSize should be pow of 2")
+	if memory.maxChunkSize%maxShardSize != 0 {
+		return errors.New("error: maxShardSize should be power of two")
 	}
 
 	memory.mu.Lock()
-	for idx, entry := range memory.memoryRegionList {
+	for idx, entry := range memory.regionList {
 		if entry.addr == addr && entry.length == length {
-			memory.memoryRegionList[idx].refCount++
+			memory.regionList[idx].refCount++
 			memory.mu.Unlock()
 			return nil
 		}
+
+		entryEndAddr := entry.addr + uintptr(entry.length)
+		requestEndAddr := addr + uintptr(length)
+		if addr < entryEndAddr && requestEndAddr > entry.addr {
+			memory.mu.Unlock()
+			return errors.New("error: the memory region overlaps with an existing one")
+		}
 	}
-	memory.memoryRegionList = append(memory.memoryRegionList,
-		memoryRegion{addr: addr, length: length, refCount: 1})
+	memory.regionList = append(memory.regionList,
+		physicalMemoryRegion{addr: addr, length: length, refCount: 1})
 	memory.mu.Unlock()
 
-	for offset := uint64(0); offset < length; offset += maxChunkSize {
-		chunkSize := maxChunkSize
+	// Proceed memory registration
+	var wg sync.WaitGroup
+	errChan := make(chan error, 1)
+	successfulTasks := make([]uintptr, 0)
+	mu := &sync.Mutex{}
+
+	for offset := uint64(0); offset < length; offset += memory.maxChunkSize {
+		chunkSize := memory.maxChunkSize
 		if chunkSize > length-offset {
 			chunkSize = length - offset
 		}
+
 		wg.Add(1)
-		go func(baseAddr uintptr) {
+		go func(offset, chunkSize uint64) {
 			defer wg.Done()
-			err := memory.transferEngine.registerLocalMemory(baseAddr, chunkSize, "cpu:0")
+			baseAddr := addr + uintptr(offset)
+			err := memory.engine.registerLocalMemory(baseAddr, chunkSize, "cpu:0")
 			if err != nil {
-				asyncError = err
+				select {
+				case errChan <- err:
+					close(errChan)
+					return
+				default:
+				}
+			} else {
+				mu.Lock()
+				successfulTasks = append(successfulTasks, baseAddr)
+				mu.Unlock()
 			}
-		}(addr + uintptr(offset))
+		}(offset, chunkSize)
 	}
+
 	wg.Wait()
-	return asyncError
+	close(errChan)
+
+	if err := <-errChan; err != nil {
+		for _, baseAddr := range successfulTasks {
+			unregisterErr := memory.engine.unregisterLocalMemory(baseAddr)
+			if unregisterErr != nil {
+				log.Println("error:", unregisterErr)
+			}
+		}
+		return err
+	}
+
+	return nil
 }
 
 func (memory *RegisteredMemory) Remove(addr uintptr, length uint64, maxShardSize uint64) error {
-	var wg sync.WaitGroup
-	var asyncError error
-	if maxChunkSize%maxShardSize != 0 {
-		return errors.New("maxShardSize should be pow of 2")
+	if memory.maxChunkSize%maxShardSize != 0 {
+		return errors.New("error: maxShardSize should be pow of 2")
 	}
 
 	memory.mu.Lock()
-	for idx, entry := range memory.memoryRegionList {
+	found := false
+	for idx, entry := range memory.regionList {
 		if entry.addr == addr && entry.length == length {
-			entry := &memory.memoryRegionList[idx]
+			found = true
 			entry.refCount--
 			if entry.refCount == 0 {
-				memory.memoryRegionList = append(memory.memoryRegionList[:idx],
-					memory.memoryRegionList[idx+1:]...)
+				memory.regionList = append(memory.regionList[:idx],
+					memory.regionList[idx+1:]...)
 				break
-			} else {
-				memory.mu.Unlock()
-				return nil
 			}
 		}
 	}
 	memory.mu.Unlock()
-
-	for offset := uint64(0); offset < length; offset += maxShardSize {
-		wg.Add(1)
-		go func(baseAddr uintptr) {
-			defer wg.Done()
-			err := memory.transferEngine.unregisterLocalMemory(addr + uintptr(offset))
-			if err != nil {
-				asyncError = err
-			}
-		}(addr + uintptr(offset))
+	if !found {
+		return errors.New("error: cannot find requested address region")
 	}
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, 1)
+	for offset := uint64(0); offset < length; offset += memory.maxChunkSize {
+		wg.Add(1)
+		go func(offset uint64) {
+			defer wg.Done()
+			err := memory.engine.unregisterLocalMemory(addr + uintptr(offset))
+			if err != nil {
+				select {
+				case errChan <- err:
+				default:
+				}
+			}
+		}(offset)
+	}
+
 	wg.Wait()
-	return asyncError
+	close(errChan)
+	select {
+	case err := <-errChan:
+		return err
+	default:
+	}
+	return nil
 }

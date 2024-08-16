@@ -58,7 +58,7 @@ func trainer() {
 	sizeList := []uint64{uint64(memoryMappedSize)}
 	err = checkpointEngine.RegisterCheckpoint(ctx, "foo/bar", addrList, sizeList, 64*1024*1024)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "RegisterCheckpoint failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -106,7 +106,7 @@ func inferencer() {
 		os.Exit(1)
 	}
 
-	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], []]}"
+	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_0\", \"mlx5_2\"], []]}"
 	checkpointEngine, err := checkpoint.NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
@@ -124,7 +124,7 @@ func inferencer() {
 	sizeList := []uint64{uint64(memoryMappedSize)}
 	err = checkpointEngine.GetLocalCheckpoint(ctx, "foo/bar", addrList, sizeList)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "GetLocalCheckpoint failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -134,14 +134,20 @@ func inferencer() {
 
 	err = checkpointEngine.DeleteLocalCheckpoint(ctx, "foo/bar")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "DeleteLocalCheckpoint failed: %v\n", err)
 		os.Exit(1)
 	}
+
+	phaseTwoTimestamp := time.Now()
+	fmt.Println("Phase 2 duration ", phaseTwoTimestamp.Sub(startTimestamp).Milliseconds())
 
 	if err := syscall.Munmap(addr); err != nil {
 		fmt.Fprintf(os.Stderr, "Munmap failed: %v\n", err)
 		os.Exit(1)
 	}
+
+	phaseThreeTimestamp := time.Now()
+	fmt.Println("Phase 3 duration ", phaseThreeTimestamp.Sub(startTimestamp).Milliseconds())
 
 	fmt.Println("ALL DONE")
 }

@@ -35,7 +35,7 @@ type Location struct {
 }
 
 type Shard struct {
-	Size        uint64     `json:"size"`
+	Length      uint64     `json:"size"`
 	Gold        []Location `json:"gold"`
 	ReplicaList []Location `json:"replica_list"`
 }
@@ -123,7 +123,7 @@ func (metadata *Metadata) Create(ctx context.Context, name string, checkpoint *C
 		return err
 	}
 	if !txnResp.Succeeded {
-		return fmt.Errorf("key '%s' already exists", key)
+		return fmt.Errorf("error: key '%s' already exists", key)
 	}
 	return nil
 }
