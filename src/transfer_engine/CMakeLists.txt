@@ -6,8 +6,19 @@ add_library(transfer_engine transfer_engine.cpp
                             worker_pool.cpp
                             endpoint_store.cpp
                             transfer_engine_c.cpp
-                            config.cpp)
+                            config.cpp
+                            nvmeof_transport.cpp
+                            cufile_context.cpp
+                            )
+
 add_compile_definitions(transfer_engine PUBLIC MOONCAKE_USE_ETCD)
 #target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa etcd-cpp-api)
 target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa etcd-cpp-api-core protobuf grpc++ grpc)
+
+if (USE_CUDA)
+  include_directories("/usr/local/cuda/include")
+  add_compile_definitions(transfer_engine PUBLIC USE_CUDA)
+  target_link_libraries(transfer_engine PUBLIC cuda cufile)
+endif()
+
 #target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa memcached)

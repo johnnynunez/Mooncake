@@ -16,6 +16,7 @@
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transfer_metadata.h"
 #include "transport.h"
+#include "nvmeof_transport.h"
 
 namespace mooncake
 {
