@@ -1,7 +1,6 @@
 package checkpoint
 
 import (
-	"errors"
 	"log"
 	"sync"
 )
@@ -25,8 +24,8 @@ func NewRegisteredMemory(transferEngine *TransferEngine, maxChunkSize uint64) *R
 
 // 将地址 [addr, addr + length] 加入注册列表。如果地址已注册，则引用计数+1。暂不支持相交（但不一致）的内存区域注册
 func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize uint64) error {
-	if memory.maxChunkSize%maxShardSize != 0 {
-		return errors.New("error: maxShardSize should be power of two")
+	if memory.maxChunkSize == 0 || memory.maxChunkSize%maxShardSize != 0 {
+		return ErrInvalidArgument
 	}
 
 	memory.mu.Lock()
@@ -41,7 +40,7 @@ func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize ui
 		requestEndAddr := addr + uintptr(length)
 		if addr < entryEndAddr && requestEndAddr > entry.addr {
 			memory.mu.Unlock()
-			return errors.New("error: the memory region overlaps with an existing one")
+			return ErrAddressOverlapped
 		}
 	}
 	memory.regionList = append(memory.regionList,
@@ -87,7 +86,7 @@ func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize ui
 		for _, baseAddr := range successfulTasks {
 			unregisterErr := memory.engine.unregisterLocalMemory(baseAddr)
 			if unregisterErr != nil {
-				log.Println("error:", unregisterErr)
+				log.Println("cascading error:", unregisterErr)
 			}
 		}
 		return err
@@ -97,8 +96,8 @@ func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize ui
 }
 
 func (memory *RegisteredMemory) Remove(addr uintptr, length uint64, maxShardSize uint64) error {
-	if memory.maxChunkSize%maxShardSize != 0 {
-		return errors.New("error: maxShardSize should be pow of 2")
+	if memory.maxChunkSize == 0 || memory.maxChunkSize%maxShardSize != 0 {
+		return ErrInvalidArgument
 	}
 
 	memory.mu.Lock()
@@ -116,7 +115,7 @@ func (memory *RegisteredMemory) Remove(addr uintptr, length uint64, maxShardSize
 	}
 	memory.mu.Unlock()
 	if !found {
-		return errors.New("error: cannot find requested address region")
+		return ErrInvalidArgument
 	}
 
 	var wg sync.WaitGroup

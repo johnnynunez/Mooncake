@@ -26,6 +26,7 @@ const MAX_CHUNK_SIZE uint64 = 4096 * 1024 * 1024
 
 // Errors
 var ErrInvalidArgument = errors.New("error: invalid argument")
+var ErrAddressOverlapped = errors.New("error: address overlapped")
 var ErrCheckpointOpened = errors.New("error: checkpoint opened in local")
 var ErrCheckpointClosed = errors.New("error: checkpoint closed in local")
 var ErrCheckpointNotFound = errors.New("error: checkpoint not found in cluster")
