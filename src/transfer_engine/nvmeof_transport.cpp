@@ -1,9 +1,13 @@
 #include "nvmeof_transport.h"
+#include "transfer_engine/cufile_context.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transport.h"
+#include <cassert>
 #include <cstdint>
+#include <memory>
 
-namespace mooncake {
+namespace mooncake
+{
 
     Transport::TransferStatusEnum from_cufile_transfer_status(CUfileStatus_t status)
     {
@@ -28,7 +32,8 @@ namespace mooncake {
         }
     }
 
-    BatchID NVMeoFTransport::allocateBatchID(size_t batch_size) {
+    BatchID NVMeoFTransport::allocateBatchID(size_t batch_size)
+    {
         // TODO: this can be moved to upper layer?
         auto batch_desc = new BatchDesc();
         if (!batch_desc)
@@ -37,7 +42,9 @@ namespace mooncake {
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
         batch_desc->cufile_io_params.reserve(batch_size);
-        batch_desc->cufile_events_buf.reserve(batch_size);
+        batch_desc->cufile_events_buf.resize(8);
+        batch_desc->transfer_status.reserve(batch_size);
+        batch_desc->nr_completed = 0;
         // TODO: 在按照文件拆分之后再设置 size
         CUFILE_CHECK(cuFileBatchIOSetUp(&batch_desc->handle, batch_size));
 
@@ -49,9 +56,11 @@ namespace mooncake {
         return batch_desc->id;
     }
 
-    int NVMeoFTransport::getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status) {
+    int NVMeoFTransport::getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status)
+    {
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        unsigned nr = batch_desc.cufile_io_params.size() - batch_desc.nr_completed;
+        unsigned nr = batch_desc.cufile_io_params.size();
+        LOG(INFO) << "get t n " << nr;
         CUFILE_CHECK(cuFileBatchIOGetStatus(batch_desc.handle, 0, &nr, batch_desc.cufile_events_buf.data(), NULL));
         auto &event = batch_desc.cufile_events_buf[task_id];
         unsigned idx = (intptr_t)event.cookie;
@@ -60,20 +69,22 @@ namespace mooncake {
         if (transfer_status.s == COMPLETED)
         {
             transfer_status.transferred_bytes = event.ret;
+            nr_completed += 1;
         }
-        batch_desc.nr_completed += 1;
         status = transfer_status;
-        return 0;
+        return 1;
     }
 
-    int NVMeoFTransport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries) {
+    int NVMeoFTransport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries)
+    {
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
+        if (batch_desc.cufile_io_params.size() + entries.size() > batch_desc.batch_size)
             return -1;
 
         // std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
-        size_t start_idx = batch_desc.task_list.size();
-        batch_desc.task_list.resize(start_idx + entries.size());
+        size_t start_idx = batch_desc.cufile_io_params.size();
+        LOG(INFO) << "start " << start_idx;
+        // batch_desc.task_list.resize(start_idx + entries.size());
         // TODO: interact with seg
         // std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
         // segment_desc_map[LOCAL_SEGMENT_ID] = getSegmentDescByID(LOCAL_SEGMENT_ID);
@@ -83,19 +94,25 @@ namespace mooncake {
         //     if (!segment_desc_map.count(target_id))
         //         segment_desc_map[target_id] = getSegmentDescByID(target_id);
         // }
-        // TODO: part 
+        // TODO: part
         uint64_t task_id = 0;
         for (auto &request : entries)
         {
+            assert(request.target_id == LOCAL_SEGMENT_ID);
             CUfileIOParams_t params;
             params.mode = CUFILE_BATCH;
-            params.fh = this->segment_to_context_[request.target_id].getHandle();
+            params.fh = this->segment_to_context_.at(LOCAL_SEGMENT_ID)->getHandle();
+            // params.fh = context_->getHandle();
             params.opcode = request.opcode == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
             params.cookie = (void *)(start_idx + task_id);
             params.u.batch.devPtr_base = request.source;
             params.u.batch.devPtr_offset = 0;
             params.u.batch.file_offset = request.target_offset;
             params.u.batch.size = request.length;
+
+            LOG(INFO) << "params "
+                      << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
+
             batch_desc.cufile_io_params.push_back(params);
             batch_desc.transfer_status.push_back(TransferStatus{.s = PENDING, .transferred_bytes = 0});
             ++task_id;
@@ -107,7 +124,8 @@ namespace mooncake {
         return 0;
     }
 
-    int NVMeoFTransport::freeBatchID(BatchID batch_id) {
+    int NVMeoFTransport::freeBatchID(BatchID batch_id)
+    {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
@@ -122,17 +140,29 @@ namespace mooncake {
         return 0;
     }
 
-    int NVMeoFTransport::install(void** args) {
+    int NVMeoFTransport::install(void **args)
+    {
+        // Temp Method for no meta data management now
+        const char *filename = (const char *)args[0];
+
+        // this->segment_to_context_.emplace(LOCAL_SEGMENT_ID, CuFileContext(filename));
+        this->segment_to_context_[LOCAL_SEGMENT_ID] = std::make_shared<CuFileContext>(filename);
+        // context_ = new CuFileContext(filename);
+        // cufile_io_params.reserve(16);
+        // cufile_events_buf.resize(16);
+        // transfer_status.reserve(16);
         return 0;
     }
 
-    int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location) {
+    int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location)
+    {
+
         return 0;
     }
 
-    int NVMeoFTransport::unregisterLocalMemory(void *addr) {
+    int NVMeoFTransport::unregisterLocalMemory(void *addr)
+    {
         return 0;
     }
-
 
 }

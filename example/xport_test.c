@@ -2,6 +2,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "cuda.h"
+#include "cuda_runtime.h"
 
 #include "transfer_engine/transfer_engine_c.h"
 
@@ -15,25 +17,27 @@ int main(void)
     transfer_engine_t *engine = createTransferEngine(metadata);
     void** args = (void**)malloc(sizeof(void*));
     // args[0] = malloc(16);
-    args[0] = "matrix";
+    args[0] = "/mnt/nvme0n1/dsf/gds.txt";
     // strcpy(args[0], "matrix");
     initTransferEngine(engine, server_name);
 
     transport_t rdma_xport = installOrGetTransport(engine, "rdma", args);
-    transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", NULL);
+    transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", args);
 
     segment_handle_t rdma_seg = openSegment(engine, "ram/optane11");
     segment_handle_t nvmeof_seg = openSegment(engine, "nvmeof/optane11");
 
-    const size_t batch_size = 16;
+    const size_t batch_size = 8;
     batch_id_t rdma_batch = allocateBatchID(rdma_xport, batch_size);
     batch_id_t nvmeof_batch = allocateBatchID(nvmeof_xport, batch_size);
     int length = batch_size * 1024 * 2;
-    char *buf = (char *)malloc(1024 * batch_size * 2);
+    void *buf;
+    cudaMalloc(&buf, length);
+    cudaMemset(buf, 0xab, length);
 
-    memset(buf, 1, 1024 * batch_size);
+    // memset(buf, 1, 1024 * batch_size);
     registerLocalMemory(engine, buf, length, "", 0);
-
+ 
     struct transfer_request rdma_transfers[batch_size], nvmeof_transfers[batch_size];
     for (int i = 0; i < batch_size; i++)
     {
@@ -46,8 +50,8 @@ int main(void)
         };
         nvmeof_transfers[i] = (struct transfer_request){
             .opcode = READ,
-            .source = buf + (batch_size + i) * 1024,
-            .target_id = nvmeof_seg,
+            .source = buf + i * 1024,
+            .target_id = LOCAL_SEGMENT,
             .target_offset = i * 1024,
             .length = 1024,
         };

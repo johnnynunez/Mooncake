@@ -18,7 +18,8 @@ target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp
 if (USE_CUDA)
   include_directories("/usr/local/cuda/include")
   add_compile_definitions(transfer_engine PUBLIC USE_CUDA)
-  target_link_libraries(transfer_engine PUBLIC cuda cufile)
+  target_link_directories(transfer_engine PRIVATE /usr/local/cuda/lib64)
+  target_link_libraries(transfer_engine PUBLIC cuda cufile cudart)
 endif()
 
 #target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa memcached)

@@ -2,6 +2,7 @@
 #define CUFILE_CONTEXT_H_
 
 #include <cstddef>
+#include <glog/logging.h>
 #include <unistd.h>
 #ifdef USE_CUDA
 
@@ -19,13 +20,13 @@ static inline const char *GetCuErrorString(CUresult curesult)
     return descp;
 }
 
-std::string cuFileGetErrorString(int status)
+static std::string cuFileGetErrorString(int status)
 {
     status = std::abs(status);
     return IS_CUFILE_ERR(status) ? std::string(CUFILE_ERRSTR(status)) : std::string(std::strerror(status));
 }
 
-std::string cuFileGetErrorString(CUfileError_t status)
+static std::string cuFileGetErrorString(CUfileError_t status)
 {
     std::string errStr = cuFileGetErrorString(static_cast<int>(status.err));
     if (IS_CUDA_ERR(status))
@@ -53,7 +54,8 @@ public:
     /// Create a GDS segment from file name. Return NULL on error.
     explicit CuFileContext(const char* filename)
     {
-        int fd = open(filename, O_RDWR | O_DIRECT);
+        int fd = open(filename, O_RDWR | O_DIRECT, 0664);
+        LOG(INFO) << "open " << filename << " get " << fd;
         memset(&desc, 0, sizeof(desc));
         desc.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
         desc.handle.fd = fd;
@@ -63,6 +65,7 @@ public:
 
     ~CuFileContext()
     {
+        
         if (handle)
         {
             cuFileHandleDeregister(handle);

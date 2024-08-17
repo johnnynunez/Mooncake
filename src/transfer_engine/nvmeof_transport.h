@@ -1,5 +1,7 @@
 #include "transfer_engine/cufile_context.h"
 #include "transport.h"
+#include <cstddef>
+#include <memory>
 #include <unordered_map>
 
 namespace mooncake
@@ -21,11 +23,11 @@ namespace mooncake
             BatchID id;
             size_t batch_size;
             std::vector<TransferTask> task_list;
-            CUfileBatchHandle_t handle = NULL;
+            CUfileBatchHandle_t handle;
             std::vector<CUfileIOParams_t> cufile_io_params;
             std::vector<CUfileIOEvents_t> cufile_events_buf;
             std::vector<TransferStatus> transfer_status;
-            unsigned nr_completed = 0;
+            unsigned nr_completed;
         };
 
         int install(void **args) override;
@@ -36,6 +38,12 @@ namespace mooncake
 
         const char *getName() const override { return "nvmeof"; }
 
-        std::unordered_map<SegmentHandle, CuFileContext> segment_to_context_;
+        std::unordered_map<SegmentHandle, std::shared_ptr<CuFileContext>> segment_to_context_;
+        // CuFileContext* context_  ;
+        // CUfileBatchHandle_t handle = NULL;
+        // std::vector<CUfileIOParams_t> cufile_io_params;
+        // std::vector<CUfileIOEvents_t> cufile_events_buf;
+        // std::vector<TransferStatus> transfer_status;
+        unsigned nr_completed = 0;
     };
 }
