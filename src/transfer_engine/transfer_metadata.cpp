@@ -15,7 +15,6 @@ namespace mooncake
 
     const static std::string ServerDescPrefix = "mooncake/serverdesc/";
 
-#ifdef MOONCAKE_USE_ETCD
     struct TransferMetadataImpl
     {
         TransferMetadataImpl(const std::string &metadata_uri)
@@ -77,62 +76,6 @@ namespace mooncake
 
         etcd::SyncClient client_;
     };
-#else
-    struct TransferMetadataImpl
-    {
-        TransferMetadataImpl(const std::string &metadata_uri)
-        {
-            const std::string connect_string = "--SERVER=" + metadata_uri;
-            client_ = memcached(connect_string.c_str(), connect_string.length());
-            if (!client_)
-            {
-                LOG(ERROR) << "Cannot allocate memcached objects";
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        ~TransferMetadataImpl()
-        {
-            if (client_)
-            {
-                memcached_free(client_);
-                client_ = nullptr;
-            }
-        }
-
-        bool get(const std::string &key, Json::Value &value)
-        {
-            Json::Reader reader;
-            uint32_t flags = 0;
-            memcached_return_t rc;
-            size_t length = 0;
-            char *json_file = memcached_get(client_, key.c_str(), key.length(), &length, &flags, &rc);
-            if (!json_file || !reader.parse(json_file, json_file + length, value))
-                return false;
-            if (globalConfig().verbose)
-                LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
-            free(json_file);
-            return true;
-        }
-
-        bool set(const std::string &key, const Json::Value &value)
-        {
-            Json::FastWriter writer;
-            const std::string json_file = writer.write(value);
-            if (globalConfig().verbose)
-                LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
-            memcached_return_t rc = memcached_set(client_, key.c_str(), key.length(), &json_file[0], json_file.size(), 0, 0);
-            return memcached_success(rc);
-        }
-
-        bool remove(const std::string &key)
-        {
-            return memcached_success(memcached_delete(client_, key.c_str(), key.length(), 0));
-        }
-
-        memcached_st *client_;
-    };
-#endif // MOONCAKE_USE_ETCD
 
     TransferMetadata::TransferMetadata(const std::string &metadata_uri)
         : listener_running_(false)
