@@ -189,7 +189,7 @@ int initiator()
     LOG_ASSERT(metadata_client);
 
     auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
-    const size_t dram_buffer_size = 1ull << 30;
+    const size_t dram_buffer_size = 8ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
                                                    FLAGS_local_server_name,
                                                    nic_priority_matrix);
@@ -247,7 +247,7 @@ int target()
 
     auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
 
-    const size_t dram_buffer_size = 1ull << 30;
+    const size_t dram_buffer_size = 8ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client,
                                                    FLAGS_local_server_name,
                                                    nic_priority_matrix);

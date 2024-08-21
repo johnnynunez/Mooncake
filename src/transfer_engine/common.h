@@ -335,7 +335,8 @@ namespace mooncake
         SimpleRandom(uint32_t seed) : current(seed) {}
 
         static SimpleRandom &Get() {
-            thread_local SimpleRandom g_random(time(NULL));
+            static std::atomic<uint64_t> g_incr_val(0);
+            thread_local SimpleRandom g_random(getCurrentTimeInNano() + g_incr_val.fetch_add(1));
             return g_random;
         }
 
