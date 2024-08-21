@@ -40,7 +40,7 @@ namespace mooncake
         }
     }
 
-    int WorkerPool::submitPostSend(const SliceList &slice_list)
+    int WorkerPool::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
         std::unordered_map<std::string, SliceList> slice_list_map;
         std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
@@ -76,10 +76,12 @@ namespace mooncake
         {
             int index = std::hash<std::string>{}(entry.first) % kShardCount;
             slice_list_lock_[index].lock();
+            auto &target = slice_list_map_[index][entry.first];
+            target.reserve(target.size() + entry.second.size());
             for (auto &slice : entry.second)
-                slice_list_map_[index][entry.first].push_back(slice);
+                target.push_back(slice);
             submitted_slice_count += entry.second.size();
-            slice_list_size_[index].fetch_add(entry.second.size());
+            slice_list_size_[index].fetch_add(entry.second.size(), std::memory_order_relaxed);
             slice_list_lock_[index].unlock();
         }
 
@@ -90,79 +92,77 @@ namespace mooncake
         return 0;
     }
 
-    void WorkerPool::performPostSend(int shard_id)
+    void WorkerPool::performPostSend(int thread_id)
     {
-        auto slice_list_size = 0;
-        if (slice_list_size_[shard_id].load(std::memory_order_relaxed) == 0 || !slice_list_lock_[shard_id].tryLock())
-            return;
-
-        SliceList failed_slice_list;
-        for (auto &entry : slice_list_map_[shard_id])
+        for (int shard_id = thread_id; shard_id < kShardCount; shard_id += kTransferWorkerCount)
         {
-            if (entry.second.empty())
+            auto slice_list_size = 0;
+            if (slice_list_size_[shard_id].load(std::memory_order_relaxed) == 0 || !slice_list_lock_[shard_id].tryLock())
                 continue;
-            
-            if (entry.second[0]->target_id == LOCAL_SEGMENT_ID)
+
+            SliceList failed_slice_list;
+            for (auto &entry : slice_list_map_[shard_id])
             {
-                for (auto &slice : entry.second)
+                if (entry.second.empty())
+                    continue;
+                
+                if (entry.second[0]->target_id == LOCAL_SEGMENT_ID)
                 {
-                    LOG_ASSERT(slice->target_id == LOCAL_SEGMENT_ID);
-                    memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
-                    slice->markSuccess();
+                    for (auto &slice : entry.second)
+                    {
+                        LOG_ASSERT(slice->target_id == LOCAL_SEGMENT_ID);
+                        memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
+                        slice->markSuccess();
+                    }
+                    processed_slice_count_.fetch_add(entry.second.size());
+                    entry.second.clear();
+                    continue;
                 }
+
+                auto endpoint = context_.endpoint(entry.first);
+                if (!endpoint)
+                {
+                    LOG(ERROR) << "Cannot allocate endpoint: " << entry.first;
+                    for (auto &slice : entry.second)
+                        failed_slice_list.push_back(slice);
+                    entry.second.clear();
+                    continue;
+                }
+                if (!endpoint->connected() && endpoint->setupConnectionsByActive())
+                {
+                    LOG(ERROR) << "Cannot make connection for endpoint: " << entry.first;
+                    for (auto &slice : entry.second)
+                        failed_slice_list.push_back(slice);
+                    entry.second.clear();
+                    continue;
+                }
+#ifdef USE_FAKE_POST_SEND
+                for (auto &slice : entry.second)
+                    slice->markSuccess();
                 processed_slice_count_.fetch_add(entry.second.size());
                 entry.second.clear();
-                continue;
-            }
-
-            auto endpoint = context_.endpoint(entry.first);
-            if (!endpoint)
-            {
-                LOG(ERROR) << "Cannot allocate endpoint: " << entry.first;
-                for (auto &slice : entry.second)
-                    failed_slice_list.push_back(slice);
-                entry.second.clear();
-                continue;
-            }
-            if (!endpoint->connected() && endpoint->setupConnectionsByActive())
-            {
-                LOG(ERROR) << "Cannot make connection for endpoint: " << entry.first;
-                for (auto &slice : entry.second)
-                    failed_slice_list.push_back(slice);
-                entry.second.clear();
-                continue;
-            }
-#ifdef USE_FAKE_POST_SEND
-            for (auto &slice : entry.second)
-                slice->markSuccess();
-            processed_slice_count_.fetch_add(entry.second.size());
-            entry.second.clear();
 #else
-            endpoint->submitPostSend(entry.second, failed_slice_list);
-            slice_list_size += entry.second.size();
+                endpoint->submitPostSend(entry.second, failed_slice_list);
+                slice_list_size += entry.second.size();
 #endif
-        }
-        if (slice_list_size)
-            slice_list_size_[shard_id].store(slice_list_size, std::memory_order_relaxed);
-        slice_list_lock_[shard_id].unlock();
-
-        if (!failed_slice_list.empty())
-        {
-            slice_list_lock_[0].lock();
+            }
+            if (slice_list_size)
+                slice_list_size_[shard_id].store(slice_list_size, std::memory_order_relaxed);
+            slice_list_lock_[shard_id].unlock();
             for (auto &slice : failed_slice_list)
-                processFailedSlice(slice);
-            slice_list_lock_[0].unlock();
-            failed_slice_list.clear();
+                processFailedSlice(slice, thread_id);
         }
     }
 
     void WorkerPool::performPollCq(int thread_id)
     {
         int processed_slice_count = 0;
+        const static size_t kPollCount = 64;
+        std::unordered_map<volatile int *, int> qp_depth_set;
         for (int cq_index = thread_id; cq_index < context_.cqCount(); cq_index += kTransferWorkerCount)
         {
-            ibv_wc wc[32];
-            int nr_poll = context_.poll(32, wc, cq_index);
+            ibv_wc wc[kPollCount];
+            int nr_poll = context_.poll(kPollCount, wc, cq_index);
             if (nr_poll < 0)
             {
                 LOG(ERROR) << "Worker: Failed to poll completion queues";
@@ -172,7 +172,11 @@ namespace mooncake
             for (int i = 0; i < nr_poll; ++i)
             {
                 TransferEngine::Slice *slice = (TransferEngine::Slice *)wc[i].wr_id;
-                __sync_fetch_and_sub(slice->rdma.qp_depth, 1);
+                if (qp_depth_set.count(slice->rdma.qp_depth))
+                    qp_depth_set[slice->rdma.qp_depth]++;
+                else
+                    qp_depth_set[slice->rdma.qp_depth] = 1;
+                // __sync_fetch_and_sub(slice->rdma.qp_depth, 1);
                 if (wc[i].status != IBV_WC_SUCCESS)
                 {
                     LOG(ERROR) << "Worker: Process failed for slice (opcode: " << slice->opcode
@@ -181,10 +185,7 @@ namespace mooncake
                                << ", dest_addr: " << slice->rdma.dest_addr
                                << "): " << ibv_wc_status_str(wc[i].status);
                     context_.deleteEndpoint(slice->peer_nic_path);
-                    slice_list_lock_[0].lock();
-                    processFailedSlice(slice);
-                    slice_list_size_[0].fetch_add(1, std::memory_order_relaxed);
-                    slice_list_lock_[0].unlock();
+                    processFailedSlice(slice, thread_id);
                 }
                 else
                 {
@@ -193,11 +194,15 @@ namespace mooncake
                 }
             }
         }
+
+        for (auto &entry : qp_depth_set)
+            __sync_fetch_and_sub(entry.first, entry.second);
+
         if (processed_slice_count)
             processed_slice_count_.fetch_add(processed_slice_count);
     }
 
-    void WorkerPool::processFailedSlice(TransferEngine::Slice *slice)
+    void WorkerPool::processFailedSlice(TransferEngine::Slice *slice, int thread_id)
     {
         if (slice->rdma.retry_cnt == slice->rdma.max_retry_cnt)
         {
@@ -218,8 +223,12 @@ namespace mooncake
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
             slice->peer_nic_path = peer_nic_path;
+
+            slice_list_lock_[0].lock();
             slice_list_map_[0][peer_nic_path].push_back(slice);
             slice_list_size_[0].fetch_add(1, std::memory_order_relaxed);
+            slice_list_lock_[0].unlock();
+
             if (globalConfig().verbose)
                 LOG(INFO) << "Retry transmission to " << peer_nic_path << " for " << slice->rdma.retry_cnt << "-th attempt";
         }
@@ -230,7 +239,6 @@ namespace mooncake
         bindToSocket(numa_socket_id_);
         const static uint64_t kWaitPeriodInNano = 100000000; // 100ms
         uint64_t last_wait_ts = getCurrentTimeInNano();
-        int shard_id = thread_id;
         while (workers_running_.load(std::memory_order_relaxed))
         {
             auto processed_slice_count = processed_slice_count_.load(std::memory_order_relaxed);
@@ -248,8 +256,7 @@ namespace mooncake
                 }
                 continue;
             }
-            performPostSend(shard_id);
-            shard_id = (shard_id + kTransferWorkerCount) % kShardCount;
+            performPostSend(thread_id);
 #ifndef USE_FAKE_POST_SEND
             performPollCq(thread_id);
 #endif
@@ -293,5 +300,12 @@ namespace mooncake
             if (event.data.fd == context_.context()->async_fd)
                 doProcessContextEvents();
         }
+    }
+
+    int WorkerPool::getShardId()
+    {
+        static std::atomic<int> g_next_thread_index(0);
+        thread_local int tl_index = g_next_thread_index.fetch_add(1) % kShardCount;
+        return tl_index;
     }
 }

@@ -102,7 +102,7 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(lock_);
         if (connected())
         {
-            LOG(WARNING) << "Connection already connected";
+            // LOG(WARNING) << "Connection already connected";
             return 0;
         }
         HandShakeDesc local_desc, peer_desc;
@@ -241,18 +241,15 @@ namespace mooncake
             wr.wr.rdma.rkey = slice->rdma.dest_rkey;
             slice->status = TransferEngine::Slice::POSTED;
             slice->rdma.qp_depth = &wr_depth_list_[qp_index];
-            __sync_fetch_and_add(slice->rdma.qp_depth, 1);
         }
-
+        __sync_fetch_and_add(&wr_depth_list_[qp_index], wr_count);
         int rc = ibv_post_send(qp_list_[qp_index], wr_list, &bad_wr);
         if (rc)
         {
             PLOG(ERROR) << "ibv_post_send failed";
             for (int i = 0; i < wr_count; ++i)
-            {
                 failed_slice_list.push_back(slice_list[i]);
-                __sync_fetch_and_sub(slice_list[i]->rdma.qp_depth, 1);
-            }
+            __sync_fetch_and_sub(&wr_depth_list_[qp_index], wr_count);
         }
         slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
         return rc;

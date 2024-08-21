@@ -22,17 +22,19 @@ namespace mooncake
         int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
 
     private:
-        void performPostSend(int shard_id);
+        void performPostSend(int thread_id);
 
         void performPollCq(int thread_id);
 
-        void processFailedSlice(TransferEngine::Slice *slice);
+        void processFailedSlice(TransferEngine::Slice *slice, int thread_id);
 
         void transferWorker(int thread_id);
 
         void monitorWorker();
 
         int doProcessContextEvents();
+
+        static int getShardId();
 
     private:
         RdmaContext &context_;
@@ -50,8 +52,9 @@ namespace mooncake
 
         using SliceList = std::vector<TransferEngine::Slice *>;
         std::unordered_map<std::string, SliceList> slice_list_map_[kShardCount];
-        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
         std::atomic<uint64_t> slice_list_size_[kShardCount];
+
+        std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
     };
 }
 

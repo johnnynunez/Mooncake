@@ -43,13 +43,13 @@ static std::string getHostname()
 }
 
 DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
-DEFINE_string(metadata_server, "10.139.6.66:2379", "etcd server host address");
+DEFINE_string(metadata_server, "10.139.6.98:2379", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
 DEFINE_string(operation, "read", "Operation type: read or write");
 DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_0\", \"mlx5_1\", \"mlx5_2\", \"mlx5_3\"], []]}", "NIC priority matrix");
-DEFINE_string(segment_id, "10.139.6.66", "Segment ID to access data");
+DEFINE_string(segment_id, "10.139.6.98", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");
