@@ -2,9 +2,12 @@
 #include "transfer_engine/cufile_context.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transport.h"
+#include <bits/stdint-uintn.h>
 #include <cassert>
 #include <cstdint>
+#include <iomanip>
 #include <memory>
+#include <utility>
 
 namespace mooncake
 {
@@ -35,34 +38,27 @@ namespace mooncake
     BatchID NVMeoFTransport::allocateBatchID(size_t batch_size)
     {
         // TODO: this can be moved to upper layer?
-        auto batch_desc = new BatchDesc();
-        if (!batch_desc)
-            return -1;
-        batch_desc->id = BatchID(batch_desc);
-        batch_desc->batch_size = batch_size;
-        batch_desc->task_list.reserve(batch_size);
-        batch_desc->cufile_io_params.reserve(batch_size);
-        batch_desc->cufile_events_buf.resize(8);
-        batch_desc->transfer_status.reserve(batch_size);
-        batch_desc->nr_completed = 0;
+        auto cufile_desc = new CuFileBatchDesc();
+        auto batch_id = Transport::allocateBatchID(batch_size);
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        cufile_desc->cufile_io_params.reserve(batch_size);
+        cufile_desc->cufile_events_buf.resize(batch_size);
+        cufile_desc->transfer_status.reserve(batch_size);
+        cufile_desc->nr_completed = 0;
         // TODO: 在按照文件拆分之后再设置 size
-        CUFILE_CHECK(cuFileBatchIOSetUp(&batch_desc->handle, batch_size));
-
-#ifdef CONFIG_USE_BATCH_DESC_SET
-        batch_desc_lock_.lock();
-        batch_desc_set_[batch_desc->id] = batch_desc;
-        batch_desc_lock_.unlock();
-#endif
-        return batch_desc->id;
+        batch_desc.context = cufile_desc;
+        CUFILE_CHECK(cuFileBatchIOSetUp(&cufile_desc->handle, batch_size));
+        return batch_id;
     }
 
     int NVMeoFTransport::getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        unsigned nr = batch_desc.cufile_io_params.size();
+        auto &cufile_desc = *((CuFileBatchDesc *)(batch_desc.context));
+        unsigned nr = cufile_desc.cufile_io_params.size();
         LOG(INFO) << "get t n " << nr;
-        CUFILE_CHECK(cuFileBatchIOGetStatus(batch_desc.handle, 0, &nr, batch_desc.cufile_events_buf.data(), NULL));
-        auto &event = batch_desc.cufile_events_buf[task_id];
+        CUFILE_CHECK(cuFileBatchIOGetStatus(cufile_desc.handle, 0, &nr, cufile_desc.cufile_events_buf.data(), NULL));
+        auto &event = cufile_desc.cufile_events_buf[task_id];
         unsigned idx = (intptr_t)event.cookie;
         TransferStatus transfer_status;
         transfer_status.s = from_cufile_transfer_status(event.status);
@@ -78,85 +74,98 @@ namespace mooncake
     int NVMeoFTransport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        if (batch_desc.cufile_io_params.size() + entries.size() > batch_desc.batch_size)
+        auto &cufile_desc = *((CuFileBatchDesc *)(batch_desc.context));
+        if (cufile_desc.cufile_io_params.size() + entries.size() > batch_desc.batch_size)
             return -1;
 
         // std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
-        size_t start_idx = batch_desc.cufile_io_params.size();
+        size_t start_idx = cufile_desc.cufile_io_params.size();
+        // ass
         LOG(INFO) << "start " << start_idx;
-        // batch_desc.task_list.resize(start_idx + entries.size());
-        // TODO: interact with seg
-        // std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
+        batch_desc.task_list.resize(start_idx + entries.size());
+        std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
         // segment_desc_map[LOCAL_SEGMENT_ID] = getSegmentDescByID(LOCAL_SEGMENT_ID);
-        // for (auto &request : entries)
-        // {
-        //     auto target_id = request.target_id;
-        //     if (!segment_desc_map.count(target_id))
-        //         segment_desc_map[target_id] = getSegmentDescByID(target_id);
-        // }
-        // TODO: part
-        uint64_t task_id = 0;
+        uint64_t task_id = 0, slice_id = 0;
         for (auto &request : entries)
         {
-            assert(request.target_id == LOCAL_SEGMENT_ID);
-            CUfileIOParams_t params;
-            params.mode = CUFILE_BATCH;
-            params.fh = this->segment_to_context_.at(LOCAL_SEGMENT_ID)->getHandle();
-            // params.fh = context_->getHandle();
-            params.opcode = request.opcode == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
-            params.cookie = (void *)(start_idx + task_id);
-            params.u.batch.devPtr_base = request.source;
-            params.u.batch.devPtr_offset = 0;
-            params.u.batch.file_offset = request.target_offset;
-            params.u.batch.size = request.length;
+            TransferTask &task = batch_desc.task_list[task_id];
+            auto target_id = request.target_id;
+            if (!segment_desc_map.count(target_id))
+            {
+                segment_desc_map[target_id] = meta_->getSegmentDescByID(target_id);
+            }
 
-            LOG(INFO) << "params "
-                      << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
+            auto &desc = segment_desc_map.at(target_id);
+            assert(desc->protocol == "nvmeof");
+            // TODO: add mutex
+            // TODO: solving iterator invalidation due to vector resize
+            // Handle File Offset
+            uint32_t buffer_id = 0;
+            uint64_t buffer_start = request.target_offset;
+            uint64_t buffer_end = request.target_id + request.length;
+            uint64_t current_offset = 0;
+            for (auto &buffer_desc : desc->nvmeof_buffers)
+            {
+                bool overlap = buffer_start < current_offset + buffer_desc.length && buffer_end > current_offset;
+                if (overlap)
+                {
+                    // 1. get_slice_start
+                    uint64_t slice_start = std::max(buffer_start, current_offset);
+                    // 2. slice_end
+                    uint64_t slice_end = std::min(buffer_end, current_offset + buffer_desc.length);
+                    // 3. init slice and put into TransferTask
+                    const char *file_path = buffer_desc.local_path_map[local_server_name_].c_str();
+                    Slice *slice = new Slice();
+                    slice->source_addr = (char *)request.source + slice_start - buffer_start;
+                    slice->length = slice_end - slice_start;
+                    slice->opcode = request.opcode;
+                    slice->nvmeof.file_path = file_path;
+                    slice->nvmeof.start = slice_start;
+                    slice->task = &task;
+                    slice->status = Slice::PENDING;
+                    task.total_bytes += slice->length;
+                    task.slices.push_back(slice);
+                    // 4. get cufile handle
+                    auto buf_key = std::make_pair(target_id, buffer_id);
+                    if (!segment_to_context_.count(buf_key))
+                    {
+                        segment_to_context_[buf_key] = std::make_shared<CuFileContext>(file_path);
+                    }
+                    auto fh = segment_to_context_.at(buf_key)->getHandle();
+                    // 5. add cufile request
+                    CUfileIOParams_t params;
+                    params.mode = CUFILE_BATCH;
+                    params.fh = fh;
+                    // params.fh = context_->getHandle();
+                    params.opcode = request.opcode == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
+                    params.cookie = (void *)(start_idx + task_id);
+                    params.u.batch.devPtr_base = slice->source_addr;
+                    params.u.batch.devPtr_offset = 0;
+                    params.u.batch.file_offset = slice_start;
+                    params.u.batch.size = slice_end - slice_start;
 
-            batch_desc.cufile_io_params.push_back(params);
-            batch_desc.transfer_status.push_back(TransferStatus{.s = PENDING, .transferred_bytes = 0});
+                    LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
+
+                    cufile_desc.cufile_io_params.push_back(params);
+                }
+                current_offset += buffer_desc.length;
+            }
+
+            cufile_desc.transfer_status.push_back(TransferStatus{.s = PENDING, .transferred_bytes = 0});
             ++task_id;
         }
 
-        CUFILE_CHECK(cuFileBatchIOSubmit(batch_desc.handle, entries.size(), batch_desc.cufile_io_params.data() + start_idx, 0));
-        // for (auto &entry : slices_to_post)
-        //     entry.first->submitPostSend(entry.second);
+        CUFILE_CHECK(cuFileBatchIOSubmit(cufile_desc.handle, entries.size(), cufile_desc.cufile_io_params.data() + start_idx, 0));
         return 0;
     }
 
-    int NVMeoFTransport::freeBatchID(BatchID batch_id)
+    int NVMeoFTransport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args)
     {
-        auto &batch_desc = *((BatchDesc *)(batch_id));
-        const size_t task_count = batch_desc.task_list.size();
-        for (size_t task_id = 0; task_id < task_count; task_id++)
-        {
-            if (!batch_desc.task_list[task_id].is_finished)
-            {
-                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
-                return -1;
-            }
-        }
-        delete &batch_desc;
-        return 0;
-    }
-
-    int NVMeoFTransport::install(void **args)
-    {
-        // Temp Method for no meta data management now
-        const char *filename = (const char *)args[0];
-
-        // this->segment_to_context_.emplace(LOCAL_SEGMENT_ID, CuFileContext(filename));
-        this->segment_to_context_[LOCAL_SEGMENT_ID] = std::make_shared<CuFileContext>(filename);
-        // context_ = new CuFileContext(filename);
-        // cufile_io_params.reserve(16);
-        // cufile_events_buf.resize(16);
-        // transfer_status.reserve(16);
-        return 0;
+        return Transport::install(local_server_name, meta, args);
     }
 
     int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location)
     {
-
         return 0;
     }
 

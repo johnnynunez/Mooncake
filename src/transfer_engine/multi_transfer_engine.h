@@ -13,14 +13,15 @@
 #include <utility>
 #include <vector>
 
+#include "rdma_transport.h"
+#include "nvmeof_transport.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transfer_metadata.h"
 #include "transport.h"
-#include "nvmeof_transport.h"
 
 namespace mooncake
 {
-    struct MultiTransferEngine
+    struct TransferEnginev2
     {
         struct SegmentDesc
         {
@@ -31,11 +32,11 @@ namespace mooncake
                 {
                     void *addr;
                     uint64_t size;
-                    const char* location;
+                    const char *location;
                 } rdma;
                 struct
                 {
-                    const char* file_path;
+                    const char *file_path;
                     const char *subsystem_name;
                     const char *proto;
                     const char *ip;
@@ -46,10 +47,11 @@ namespace mooncake
         };
 
     public:
-        MultiTransferEngine(std::shared_ptr<TransferMetadata> meta)
+        TransferEnginev2(std::shared_ptr<TransferMetadata> meta)
             : meta(meta) {}
 
-        int init(const char *name) {
+        int init(const char *name)
+        {
             // TODO
             local_name = name;
             return 0;
@@ -67,7 +69,7 @@ namespace mooncake
             return 0;
         }
 
-        Transport *installOrGetTransport(const std::string& proto, void** args)
+        Transport *installOrGetTransport(const std::string &proto, void **args)
         {
             // TODO: dedpulicaete
             Transport *xport = initTransport(proto.c_str());
@@ -77,7 +79,7 @@ namespace mooncake
                 return NULL;
             }
 
-            if (xport->install(args) < 0)
+            if (xport->install(local_name, meta, args) < 0)
             {
                 goto fail;
             }
@@ -107,29 +109,29 @@ namespace mooncake
         Transport::SegmentHandle openSegment(const char *path)
         {
             return 1;
-        //     const char *pos = NULL;
-        //     if (path == NULL || (pos = strchr(path, ':')) == NULL)
-        //     {
-        //         errno = EINVAL;
-        //         return std::make_pair(-1, nullptr);
-        //     }
+            //     const char *pos = NULL;
+            //     if (path == NULL || (pos = strchr(path, ':')) == NULL)
+            //     {
+            //         errno = EINVAL;
+            //         return std::make_pair(-1, nullptr);
+            //     }
 
-        //     auto xport = findName(path, pos - path);
-        //     if (!xport)
-        //     {
-        //         errno = ENOENT;
-        //         return std::make_pair(-1, nullptr);
-        //     }
+            //     auto xport = findName(path, pos - path);
+            //     if (!xport)
+            //     {
+            //         errno = ENOENT;
+            //         return std::make_pair(-1, nullptr);
+            //     }
 
-        //     auto seg_id = xport->openSegment(pos + 1);
-        //     if (seg_id < 0)
-        //     {
-        //         goto fail;
-        //     }
-        //     return std::make_pair(seg_id, xport);
+            //     auto seg_id = xport->openSegment(pos + 1);
+            //     if (seg_id < 0)
+            //     {
+            //         goto fail;
+            //     }
+            //     return std::make_pair(seg_id, xport);
 
-        // fail:
-        //     return std::make_pair(-1, nullptr);
+            // fail:
+            //     return std::make_pair(-1, nullptr);
         }
 
         int closeSegment(SegmentID seg_id)
@@ -147,16 +149,17 @@ namespace mooncake
             return 0;
         }
 
-        int registerLocalMemory(void* addr, size_t length, const std::string& location, bool remote_accessible = false) {
+        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible = false)
+        {
             return 0;
         }
 
-        int unregisterLocalMemory(void *addr, bool remote_accessible = false) {
+        int unregisterLocalMemory(void *addr, bool remote_accessible = false)
+        {
             return 0;
         }
 
     private:
-
         Transport *
         findName(const char *name, size_t n = SIZE_MAX)
         {
@@ -176,9 +179,15 @@ namespace mooncake
             if (std::string(proto) == "rdma")
             {
                 return new RDMATransport();
-            } else if (std::string(proto) == "nvmeof")
+            }
+            else if (std::string(proto) == "nvmeof")
             {
                 return new NVMeoFTransport();
+            }
+            else
+            {
+                LOG(ERROR) << "Unsupported Transport Protocol: " << proto;
+                return NULL;
             }
         }
 

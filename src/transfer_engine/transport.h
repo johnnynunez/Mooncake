@@ -2,9 +2,12 @@
 
 #pragma once
 
+#include <bits/stdint-uintn.h>
 #include <cstddef>
+#include <cstdint>
 #include <errno.h>
 #include <iostream>
+#include <memory>
 #include <stddef.h>
 #include <stdint.h>
 #include <string>
@@ -18,12 +21,12 @@ namespace mooncake
     /// The errno is set accordingly on failure.
     struct Transport
     {
-        friend struct MultiTransferEngine;
+        friend struct TransferEnginev2;
 
-        using SegmentID = int32_t;
+        using SegmentID = uint64_t;
         const static SegmentID LOCAL_SEGMENT_ID = 0;
-
         using SegmentHandle = SegmentID;
+
 
         using BatchID = uint64_t;
         const static BatchID INVALID_BATCH_ID = UINT64_MAX;
@@ -99,7 +102,10 @@ namespace mooncake
                 } local;
                 struct
                 {
-                    // TBD
+                    const char *file_path;
+                    uint64_t start;
+                    uint64_t length;
+                    uint64_t buffer_id;
                 } nvmeof;
             };
 
@@ -126,96 +132,43 @@ namespace mooncake
             uint64_t total_bytes = 0;
         };
 
-        // struct BatchDesc
-        // {
-        //     BatchID id;
-        //     size_t batch_size;
-        //     std::vector<TransferTask> task_list;
-        // };
+        struct BatchDesc
+        {
+            BatchID id;
+            size_t batch_size;
+            std::vector<TransferTask> task_list;
+            void* context; // for transport implementers.
+        };
 
     public:
         /// @brief Create a batch with specified maximum outstanding transfers.
-        virtual BatchID allocateBatchID(size_t batch_size) = 0;
+        virtual BatchID allocateBatchID(size_t batch_size);
 
         /// @brief Free an allocated batch.
-        virtual int freeBatchID(BatchID batch_id) = 0;
+        virtual int freeBatchID(BatchID batch_id);
 
         /// @brief Submit a batch of transfer requests to the batch.
         /// @return The number of successfully submitted transfers on success. If that number is less than nr, errno is set.
-        virtual int submitTransfer(BatchID batch_id,
-                                   const std::vector<TransferRequest> &entries) = 0;
+        virtual int submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries) = 0;
 
         /// @brief Get the status of a submitted transfer. This function shall not be called again after completion.
         /// @return Return 1 on completed (either success or failure); 0 if still in progress.
-        virtual int getTransferStatus(BatchID batch_id, size_t task_id,
-                                      TransferStatus &status) = 0;
+        virtual int getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status) = 0;
+
+    protected:
+        virtual int install(std::string& local_server_name, std::shared_ptr<TransferMetadata> meta,  void **args);
+
+        std::string local_server_name_;
+        std::shared_ptr<TransferMetadata> meta_;
+
+        RWSpinlock batch_desc_lock_;
+        std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
 
     private:
+        virtual int registerLocalMemory(void *addr, size_t length, const string &location) = 0;
 
-        virtual int install(void **args) = 0;
-
-        virtual int registerLocalMemory(void *addr, size_t length, const string& location) = 0;
-
-        virtual int unregisterLocalMemory(void* addr) = 0;
+        virtual int unregisterLocalMemory(void *addr) = 0;
 
         virtual const char *getName() const = 0;
-    };
-
-    class RDMATransport : public Transport
-    {
-    public:
-        BatchID allocateBatchID(size_t batch_size) override
-        {
-            std::cout << "allocateBatchID, batch_size: " << batch_size << std::endl;
-            return 0x7fffffffffffffff;
-        }
-
-        int freeBatchID(BatchID batch_id) override
-        {
-            std::cout << "freeBatchID, batch_id: " << batch_id << std::endl;
-            return 0;
-        }
-
-        int submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries) override
-        {
-            std::cout << "submitTransfer, batch_id: " << batch_id << ", entries.size: " << entries.size() << std::endl;
-            return entries.size();
-        }
-
-        /// @brief Get the status of a submitted transfer. This function shall not be called again after completion.
-        /// @return Return 1 on completed (either success or failure); 0 if still in progress.
-        int getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status) override
-        {
-            std::cout << "getTransferStatus, batch_id: " << batch_id << ", task_id: " << task_id << std::endl;
-            status.s = COMPLETED;
-            status.transferred_bytes = 100;
-            return 1;
-        }
-
-    private:
-        int install(void **args) override
-        {
-            // 1. get
-            char *arg1 = (char *)args[0];
-            std::cout << "rdma install, arg: " << arg1;
-            return 0;
-        }
-
-        int registerLocalMemory(void *addr, size_t length, const string& location) override
-        {
-            std::cout << "registerLocalMemory, addr: " << addr << ", length: " << length << ", location: " << location << std::endl;
-            return 0;
-        }
-
-        int unregisterLocalMemory(void* addr) override
-        {
-            std::cout << "unregisterLocalMemory, addr: " << addr << std::endl;
-            return 0;
-        }
-
-        const char *getName() const override
-        {
-            return "rdma";
-        }
     };
 }

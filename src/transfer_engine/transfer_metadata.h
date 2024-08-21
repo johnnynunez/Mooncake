@@ -5,6 +5,7 @@
 #define TRANSFER_METADATA
 
 #include <atomic>
+#include <cstdint>
 #include <functional>
 #include <glog/logging.h>
 #include <memory>
@@ -59,6 +60,7 @@ namespace mooncake
     */
 
     const static uint16_t kDefaultServerPort = 12001;
+    
 
     struct TransferMetadataImpl;
 
@@ -81,6 +83,13 @@ namespace mooncake
             std::vector<uint32_t> rkey;
         };
 
+        struct NVMeoFBufferDesc
+        {
+            std::string file_path;
+            uint64_t length;
+            std::unordered_map<std::string, std::string> local_path_map;
+        };
+
         struct PriorityItem
         {
             std::vector<std::string> preferred_rnic_list;
@@ -90,13 +99,20 @@ namespace mooncake
         };
 
         using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;
+        using SegmentID = uint64_t;
 
+        const static SegmentID LOCAL_SEGMENT_ID = 0;  // TO modify
         struct SegmentDesc
         {
             std::string name;
+            std::string protocol;
+            // this is for rdma
             std::vector<DeviceDesc> devices;
             PriorityMatrix priority_matrix;
             std::vector<BufferDesc> buffers;
+            // this is for nvmeof.
+            std::vector<NVMeoFBufferDesc> nvmeof_buffers;
+            // TODO : make these two a union or a std::variant
         };
 
         struct HandShakeDesc
@@ -111,6 +127,12 @@ namespace mooncake
         TransferMetadata(const std::string &metadata_uri);
 
         ~TransferMetadata();
+
+        std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
+
+        std::shared_ptr<SegmentDesc> getSegmentDescByID(SegmentID segment_id, bool force_update = false);
+
+        int updateLocalSegmentDesc(SegmentID segment_id = LOCAL_SEGMENT_ID);
 
         int updateSegmentDesc(const std::string &server_name, const SegmentDesc &desc);
 
@@ -141,6 +163,12 @@ namespace mooncake
         std::atomic<bool> listener_running_;
         std::thread listener_;
         OnReceiveHandShake on_receive_handshake_;
+        // local cache
+        RWSpinlock segment_lock_;
+        std::unordered_map<uint64_t, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
+        std::unordered_map<std::string, uint64_t> segment_name_to_id_map_;
+
+        std::atomic<SegmentID> next_segment_id_;
 
         std::shared_ptr<TransferMetadataImpl> impl_;
     };

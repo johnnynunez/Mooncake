@@ -407,7 +407,7 @@ namespace mooncake
         if (!server_desc)
             return nullptr;
         segment_id_to_desc_map_[segment_id] = server_desc;
-        segment_name_to_id_map_[segment_name] = segment_id;
+        segment_name_to_id_map_[segment_name] = segment_id; 
         return server_desc;
     }
 
