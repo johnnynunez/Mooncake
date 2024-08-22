@@ -47,12 +47,14 @@ namespace mooncake
         std::mutex cond_mutex_;
         std::condition_variable cond_var_;
 
-        const static int kShardCount = 8;
-        RWSpinlock slice_list_lock_[kShardCount];
-
         using SliceList = std::vector<TransferEngine::Slice *>;
-        std::unordered_map<std::string, SliceList> slice_list_map_[kShardCount];
-        std::atomic<uint64_t> slice_list_size_[kShardCount];
+
+        const static int kShardCount = 8;
+        std::unordered_map<std::string, SliceList> slice_queue_[kShardCount];
+        std::atomic<uint64_t> slice_queue_count_[kShardCount];
+        TicketLock slice_queue_lock_[kShardCount];
+
+        std::vector<std::unordered_map<std::string, SliceList>> collective_slice_queue_;
 
         std::atomic<uint64_t> submitted_slice_count_, processed_slice_count_;
     };

@@ -12,6 +12,7 @@
 #include <set>
 #include <sys/mman.h>
 #include <sys/time.h>
+#include <future>
 
 namespace mooncake
 {
@@ -85,7 +86,7 @@ namespace mooncake
         context_list_.clear();
     }
 
-    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name)
+    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name, bool update_metadata)
     {
         BufferDesc buffer_desc;
         buffer_desc.name = name;
@@ -115,10 +116,14 @@ namespace mooncake
             segment_desc = new_segment_desc;
             segment_desc->buffers.push_back(buffer_desc);
         }
-        return updateLocalSegmentDesc();
+
+        if (update_metadata)
+            return updateLocalSegmentDesc();
+        else
+            return 0;
     }
 
-    int TransferEngine::unregisterLocalMemory(void *addr)
+    int TransferEngine::unregisterLocalMemory(void *addr, bool update_metadata)
     {
         {
             RWSpinlock::WriteGuard guard(segment_lock_);
@@ -143,6 +148,47 @@ namespace mooncake
                     break;
                 }
             }
+        }
+
+        if (update_metadata)
+            return updateLocalSegmentDesc();
+        else
+            return 0;
+    }
+
+    int TransferEngine::registerLocalMemoryBatch(const std::vector<TransferEngine::BufferEntry> &buffer_list, 
+                                                 const std::string &location)
+    {
+        std::vector<std::future<int>> results;
+        for (auto &buffer : buffer_list) {
+            results.emplace_back(std::async(std::launch::async, [this, buffer, location]() -> int {
+                return registerLocalMemory(buffer.addr, buffer.length, location, false);
+            }));
+        }
+
+        for (size_t i = 0; i < buffer_list.size(); ++i) {
+            if (results[i].get())
+            {
+                LOG(WARNING) << "error: registerLocalMemory failed, addr " << buffer_list[i].addr
+                             << " length " << buffer_list[i].length;
+            }
+        }
+
+        return updateLocalSegmentDesc();
+    }
+
+    int TransferEngine::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
+    {
+        std::vector<std::future<int>> results;
+        for (auto &addr : addr_list) {
+            results.emplace_back(std::async(std::launch::async, [this, addr]() -> int {
+                return unregisterLocalMemory(addr, false);
+            }));
+        }
+
+        for (size_t i = 0; i < addr_list.size(); ++i) {
+            if (results[i].get())
+                LOG(WARNING) << "error: unregisterLocalMemory failed, addr " << addr_list[i];
         }
 
         return updateLocalSegmentDesc();

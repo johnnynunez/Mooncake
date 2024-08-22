@@ -330,6 +330,26 @@ namespace mooncake
         uint64_t padding_[15];
     };
 
+    class TicketLock {
+    public:
+        TicketLock() : next_ticket(0), now_serving(0) {}
+
+        void lock() {
+            int my_ticket = next_ticket.fetch_add(1, std::memory_order_relaxed);
+            while (now_serving.load(std::memory_order_acquire) != my_ticket) {
+                std::this_thread::yield();
+            }
+        }
+        
+        void unlock() {
+            now_serving.fetch_add(1, std::memory_order_release);
+        }
+
+    private:
+        std::atomic<int> next_ticket;
+        std::atomic<int> now_serving;
+    };
+
     class SimpleRandom {
     public:
         SimpleRandom(uint32_t seed) : current(seed) {}

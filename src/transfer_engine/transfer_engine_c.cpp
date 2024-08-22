@@ -34,6 +34,29 @@ int unregisterLocalMemory(transfer_engine_t engine, void *addr)
     return native->unregisterLocalMemory(addr);
 }
 
+int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location)
+{
+    TransferEngine *native = (TransferEngine *) engine;
+    std::vector<TransferEngine::BufferEntry> native_buffer_list;
+    for (size_t i = 0; i < buffer_len; ++i)
+    {
+        TransferEngine::BufferEntry entry;
+        entry.addr = buffer_list[i].addr;
+        entry.length = buffer_list[i].length;
+        native_buffer_list.push_back(entry);
+    }
+    return native->registerLocalMemoryBatch(native_buffer_list, location);
+}
+
+int unregisterLocalMemoryBatch(transfer_engine_t engine, void **addr_list, size_t addr_len)
+{
+    TransferEngine *native = (TransferEngine *) engine;
+    std::vector<void *> native_addr_list;
+    for (size_t i = 0; i < addr_len; ++i)
+        native_addr_list.push_back(addr_list[i]);
+    return native->unregisterLocalMemoryBatch(native_addr_list);
+}
+
 batch_id_t allocateBatchID(transfer_engine_t engine, size_t batch_size)
 {
     TransferEngine *native = (TransferEngine *) engine;

@@ -23,7 +23,8 @@ namespace mooncake
           processed_slice_count_(0)
     {
         for (int i = 0; i < kShardCount; ++i)
-            slice_list_size_[i].store(0, std::memory_order_relaxed);
+            slice_queue_count_[i].store(0, std::memory_order_relaxed);
+        collective_slice_queue_.resize(kTransferWorkerCount);
         for (int i = 0; i < kTransferWorkerCount; ++i)
             worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::transferWorker, this, i)));
         worker_thread_.emplace_back(std::thread(std::bind(&WorkerPool::monitorWorker, this)));
@@ -42,14 +43,26 @@ namespace mooncake
 
     int WorkerPool::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
-        std::unordered_map<std::string, SliceList> slice_list_map;
-        std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
+        thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
+        thread_local std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
+        uint64_t current_ts = getCurrentTimeInNano();
+        if (current_ts - tl_last_cache_ts > 1000000000) 
+        {
+            segment_desc_map.clear();
+            tl_last_cache_ts = current_ts;
+        }
+
         for (auto &slice : slice_list)
         {
             auto target_id = slice->target_id;
             if (!segment_desc_map.count(target_id))
                 segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id);
         }
+
+        int shard_id = getShardId();
+        uint64_t submitted_slice_count = 0;
+
+        slice_queue_lock_[shard_id].lock();
 
         for (auto &slice : slice_list)
         {
@@ -68,24 +81,15 @@ namespace mooncake
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
             slice->peer_nic_path = peer_nic_path;
-            slice_list_map[peer_nic_path].push_back(slice);
+            slice_queue_[shard_id][peer_nic_path].push_back(slice);
+            submitted_slice_count++;
         }
 
-        uint64_t submitted_slice_count = 0;
-        for (auto &entry : slice_list_map)
-        {
-            int index = std::hash<std::string>{}(entry.first) % kShardCount;
-            slice_list_lock_[index].lock();
-            auto &target = slice_list_map_[index][entry.first];
-            target.reserve(target.size() + entry.second.size());
-            for (auto &slice : entry.second)
-                target.push_back(slice);
-            submitted_slice_count += entry.second.size();
-            slice_list_size_[index].fetch_add(entry.second.size(), std::memory_order_relaxed);
-            slice_list_lock_[index].unlock();
-        }
-
+        slice_queue_count_[shard_id].fetch_add(submitted_slice_count, std::memory_order_relaxed);
         submitted_slice_count_.fetch_add(submitted_slice_count, std::memory_order_relaxed);
+
+        slice_queue_lock_[shard_id].unlock();
+
         if (suspended_flag_.load(std::memory_order_relaxed))
             cond_var_.notify_all();
 
@@ -96,62 +100,67 @@ namespace mooncake
     {
         for (int shard_id = thread_id; shard_id < kShardCount; shard_id += kTransferWorkerCount)
         {
-            auto slice_list_size = 0;
-            if (slice_list_size_[shard_id].load(std::memory_order_relaxed) == 0 || !slice_list_lock_[shard_id].tryLock())
+            if (slice_queue_count_[shard_id].load(std::memory_order_relaxed) == 0)
                 continue;
 
-            SliceList failed_slice_list;
-            for (auto &entry : slice_list_map_[shard_id])
+            slice_queue_lock_[shard_id].lock();
+            for (auto &entry : slice_queue_[shard_id])
             {
-                if (entry.second.empty())
-                    continue;
-                
-                if (entry.second[0]->target_id == LOCAL_SEGMENT_ID)
-                {
-                    for (auto &slice : entry.second)
-                    {
-                        LOG_ASSERT(slice->target_id == LOCAL_SEGMENT_ID);
-                        memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
-                        slice->markSuccess();
-                    }
-                    processed_slice_count_.fetch_add(entry.second.size());
-                    entry.second.clear();
-                    continue;
-                }
-
-                auto endpoint = context_.endpoint(entry.first);
-                if (!endpoint)
-                {
-                    LOG(ERROR) << "Cannot allocate endpoint: " << entry.first;
-                    for (auto &slice : entry.second)
-                        failed_slice_list.push_back(slice);
-                    entry.second.clear();
-                    continue;
-                }
-                if (!endpoint->connected() && endpoint->setupConnectionsByActive())
-                {
-                    LOG(ERROR) << "Cannot make connection for endpoint: " << entry.first;
-                    for (auto &slice : entry.second)
-                        failed_slice_list.push_back(slice);
-                    entry.second.clear();
-                    continue;
-                }
-#ifdef USE_FAKE_POST_SEND
                 for (auto &slice : entry.second)
+                    collective_slice_queue_[thread_id][entry.first].push_back(slice);
+                entry.second.clear();
+            }
+            slice_queue_count_[shard_id].store(0, std::memory_order_relaxed);
+            slice_queue_lock_[shard_id].unlock();
+        }
+
+        SliceList failed_slice_list;
+        for (auto &entry : collective_slice_queue_[thread_id])
+        {
+            if (entry.second.empty())
+                continue;
+            
+            if (entry.second[0]->target_id == LOCAL_SEGMENT_ID)
+            {
+                for (auto &slice : entry.second)
+                {
+                    LOG_ASSERT(slice->target_id == LOCAL_SEGMENT_ID);
+                    memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
                     slice->markSuccess();
+                }
                 processed_slice_count_.fetch_add(entry.second.size());
                 entry.second.clear();
-#else
-                endpoint->submitPostSend(entry.second, failed_slice_list);
-                slice_list_size += entry.second.size();
-#endif
+                continue;
             }
-            if (slice_list_size)
-                slice_list_size_[shard_id].store(slice_list_size, std::memory_order_relaxed);
-            slice_list_lock_[shard_id].unlock();
-            for (auto &slice : failed_slice_list)
-                processFailedSlice(slice, thread_id);
+
+#ifdef USE_FAKE_POST_SEND
+            for (auto &slice : entry.second)
+                slice->markSuccess();
+            processed_slice_count_.fetch_add(entry.second.size());
+            entry.second.clear();
+#else
+            auto endpoint = context_.endpoint(entry.first);
+            if (!endpoint)
+            {
+                LOG(ERROR) << "Cannot allocate endpoint: " << entry.first;
+                for (auto &slice : entry.second)
+                    failed_slice_list.push_back(slice);
+                entry.second.clear();
+                continue;
+            }
+            if (!endpoint->connected() && endpoint->setupConnectionsByActive())
+            {
+                LOG(ERROR) << "Cannot make connection for endpoint: " << entry.first;
+                for (auto &slice : entry.second)
+                    failed_slice_list.push_back(slice);
+                entry.second.clear();
+                continue;
+            }
+            endpoint->submitPostSend(entry.second, failed_slice_list);
+#endif
         }
+        for (auto &slice : failed_slice_list)
+            processFailedSlice(slice, thread_id);
     }
 
     void WorkerPool::performPollCq(int thread_id)
@@ -223,11 +232,7 @@ namespace mooncake
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
             slice->peer_nic_path = peer_nic_path;
-
-            slice_list_lock_[0].lock();
-            slice_list_map_[0][peer_nic_path].push_back(slice);
-            slice_list_size_[0].fetch_add(1, std::memory_order_relaxed);
-            slice_list_lock_[0].unlock();
+            collective_slice_queue_[thread_id][peer_nic_path].push_back(slice);
 
             if (globalConfig().verbose)
                 LOG(INFO) << "Retry transmission to " << peer_nic_path << " for " << slice->rdma.retry_cnt << "-th attempt";
