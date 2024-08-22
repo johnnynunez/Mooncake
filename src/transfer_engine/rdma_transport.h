@@ -46,7 +46,7 @@ namespace mooncake {
             return 0;
         }
 
-        int registerLocalMemory(void *addr, size_t length, const string &location) override
+        int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) override
         {
             std::cout << "registerLocalMemory, addr: " << addr << ", length: " << length << ", location: " << location << std::endl;
             return 0;

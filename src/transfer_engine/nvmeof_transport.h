@@ -29,7 +29,8 @@ namespace mooncake
             std::vector<CUfileIOParams_t> cufile_io_params;
             std::vector<CUfileIOEvents_t> cufile_events_buf;
             std::vector<TransferStatus> transfer_status;
-            unsigned nr_completed;
+            std::vector<std::pair<uint64_t, uint64_t>> task_to_slices; // task id -> (slice_begin, slice_num)
+            // unsigned nr_completed;
         };
 
         struct pair_hash
@@ -45,24 +46,16 @@ namespace mooncake
 
         int install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args) override;
 
-        int registerLocalMemory(void *addr, size_t length, const string &location) override;
+        int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) override;
 
         int unregisterLocalMemory(void *addr) override;
 
         const char *getName() const override { return "nvmeof"; }
 
         std::unordered_map<std::pair<SegmentHandle, uint64_t>, std::shared_ptr<CuFileContext>, pair_hash> segment_to_context_;
-        // TODO: make this <seg_id, buf_id> to context
-        const std::string local_server_name_;
-        std::shared_ptr<TransferMetadata> meta_;
         std::vector<std::thread> workers;
 
         std::unordered_map<BatchID, BatchDesc> batch_map_;
-        // CuFileContext* context_  ;
-        // CUfileBatchHandle_t handle = NULL;
-        // std::vector<CUfileIOParams_t> cufile_io_params;
-        // std::vector<CUfileIOEvents_t> cufile_events_buf;
-        // std::vector<TransferStatus> transfer_status;
         unsigned nr_completed = 0;
     };
 }

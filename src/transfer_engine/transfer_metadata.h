@@ -138,6 +138,8 @@ namespace mooncake
 
         std::shared_ptr<SegmentDesc> getSegmentDesc(const std::string &server_name);
 
+        SegmentID getSegmentID(const std::string &server_name);
+
         int removeSegmentDesc(const std::string &server_name);
 
         using OnReceiveHandShake = std::function<int(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)>;

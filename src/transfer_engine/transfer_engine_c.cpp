@@ -4,6 +4,7 @@
 #include "transfer_engine/transfer_engine_c.h"
 #include "transfer_engine/multi_transfer_engine.h"
 #include "transfer_engine/transport.h"
+#include <cstdint>
 #include <memory>
 
 using namespace mooncake;
@@ -15,10 +16,10 @@ transfer_engine_t createTransferEngine(const char *metadata_uri)
     return (transfer_engine_t)native;
 }
 
-int initTransferEngine(transfer_engine_t engine, const char *local_server_name)
+int initTransferEngine(transfer_engine_t engine, const char *local_server_name, const char* connectable_name, uint64_t rpc_port)
 {
     TransferEnginev2 *native = (TransferEnginev2 *)engine;
-    native->init(local_server_name);
+    native->init(local_server_name, connectable_name, rpc_port);
     return 0;
 }
 
@@ -58,10 +59,10 @@ int registerLocalMemory(transfer_engine_t engine, void *addr, size_t length, con
     return native->registerLocalMemory(addr, length, location, remote_accessible);
 }
 
-int unregisterLocalMemory(transfer_engine_t engine, void *addr, int remote_accessible)
+int unregisterLocalMemory(transfer_engine_t engine, void *addr)
 {
     TransferEnginev2 *native = (TransferEnginev2 *)engine;
-    return native->unregisterLocalMemory(addr, remote_accessible);
+    return native->unregisterLocalMemory(addr);
 }
 
 int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location)

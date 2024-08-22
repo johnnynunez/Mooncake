@@ -20,3 +20,6 @@ target_link_libraries(endpoint_test PUBLIC transfer_engine)
 
 add_executable(xport_test xport_test.c)
 target_link_libraries(xport_test PUBLIC transfer_engine)
+
+add_executable(cufile_transport_test cufile_transport_test.c)
+target_link_libraries(cufile_transport_test PUBLIC transfer_engine)

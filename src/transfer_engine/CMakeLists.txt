@@ -5,6 +5,7 @@ add_library(transfer_engine transfer_engine.cpp
                             rdma_endpoint.cpp
                             rdma_transport.cpp
                             nvmeof_transport.cpp
+                            multi_transfer_engine.cpp
                             worker_pool.cpp
                             endpoint_store.cpp
                             transfer_engine_c.cpp

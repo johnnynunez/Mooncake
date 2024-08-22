@@ -14,15 +14,18 @@
 
 #include "transfer_metadata.h"
 
+#define USE_LOCAL_DESC
+
 namespace mooncake
 {
     class TransferMetadata;
     /// By default, these functions return 0 (or non-null pointer) on success and return -1 (or null pointer) on failure.
     /// The errno is set accordingly on failure.
-    struct Transport
+    class Transport
     {
-        friend struct TransferEnginev2;
+        friend class TransferEnginev2;
 
+    public:
         using SegmentID = uint64_t;
         const static SegmentID LOCAL_SEGMENT_ID = 0;
         using SegmentHandle = SegmentID;
@@ -141,6 +144,8 @@ namespace mooncake
         };
 
     public:
+        virtual ~Transport() {}
+
         /// @brief Create a batch with specified maximum outstanding transfers.
         virtual BatchID allocateBatchID(size_t batch_size);
 
@@ -165,7 +170,7 @@ namespace mooncake
         std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
 
     private:
-        virtual int registerLocalMemory(void *addr, size_t length, const string &location) = 0;
+        virtual int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) = 0;
 
         virtual int unregisterLocalMemory(void *addr) = 0;
 

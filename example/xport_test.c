@@ -19,7 +19,7 @@ int main(void)
     // args[0] = malloc(16);
     args[0] = "/mnt/nvme0n1/dsf/gds.txt";
     // strcpy(args[0], "matrix");
-    initTransferEngine(engine, server_name);
+    initTransferEngine(engine, server_name, server_name, 12345);
 
     transport_t rdma_xport = installOrGetTransport(engine, "rdma", args);
     transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", args);
@@ -75,7 +75,7 @@ int main(void)
         printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
     }
 
-    unregisterLocalMemory(engine, buf, 0);
+    unregisterLocalMemory(engine, buf);
 
     closeSegment(rdma_xport, rdma_seg);
     closeSegment(nvmeof_xport, nvmeof_seg);

@@ -325,6 +325,26 @@ namespace mooncake
         }
     }
 
+    TransferMetadata::SegmentID TransferMetadata::getSegmentID(const std::string &segment_name)
+    {
+        {
+            RWSpinlock::ReadGuard guard(segment_lock_);
+            if (segment_name_to_id_map_.count(segment_name))
+                return segment_name_to_id_map_[segment_name];
+        }
+
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        if (segment_name_to_id_map_.count(segment_name))
+            return segment_name_to_id_map_[segment_name];
+        auto server_desc = this->getSegmentDesc(segment_name);
+        if (!server_desc)
+            return -1;
+        SegmentID id = next_segment_id_.fetch_add(1);
+        segment_id_to_desc_map_[id] = server_desc;
+        segment_name_to_id_map_[segment_name] = id;
+        return id;
+    }
+
     int TransferMetadata::updateLocalSegmentDesc(uint64_t segment_id)
     {
         RWSpinlock::ReadGuard guard(segment_lock_);

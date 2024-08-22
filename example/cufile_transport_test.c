@@ -1,0 +1,86 @@
+#include "cuda.h"
+#include "cuda_runtime.h"
+#include <stddef.h>
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <sys/select.h>
+#include <time.h>
+
+#include "transfer_engine/transfer_engine_c.h"
+
+#define WRITE 1
+#define READ 0
+
+const int BLOCK_SIZE = 1024 * 1024; // !MB
+const char* META_SERVER = "optane12:2379";
+
+
+int main(void)
+{
+    char *server_name = "optane14";
+    transfer_engine_t *engine = createTransferEngine(META_SERVER);
+    void **args = (void **)malloc(sizeof(void *));
+    // args[0] = malloc(16);
+    args[0] = "/mnt/nvme0n1/dsf/mooncake.img";
+    // strcpy(args[0], "matrix");
+    initTransferEngine(engine, server_name, server_name, 12345);
+
+    transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", args);
+    
+    segment_handle_t nvmeof_seg = openSegment(engine, "/mooncake/nvmeof/optane12");
+
+    const size_t batch_size = 8;
+    int length = batch_size * BLOCK_SIZE;
+    void *buf;
+    cudaMalloc(&buf, length);
+    cudaMemset(buf, 0xab, length);
+
+    registerLocalMemory(engine, buf, length, "", 0);
+
+    struct timeval start_tv, end_tv;
+
+    gettimeofday(&start_tv, NULL);
+
+    struct transfer_request nvmeof_transfers[batch_size];
+    batch_id_t nvmeof_batch = allocateBatchID(nvmeof_xport, batch_size);
+    for (int i = 0; i < batch_size; i++)
+    {
+        nvmeof_transfers[i] = (struct transfer_request){
+            .opcode = READ,
+            .source = buf + i * BLOCK_SIZE,
+            .target_id = LOCAL_SEGMENT,
+            .target_offset = i * BLOCK_SIZE,
+            .length = BLOCK_SIZE,
+        };
+    }
+
+    submitTransfer(nvmeof_xport, nvmeof_batch, nvmeof_transfers, batch_size);
+
+    for (int i = 0; i < batch_size; i++)
+    {
+        // int ret;
+        // getTransferStatus(xport, batch, i, &status);
+        while (1) {
+            struct transfer_status status;
+            getTransferStatus(nvmeof_xport, nvmeof_batch, i, &status);
+            if (status.status == STATUS_FAILED || status.status == STATUS_COMPLETED) {
+                printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
+            }
+        }
+    }
+
+    gettimeofday(&end_tv, NULL);
+
+    unregisterLocalMemory(engine, buf);
+
+    closeSegment(nvmeof_xport, nvmeof_seg);
+    printf("before free batch\n");
+    freeBatchID(nvmeof_xport, nvmeof_batch);
+    printf("after free batch\n");
+    uninstallTransport(engine, "nvmeof");
+    printf("after uninstall\n");
+    destroyTransferEngine(engine);
+    printf("after destroy\n");
+    return 0;
+}
