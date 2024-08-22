@@ -46,6 +46,7 @@ namespace mooncake
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
         uint64_t current_ts = getCurrentTimeInNano();
+
         if (current_ts - tl_last_cache_ts > 1000000000) 
         {
             segment_desc_map.clear();
@@ -59,11 +60,8 @@ namespace mooncake
                 segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id);
         }
 
-        int shard_id = getShardId();
+        SliceList slice_list_map[kShardCount];
         uint64_t submitted_slice_count = 0;
-
-        slice_queue_lock_[shard_id].lock();
-
         for (auto &slice : slice_list)
         {
             auto &peer_segment_desc = segment_desc_map[slice->target_id];
@@ -81,15 +79,23 @@ namespace mooncake
             slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
             auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
             slice->peer_nic_path = peer_nic_path;
-            slice_queue_[shard_id][peer_nic_path].push_back(slice);
+            int shard_id = (slice->target_id * 10007 + device_id) % kShardCount;
+            slice_list_map[shard_id].push_back(slice);
             submitted_slice_count++;
         }
 
-        slice_queue_count_[shard_id].fetch_add(submitted_slice_count, std::memory_order_relaxed);
+        for (int shard_id = 0; shard_id < kShardCount; ++shard_id)
+        {
+            if (slice_list_map[shard_id].empty())
+                continue;
+            slice_queue_lock_[shard_id].lock();
+            for (auto &slice : slice_list_map[shard_id])
+                slice_queue_[shard_id][slice->peer_nic_path].push_back(slice);
+            slice_queue_count_[shard_id].fetch_add(submitted_slice_count, std::memory_order_relaxed);
+            slice_queue_lock_[shard_id].unlock();
+        }
+
         submitted_slice_count_.fetch_add(submitted_slice_count, std::memory_order_relaxed);
-
-        slice_queue_lock_[shard_id].unlock();
-
         if (suspended_flag_.load(std::memory_order_relaxed))
             cond_var_.notify_all();
 
@@ -98,6 +104,7 @@ namespace mooncake
 
     void WorkerPool::performPostSend(int thread_id)
     {
+        auto &local_slice_queue = collective_slice_queue_[thread_id];
         for (int shard_id = thread_id; shard_id < kShardCount; shard_id += kTransferWorkerCount)
         {
             if (slice_queue_count_[shard_id].load(std::memory_order_relaxed) == 0)
@@ -107,15 +114,24 @@ namespace mooncake
             for (auto &entry : slice_queue_[shard_id])
             {
                 for (auto &slice : entry.second)
-                    collective_slice_queue_[thread_id][entry.first].push_back(slice);
+                    local_slice_queue[entry.first].push_back(slice);
                 entry.second.clear();
             }
             slice_queue_count_[shard_id].store(0, std::memory_order_relaxed);
             slice_queue_lock_[shard_id].unlock();
         }
 
+        thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
+        thread_local std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map;
+        uint64_t current_ts = getCurrentTimeInNano();
+        if (current_ts - tl_last_cache_ts > 1000000000) 
+        {
+            endpoint_map.clear();
+            tl_last_cache_ts = current_ts;
+        }
+
         SliceList failed_slice_list;
-        for (auto &entry : collective_slice_queue_[thread_id])
+        for (auto &entry : local_slice_queue)
         {
             if (entry.second.empty())
                 continue;
@@ -139,7 +155,9 @@ namespace mooncake
             processed_slice_count_.fetch_add(entry.second.size());
             entry.second.clear();
 #else
-            auto endpoint = context_.endpoint(entry.first);
+            auto &endpoint = endpoint_map[entry.first];
+            if (endpoint == nullptr)
+                endpoint = context_.endpoint(entry.first);
             if (!endpoint)
             {
                 LOG(ERROR) << "Cannot allocate endpoint: " << entry.first;

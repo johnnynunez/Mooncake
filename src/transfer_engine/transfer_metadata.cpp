@@ -261,6 +261,7 @@ namespace mooncake
         for (const auto &qp : desc.qp_num)
             qpNums.append(qp);
         root["qp_num"] = qpNums;
+        root["reply_msg"] = desc.reply_msg;
         Json::FastWriter writer;
         auto serialized = writer.write(root);
         if (globalConfig().verbose)
@@ -282,6 +283,7 @@ namespace mooncake
         desc.peer_nic_path = root["peer_nic_path"].asString();
         for (const auto &qp : root["qp_num"])
             desc.qp_num.push_back(qp.asUInt());
+        desc.reply_msg = root["reply_msg"].asString();
 
         return 0;
     }

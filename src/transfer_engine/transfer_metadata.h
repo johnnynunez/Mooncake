@@ -103,6 +103,7 @@ namespace mooncake
             std::string local_nic_path;
             std::string peer_nic_path;
             std::vector<uint32_t> qp_num;
+            std::string reply_msg;              // 该字段非空表示握手过程期间发生错误
         };
 
     public:

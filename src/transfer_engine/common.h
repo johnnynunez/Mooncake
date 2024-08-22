@@ -332,22 +332,23 @@ namespace mooncake
 
     class TicketLock {
     public:
-        TicketLock() : next_ticket(0), now_serving(0) {}
+        TicketLock() : next_ticket_(0), now_serving_(0) {}
 
         void lock() {
-            int my_ticket = next_ticket.fetch_add(1, std::memory_order_relaxed);
-            while (now_serving.load(std::memory_order_acquire) != my_ticket) {
+            int my_ticket = next_ticket_.fetch_add(1, std::memory_order_relaxed);
+            while (now_serving_.load(std::memory_order_acquire) != my_ticket) {
                 std::this_thread::yield();
             }
         }
         
         void unlock() {
-            now_serving.fetch_add(1, std::memory_order_release);
+            now_serving_.fetch_add(1, std::memory_order_release);
         }
 
     private:
-        std::atomic<int> next_ticket;
-        std::atomic<int> now_serving;
+        std::atomic<int> next_ticket_;
+        std::atomic<int> now_serving_;
+        uint64_t padding_[14];
     };
 
     class SimpleRandom {
