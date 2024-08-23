@@ -29,6 +29,7 @@ namespace mooncake
         int workers_per_ctx = 2;
         bool verbose = false;
         size_t slice_size = 65536;
+        int retry_cnt = 8;
     };
 
     void loadGlobalConfig(GlobalConfig &config);

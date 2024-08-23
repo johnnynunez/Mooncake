@@ -290,7 +290,7 @@ namespace mooncake
     {
         ibv_async_event event;
         if (ibv_get_async_event(context_.context(), &event) < 0)
-            return -1;
+            return ERR_CONTEXT;
         LOG(ERROR) << "Received context async event: " << ibv_event_type_str(event.event_type) 
                    << " for context " << context_.deviceName() << ". It will be inactive.";
         context_.inactive();
@@ -323,12 +323,5 @@ namespace mooncake
             if (event.data.fd == context_.context()->async_fd)
                 doProcessContextEvents();
         }
-    }
-
-    int WorkerPool::getShardId()
-    {
-        static std::atomic<int> g_next_thread_index(0);
-        thread_local int tl_index = g_next_thread_index.fetch_add(1) % kShardCount;
-        return tl_index;
     }
 }

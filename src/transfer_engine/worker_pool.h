@@ -34,8 +34,6 @@ namespace mooncake
 
         int doProcessContextEvents();
 
-        static int getShardId();
-
     private:
         RdmaContext &context_;
         const int numa_socket_id_;

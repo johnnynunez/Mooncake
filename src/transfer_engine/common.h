@@ -13,6 +13,8 @@
 #include <sys/time.h>
 #include <thread>
 
+#include "transfer_engine/error.h"
+
 #if defined(__x86_64__)
 #include <immintrin.h>
 #define PAUSE() _mm_pause()
@@ -30,7 +32,7 @@ namespace mooncake
         if (unlikely(numa_available() < 0))
         {
             LOG(ERROR) << "The platform does not support NUMA";
-            return -1;
+            return ERR_NUMA;
         }
         cpu_set_t cpu_set;
         CPU_ZERO(&cpu_set);
@@ -48,7 +50,7 @@ namespace mooncake
         if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set))
         {
             LOG(ERROR) << "Failed to set socket affinity";
-            return -1;
+            return ERR_NUMA;
         }
         return 0;
     }
@@ -60,7 +62,7 @@ namespace mooncake
         if (clock_gettime(CLOCK_REALTIME, &ts))
         {
             PLOG(ERROR) << "Failed to read real-time lock";
-            return -1;
+            return ERR_CLOCK;
         }
         return (int64_t{ts.tv_sec} * kNanosPerSecond + int64_t{ts.tv_nsec});
     }
@@ -121,9 +123,9 @@ namespace mooncake
     {
         uint64_t length = str.size();
         if (writeFully(fd, &length, sizeof(length)) != (ssize_t)sizeof(length))
-            return -1;
+            return ERR_SOCKET_FAIL;
         if (writeFully(fd, str.data(), length) != (ssize_t)length)
-            return -1;
+            return ERR_SOCKET_FAIL;
         return 0;
     }
 

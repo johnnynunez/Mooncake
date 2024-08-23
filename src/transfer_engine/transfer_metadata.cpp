@@ -3,10 +3,10 @@
 
 #include "transfer_engine/common.h"
 #include "transfer_engine/config.h"
+#include "transfer_engine/error.h"
 #include "transfer_engine/transfer_metadata.h"
 
 #include <arpa/inet.h>
-#include <netdb.h>
 #include <sys/socket.h>
 #include <set>
 
@@ -151,7 +151,7 @@ namespace mooncake
         if (!impl_->set(ServerDescPrefix + server_name, serverJSON))
         {
             LOG(ERROR) << "Failed to put description of " << server_name;
-            return -1;
+            return ERR_METADATA;
         }
 
         return 0;
@@ -162,7 +162,7 @@ namespace mooncake
         if (!impl_->remove(ServerDescPrefix + server_name))
         {
             LOG(ERROR) << "Failed to remove description of " << server_name;
-            return -1;
+            return ERR_METADATA;
         }
         return 0;
     }
@@ -275,7 +275,7 @@ namespace mooncake
         Json::Reader reader;
 
         if (serialized.empty() || !reader.parse(serialized, root))
-            return -1;
+            return ERR_MALFORMED_JSON;
 
         if (globalConfig().verbose)
             LOG(INFO) << "Receive Endpoint Handshake Info: " << serialized;
@@ -286,6 +286,25 @@ namespace mooncake
         desc.reply_msg = root["reply_msg"].asString();
 
         return 0;
+    }
+
+    static inline const std::string toString(struct sockaddr *addr)
+    {
+        if (addr->sa_family == AF_INET) 
+        {
+            struct sockaddr_in *sock_addr = (struct sockaddr_in *)addr;
+            char ip[INET_ADDRSTRLEN];
+            if (inet_ntop(addr->sa_family, &(sock_addr->sin_addr), ip, INET_ADDRSTRLEN) != NULL)
+                return ip;
+        }
+        else if (addr->sa_family == AF_INET6) 
+        {
+            struct sockaddr_in6 *sock_addr = (struct sockaddr_in6 *)addr;
+            char ip[INET6_ADDRSTRLEN];
+            if (inet_ntop(addr->sa_family, &(sock_addr->sin6_addr), ip, INET6_ADDRSTRLEN) != NULL)
+                return ip;
+        }
+        return "<unknown>";
     }
 
     int TransferMetadata::startHandshakeDaemon(OnReceiveHandShake on_receive_handshake, uint16_t listen_port)
@@ -301,7 +320,7 @@ namespace mooncake
         if (listen_fd < 0)
         {
             PLOG(ERROR) << "Failed to create socket";
-            return -1;
+            return ERR_SOCKET_FAIL;
         }
 
         struct timeval timeout;
@@ -311,28 +330,28 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to set socket timeout";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET_FAIL;
         }
 
         if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
         {
             PLOG(ERROR) << "Failed to set address reusable";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET_FAIL;
         }
 
         if (bind(listen_fd, (sockaddr *)&bind_address, sizeof(sockaddr_in)) < 0)
         {
             PLOG(ERROR) << "Failed to bind address";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET_FAIL;
         }
 
         if (listen(listen_fd, 5))
         {
             PLOG(ERROR) << "Failed to listen";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET_FAIL;
         }
 
         listener_running_ = true;
@@ -351,17 +370,9 @@ namespace mooncake
                         continue;
                     }
 
-                    if (addr.sin_family != AF_INET)
+                    if (addr.sin_family != AF_INET && addr.sin_family != AF_INET6)
                     {
-                        LOG(ERROR) << "Unsupported socket type: " << addr.sin_family;
-                        close(conn_fd);
-                        continue;
-                    }
-
-                    char inet_str[INET_ADDRSTRLEN];
-                    if (!inet_ntop(AF_INET, &(addr.sin_addr), inet_str, INET_ADDRSTRLEN))
-                    {
-                        PLOG(ERROR) << "Failed to parse incoming address";
+                        LOG(ERROR) << "Unsupported socket type, should be AF_INET or AF_INET6";
                         close(conn_fd);
                         continue;
                     }
@@ -377,29 +388,24 @@ namespace mooncake
                     }
 
                     if (globalConfig().verbose)
-                        LOG(INFO) << "New connection: " << inet_str << ":" << ntohs(addr.sin_port) << ", fd: " << conn_fd;
+                        LOG(INFO) << "New connection: "
+                                  << toString((struct sockaddr *)&addr)
+                                  << ":" << ntohs(addr.sin_port);
 
                     HandShakeDesc local_desc, peer_desc;
                     int ret = decode(readString(conn_fd), peer_desc);
                     if (ret)
                     {
-                        PLOG(ERROR) << "Failed to receive and decode remote handshake descriptor";
+                        PLOG(ERROR) << "Failed to receive handshake message";
                         close(conn_fd);
                         continue;
                     }
 
-                    ret = on_receive_handshake(peer_desc, local_desc);
-                    if (ret)
-                    {
-                        PLOG(ERROR) << "Failed to perform QP handshake";
-                        close(conn_fd);
-                        continue;
-                    }
-
+                    on_receive_handshake(peer_desc, local_desc);
                     ret = writeString(conn_fd, encode(local_desc));
                     if (ret)
                     {
-                        PLOG(ERROR) << "Failed to encode and send local handshake descriptor";
+                        PLOG(ERROR) << "Failed to send handshake message";
                         close(conn_fd);
                         continue;
                     }
@@ -416,8 +422,6 @@ namespace mooncake
                                         const HandShakeDesc &local_desc,
                                         HandShakeDesc &peer_desc)
     {
-        int conn_fd = -1;
-        int on = 1;
         struct addrinfo hints;
         struct addrinfo *result, *rp;
         memset(&hints, 0, sizeof(hints));
@@ -433,7 +437,8 @@ namespace mooncake
             auto port_str = peer_server_name.substr(pos + 1);
             int val = std::atoi(port_str.c_str());
             if (val <= 0 || val > 65535)
-                PLOG(ERROR) << "Illegal port number in " << peer_server_name;
+                PLOG(WARNING) << "Illegal port number in " << peer_server_name 
+                              << ". Use default port " << port << " instead";
             else
                 port = (uint16_t)port;
         }
@@ -442,38 +447,47 @@ namespace mooncake
         sprintf(service, "%u", port);
         if (getaddrinfo(hostname.c_str(), service, &hints, &result))
         {
-            PLOG(ERROR) << "Failed to get address from " << peer_server_name;
-            return -1;
+            PLOG(ERROR) << "Failed to get IP address of peer server " << peer_server_name
+                        << ". Please check DNS and /etc/hosts, or use IPv4 address instead";
+            return ERR_DNS_FAIL;
         }
 
-        for (rp = result; conn_fd < 0 && rp; rp = rp->ai_next)
+        int ret = 0;
+        for (rp = result; rp; rp = rp->ai_next)
         {
-            conn_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-            if (conn_fd == -1)
+            ret = doSendHandshake(rp, local_desc, peer_desc);
+            if (ret == 0)
             {
-                LOG(ERROR) << "Failed to create socket";
-                continue;
-            }
-            if (setsockopt(conn_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
-            {
-                PLOG(ERROR) << "Failed to set address reusable";
-                close(conn_fd);
-                conn_fd = -1;
-                continue;
-            }
-            if (connect(conn_fd, rp->ai_addr, rp->ai_addrlen))
-            {
-                PLOG(ERROR) << "Failed to connect " << peer_server_name;
-                close(conn_fd);
-                conn_fd = -1;
-                continue;
+                freeaddrinfo(result);
+                return 0;
             }
         }
 
         freeaddrinfo(result);
-        if (conn_fd < 0)
-            return -1;
+        return ret;
+    }
 
+    int TransferMetadata::doSendHandshake(struct addrinfo *addr, 
+                                          const HandShakeDesc &local_desc, 
+                                          HandShakeDesc &peer_desc)
+    {
+        if (globalConfig().verbose)
+            LOG(INFO) << "Try connecting " << toString(addr->ai_addr);
+
+        int on = 1;
+        int conn_fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+        if (conn_fd == -1)
+        {
+            PLOG(ERROR) << "Failed to create socket";
+            return ERR_SOCKET_FAIL;
+        }
+        if (setsockopt(conn_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
+        {
+            PLOG(ERROR) << "Failed to set address reusable";
+            close(conn_fd);
+            return ERR_SOCKET_FAIL;
+        }
+        
         struct timeval timeout;
         timeout.tv_sec = 60;
         timeout.tv_usec = 0;
@@ -481,13 +495,20 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to set socket timeout";
             close(conn_fd);
-            return -1;
+            return ERR_SOCKET_FAIL;
+        }
+
+        if (connect(conn_fd, addr->ai_addr, addr->ai_addrlen))
+        {
+            PLOG(ERROR) << "Failed to connect " << toString(addr->ai_addr);
+            close(conn_fd);
+            return ERR_SOCKET_FAIL;
         }
 
         int ret = writeString(conn_fd, encode(local_desc));
         if (ret)
         {
-            PLOG(ERROR) << "Failed to encode and send local handshake descriptor to " << peer_server_name;
+            PLOG(ERROR) << "Failed to send handshake message";
             close(conn_fd);
             return ret;
         }
@@ -495,9 +516,16 @@ namespace mooncake
         ret = decode(readString(conn_fd), peer_desc);
         if (ret)
         {
-            PLOG(ERROR) << "Failed to receive and decode remote handshake descriptor from " << peer_server_name;
+            PLOG(ERROR) << "Failed to receive handshake message";
             close(conn_fd);
             return ret;
+        }
+
+        if (!peer_desc.reply_msg.empty())
+        {
+            PLOG(ERROR) << "Handshake request rejected by peer endpoint: " << peer_desc.reply_msg;
+            close(conn_fd);
+            return ERR_REJECT_HANDSHAKE;
         }
 
         close(conn_fd);
@@ -514,18 +542,16 @@ namespace mooncake
 
         if (nic_priority_matrix.empty() || !reader.parse(nic_priority_matrix, root))
         {
-            LOG(ERROR) << "JSON parsing failed";
-            return -1;
+            LOG(ERROR) << "Malformed format of NIC priority matrix: illegal JSON format";
+            return ERR_MALFORMED_JSON;
         }
 
-        // 检查根节点是否为对象
         if (!root.isObject())
         {
-            LOG(ERROR) << "JSON root is not an object";
-            return -1;
+            LOG(ERROR) << "Malformed format of NIC priority matrix: root is not an object";
+            return ERR_MALFORMED_JSON;
         }
 
-        // 遍历 JSON 对象
         priority_map.clear();
         for (const auto &key : root.getMemberNames())
         {
@@ -567,9 +593,8 @@ namespace mooncake
             }
             else
             {
-                LOG(ERROR) << "size " << value.size() << " " << value.isArray();
-                LOG(ERROR) << "Invalid array structure in JSON";
-                return -1;
+                LOG(ERROR) << "Malformed format of NIC priority matrix: format error";
+                return ERR_MALFORMED_JSON;
             }
         }
 

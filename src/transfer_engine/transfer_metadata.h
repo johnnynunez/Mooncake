@@ -11,6 +11,7 @@
 #include <string>
 #include <thread>
 #include <unordered_map>
+#include <netdb.h>
 
 #include <jsoncpp/json/json.h>
 #include <etcd/SyncClient.hpp>
@@ -130,6 +131,8 @@ namespace mooncake
                                           std::vector<std::string> &rnic_list);
 
     private:
+        int doSendHandshake(struct addrinfo *addr, const HandShakeDesc &local_desc, HandShakeDesc &peer_desc);
+
         std::string encode(const HandShakeDesc &desc);
 
         int decode(const std::string &ser, HandShakeDesc &desc);

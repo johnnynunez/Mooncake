@@ -158,6 +158,16 @@ namespace mooncake {
                 LOG(WARNING) << "Ignore value from environment variable MC_SLICE_SIZE";
         }
 
+        const char* retry_cnt_env = std::getenv("MC_RETRY_CNT");
+        if (retry_cnt_env)
+        {
+            size_t val = atoi(retry_cnt_env);
+            if (val > 0 && val < 128) 
+                config.retry_cnt = val;
+            else
+                LOG(WARNING) << "Ignore value from environment variable MC_RETRY_CNT";
+        }
+
         const char* verbose_env = std::getenv("MC_VERBOSE");
         if (verbose_env)
         {
