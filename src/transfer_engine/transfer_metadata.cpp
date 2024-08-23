@@ -448,7 +448,7 @@ namespace mooncake
         if (getaddrinfo(hostname.c_str(), service, &hints, &result))
         {
             PLOG(ERROR) << "Failed to get IP address of peer server " << peer_server_name
-                        << ". Please check DNS and /etc/hosts, or use IPv4 address instead";
+                        << ", check DNS and /etc/hosts, or use IPv4 address instead";
             return ERR_DNS_FAIL;
         }
 
@@ -508,7 +508,7 @@ namespace mooncake
         int ret = writeString(conn_fd, encode(local_desc));
         if (ret)
         {
-            PLOG(ERROR) << "Failed to send handshake message";
+            LOG(ERROR) << "Failed to send handshake message";
             close(conn_fd);
             return ret;
         }
@@ -516,14 +516,14 @@ namespace mooncake
         ret = decode(readString(conn_fd), peer_desc);
         if (ret)
         {
-            PLOG(ERROR) << "Failed to receive handshake message";
+            LOG(ERROR) << "Failed to receive handshake message";
             close(conn_fd);
             return ret;
         }
 
         if (!peer_desc.reply_msg.empty())
         {
-            PLOG(ERROR) << "Handshake request rejected by peer endpoint: " << peer_desc.reply_msg;
+            LOG(ERROR) << "Handshake request rejected by peer endpoint: " << peer_desc.reply_msg;
             close(conn_fd);
             return ERR_REJECT_HANDSHAKE;
         }

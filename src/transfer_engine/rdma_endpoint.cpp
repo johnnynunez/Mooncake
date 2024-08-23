@@ -152,7 +152,8 @@ namespace mooncake
         peer_nic_path_ = peer_desc.local_nic_path;
         if (peer_desc.peer_nic_path != context_.nicPath())
         {
-            LOG(ERROR) << "Invalid argument: received packet mismatch";
+            local_desc.reply_msg = "Invalid argument: peer nic path inconsistency";
+            LOG(ERROR) << local_desc.reply_msg;
             return ERR_MALFORMED_RESPONSE;
         }
 
@@ -160,7 +161,8 @@ namespace mooncake
         auto peer_nic_name = getNicNameFromNicPath(peer_nic_path_);
         if (peer_server_name.empty() || peer_nic_name.empty())
         {
-            LOG(ERROR) << "Parse peer nic path failed: " << peer_nic_path_;
+            local_desc.reply_msg = "Parse peer nic path failed: " + peer_nic_path_;
+            LOG(ERROR) << local_desc.reply_msg;
             return ERR_INVALID_ARGUMENT;
         }
 
@@ -171,9 +173,10 @@ namespace mooncake
         auto &nic_list = context_.engine().getSegmentDescByName(peer_server_name)->devices;
         for (auto &nic : nic_list)
             if (nic.name == peer_nic_name)
-                return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
+                return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num, &local_desc.reply_msg);
 
-        LOG(ERROR) << "Peer NIC " << peer_nic_name << " not found in " << peer_server_name;
+        local_desc.reply_msg = "Peer nic not found in that server: " + peer_nic_path_;
+        LOG(ERROR) << local_desc.reply_msg;
         return ERR_DEVICE_NOT_FOUND;
     }
 
@@ -263,18 +266,20 @@ namespace mooncake
         return ret;
     }
 
-    int RdmaEndPoint::doSetupConnection(const std::string &peer_gid, uint16_t peer_lid, std::vector<uint32_t> peer_qp_num_list)
+    int RdmaEndPoint::doSetupConnection(const std::string &peer_gid, uint16_t peer_lid, std::vector<uint32_t> peer_qp_num_list, std::string *reply_msg)
     {
         if (qp_list_.size() != peer_qp_num_list.size())
         {
-            std::string message = "QP count mismatch in peer and local endpoints. Please check MC_MAX_EP_PER_CTX";
+            std::string message = "QP count mismatch in peer and local endpoints, check MC_MAX_EP_PER_CTX";
             LOG(ERROR) << message;
+            if (reply_msg)
+                *reply_msg = message;
             return ERR_INVALID_ARGUMENT;
         }
 
         for (int qp_index = 0; qp_index < (int)qp_list_.size(); ++qp_index)
         {
-            int ret = doSetupConnection(qp_index, peer_gid, peer_lid, peer_qp_num_list[qp_index]);
+            int ret = doSetupConnection(qp_index, peer_gid, peer_lid, peer_qp_num_list[qp_index], reply_msg);
             if (ret)
                 return ret;
         }
@@ -283,7 +288,7 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaEndPoint::doSetupConnection(int qp_index, const std::string &peer_gid, uint16_t peer_lid, uint32_t peer_qp_num)
+    int RdmaEndPoint::doSetupConnection(int qp_index, const std::string &peer_gid, uint16_t peer_lid, uint32_t peer_qp_num, std::string *reply_msg)
     {
         if (qp_index < 0 || qp_index > (int)qp_list_.size())
             return ERR_INVALID_ARGUMENT;
@@ -295,7 +300,10 @@ namespace mooncake
         attr.qp_state = IBV_QPS_RESET;
         if (ibv_modify_qp(qp, &attr, IBV_QP_STATE))
         {
-            PLOG(ERROR) << "Failed to modity QP to RESET";
+            std::string message = "Failed to modity QP to RESET";
+            PLOG(ERROR) << message;
+            if (reply_msg)
+                *reply_msg = message;
             return ERR_ENDPOINT;
         }
 
@@ -307,7 +315,10 @@ namespace mooncake
         attr.qp_access_flags = IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_READ | IBV_ACCESS_REMOTE_WRITE | IBV_ACCESS_REMOTE_ATOMIC;
         if (ibv_modify_qp(qp, &attr, IBV_QP_STATE | IBV_QP_PKEY_INDEX | IBV_QP_PORT | IBV_QP_ACCESS_FLAGS))
         {
-            PLOG(ERROR) << "Failed to modity QP to INIT";
+            std::string message = "Failed to modity QP to INIT, check local context port num";
+            PLOG(ERROR) << message;
+            if (reply_msg)
+                *reply_msg = message;
             return ERR_ENDPOINT;
         }
 
@@ -343,7 +354,10 @@ namespace mooncake
         attr.min_rnr_timer = 12; // 12 in previous implementation
         if (ibv_modify_qp(qp, &attr, IBV_QP_STATE | IBV_QP_PATH_MTU | IBV_QP_MIN_RNR_TIMER | IBV_QP_AV | IBV_QP_MAX_DEST_RD_ATOMIC | IBV_QP_DEST_QPN | IBV_QP_RQ_PSN))
         {
-            PLOG(ERROR) << "Failed to modity QP to RTR";
+            std::string message = "Failed to modity QP to RTR, check mtu, gid, peer lid, peer qp num";
+            PLOG(ERROR) << message;
+            if (reply_msg)
+                *reply_msg = message;
             return ERR_ENDPOINT;
         }
 
@@ -358,7 +372,10 @@ namespace mooncake
 
         if (ibv_modify_qp(qp, &attr, IBV_QP_STATE | IBV_QP_TIMEOUT | IBV_QP_RETRY_CNT | IBV_QP_RNR_RETRY | IBV_QP_SQ_PSN | IBV_QP_MAX_QP_RD_ATOMIC))
         {
-            PLOG(ERROR) << "Failed to modity QP to RTS";
+            std::string message = "Failed to modity QP to RTS";
+            PLOG(ERROR) << message;
+            if (reply_msg)
+                *reply_msg = message;
             return ERR_ENDPOINT;
         }
 
