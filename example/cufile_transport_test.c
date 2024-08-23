@@ -6,13 +6,15 @@
 #include <string.h>
 #include <sys/select.h>
 #include <time.h>
+#include <sys/time.h>
 
 #include "transfer_engine/transfer_engine_c.h"
 
 #define WRITE 1
 #define READ 0
 
-const int BLOCK_SIZE = 1024 * 1024; // !MB
+const int BLOCK_SIZE = 4096;
+const int ITERS = 100;
 const char* META_SERVER = "optane12:2379";
 
 
@@ -38,45 +40,56 @@ int main(void)
 
     registerLocalMemory(engine, buf, length, "", 0);
 
-    struct timeval start_tv, end_tv;
+    struct timeval start_tv, stop_tv;
 
     gettimeofday(&start_tv, NULL);
 
-    struct transfer_request nvmeof_transfers[batch_size];
-    batch_id_t nvmeof_batch = allocateBatchID(nvmeof_xport, batch_size);
-    for (int i = 0; i < batch_size; i++)
-    {
-        nvmeof_transfers[i] = (struct transfer_request){
-            .opcode = READ,
-            .source = buf + i * BLOCK_SIZE,
-            .target_id = LOCAL_SEGMENT,
-            .target_offset = i * BLOCK_SIZE,
-            .length = BLOCK_SIZE,
-        };
-    }
+    for (int i = 0; i < ITERS; ++i) {
+        struct transfer_request nvmeof_transfers[batch_size];
+        batch_id_t nvmeof_batch = allocateBatchID(nvmeof_xport, batch_size);
 
-    submitTransfer(nvmeof_xport, nvmeof_batch, nvmeof_transfers, batch_size);
+        for (int i = 0; i < batch_size; i++)
+        {
+            nvmeof_transfers[i] = (struct transfer_request){
+                .opcode = READ,
+                .source = buf + i * BLOCK_SIZE,
+                .target_id = LOCAL_SEGMENT,
+                .target_offset = i * BLOCK_SIZE,
+                .length = BLOCK_SIZE,
+            };
+        }
 
-    for (int i = 0; i < batch_size; i++)
-    {
-        // int ret;
-        // getTransferStatus(xport, batch, i, &status);
-        while (1) {
-            struct transfer_status status;
-            getTransferStatus(nvmeof_xport, nvmeof_batch, i, &status);
-            if (status.status == STATUS_FAILED || status.status == STATUS_COMPLETED) {
-                printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
+        submitTransfer(nvmeof_xport, nvmeof_batch, nvmeof_transfers, batch_size);
+
+        for (int i = 0; i < batch_size; i++)
+        {
+            // int ret;
+            // getTransferStatus(xport, batch, i, &status);
+            while (1) {
+                struct transfer_status status;
+                getTransferStatus(nvmeof_xport, nvmeof_batch, i, &status);
+                // printf("task %d s %d", i, status.status);
+                // LOG(INFO) << i <<  " status " << status.status;
+                if (status.status == STATUS_FAILED || status.status == STATUS_COMPLETED) {
+                    // printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
+                    break;
+                }
             }
         }
+        freeBatchID(nvmeof_xport, nvmeof_batch);
     }
 
-    gettimeofday(&end_tv, NULL);
 
+    gettimeofday(&stop_tv, NULL);
+
+    double duration = (stop_tv.tv_sec - start_tv.tv_sec) + (stop_tv.tv_usec - start_tv.tv_usec) / 1000000.0;
+    double throughput = ((double)ITERS * batch_size * BLOCK_SIZE) / duration / 1024 / 1024 / 1024;
+
+    printf("throughput %.2lf GB/s duration %.2lf s\n", throughput, duration);
     unregisterLocalMemory(engine, buf);
 
     closeSegment(nvmeof_xport, nvmeof_seg);
     printf("before free batch\n");
-    freeBatchID(nvmeof_xport, nvmeof_batch);
     printf("after free batch\n");
     uninstallTransport(engine, "nvmeof");
     printf("after uninstall\n");

@@ -163,6 +163,8 @@ namespace mooncake
     protected:
         virtual int install(std::string& local_server_name, std::shared_ptr<TransferMetadata> meta,  void **args);
 
+        // virtual int freeBatchContext(BatchID batch_id) = 0;
+
         std::string local_server_name_;
         std::shared_ptr<TransferMetadata> meta_;
 

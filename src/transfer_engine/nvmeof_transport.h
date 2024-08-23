@@ -22,6 +22,8 @@ namespace mooncake
 
         int getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status) override;
 
+        int freeBatchID(BatchID batch_id) override;
+
     private:
         struct CuFileBatchDesc
         {

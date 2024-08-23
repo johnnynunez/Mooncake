@@ -55,7 +55,7 @@ public:
     explicit CuFileContext(const char* filename)
     {
         int fd = open(filename, O_RDWR | O_DIRECT, 0664);
-        LOG(INFO) << "open " << filename << " get " << fd;
+        // LOG(INFO) << "open " << filename << " get " << fd;
         memset(&desc, 0, sizeof(desc));
         desc.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
         desc.handle.fd = fd;

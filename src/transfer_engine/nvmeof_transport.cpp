@@ -72,11 +72,16 @@ namespace mooncake
         #endif
         CUFILE_CHECK(cuFileBatchIOGetStatus(cufile_desc.handle, 0, &nr, cufile_desc.cufile_events_buf.data(), NULL));
 
-        TransferStatus transfer_status;
-        for (size_t i = 0; i < slice_num; ++i)
+        // LOG(INFO) << "cufile events buf nr " << cufile_desc.cufile_events_buf.size();
+        // for (int i = 0; i < cufile_desc.cufile_events_buf.size(); ++i) {
+        //     LOG(INFO) << i << " status " << cufile_desc.cufile_events_buf[i].status <<  " ret " << cufile_desc.cufile_events_buf[i].ret;
+        // }
+
+        TransferStatus transfer_status = {.transferred_bytes = 0};
+        for (size_t i = slice_id; i < slice_id + slice_num; ++i)
         {
+            // LOG(INFO) << "task " << task_id << " i " << i << " upper bound " << slice_num;
             auto &event = cufile_desc.cufile_events_buf[i];
-            unsigned idx = (intptr_t)event.cookie;
             transfer_status.s = from_cufile_transfer_status(event.status);
             // TODO(FIXME): what to do if multi slices have different status?
             if (transfer_status.s == COMPLETED)
@@ -90,7 +95,7 @@ namespace mooncake
             task.is_finished = true;
         }
         status = transfer_status;
-        return 1;
+        return 0;
     }
 
     int NVMeoFTransport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries)
@@ -181,7 +186,7 @@ namespace mooncake
                     params.u.batch.devPtr_offset = 0;
                     params.u.batch.file_offset = slice_start;
                     params.u.batch.size = slice_end - slice_start;
-                    LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
+                    // LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
 
                     cufile_desc.cufile_io_params.push_back(params);
                     
@@ -199,9 +204,26 @@ namespace mooncake
             #endif
         }
         
-        LOG(INFO) << "submit nr " << slice_id << " start " << start_slice_id;
+        // LOG(INFO) << "submit nr " << slice_id << " start " << start_slice_id;
         CUFILE_CHECK(cuFileBatchIOSubmit(cufile_desc.handle, slice_id - start_slice_id, cufile_desc.cufile_io_params.data() + start_slice_id, 0));
-        LOG(INFO) << "After submit";
+        // LOG(INFO) << "After submit";
+        return 0;
+    }
+
+    int NVMeoFTransport::freeBatchID(BatchID batch_id) {
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc.task_list.size();
+        for (size_t task_id = 0; task_id < task_count; task_id++)
+        {
+            if (!batch_desc.task_list[task_id].is_finished)
+            {
+                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
+                return -1;
+            }
+        }
+        auto &cufile_desc = *((CuFileBatchDesc *)(batch_desc.context));
+        cuFileBatchIODestroy(cufile_desc.handle);
+        delete &batch_desc;
         return 0;
     }
 
