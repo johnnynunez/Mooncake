@@ -14,8 +14,8 @@
 #define READ 0
 
 const int BLOCK_SIZE = 4096;
-const int ITERS = 100;
-const char* META_SERVER = "optane12:2379";
+const int ITERS = 16;
+const char* META_SERVER = "192.168.3.72:2379";
 
 
 int main(void)
@@ -30,7 +30,7 @@ int main(void)
 
     transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", args);
     
-    segment_handle_t nvmeof_seg = openSegment(engine, "/mooncake/nvmeof/optane12");
+    segment_handle_t nvmeof_seg = openSegment(engine, "/mooncake/nvmeof/optane14");
 
     const size_t batch_size = 8;
     int length = batch_size * BLOCK_SIZE;
@@ -53,7 +53,7 @@ int main(void)
             nvmeof_transfers[i] = (struct transfer_request){
                 .opcode = READ,
                 .source = buf + i * BLOCK_SIZE,
-                .target_id = LOCAL_SEGMENT,
+                .target_id = nvmeof_seg,
                 .target_offset = i * BLOCK_SIZE,
                 .length = BLOCK_SIZE,
             };

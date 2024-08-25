@@ -16,13 +16,13 @@ if __name__ == "__main__":
 
   files = sys.argv[1:]
   local_server_name = socket.gethostname()
-  segment_name = "/mooncake/nvmeof/" + local_server_name
+  segment_name = "/mooncake/nvmeof/" + "optane14"
   print(segment_name)
 
-  etcd = etcd3.client(host='localhost', port=2379)
+  etcd = etcd3.client(host='optane12', port=2379)
 
   value = {}
-  value['server_name'] = local_server_name
+  value['server_name'] = "optane14"
   value['protocol'] = "NVMeoF"
   value['buffers'] = []
   for file in files:

@@ -5,8 +5,8 @@
 namespace mooncake
 {
     int TransferEnginev2::init(const char *server_name, const char * connectable_name, uint64_t rpc_port) {
+        local_server_name_ = server_name;
         // TODO: write to meta server
-
         return 0;
     }
 

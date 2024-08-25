@@ -11,9 +11,6 @@
 #include <glog/logging.h>
 #include <iomanip>
 #include <memory>
-#include <utility>
-
-#define USE_LOCAL_DESC
 
 namespace mooncake
 {
@@ -67,7 +64,6 @@ namespace mooncake
         auto [slice_id, slice_num] = cufile_desc.task_to_slices[task_id];
         #ifdef USE_LOCAL_DESC
         assert(slice_id == task_id);
-        // LOG(TRACE) << "slice id " << slice_id << "slice number " << slice_num;
         assert(slice_num == 1);
         #endif
         CUFILE_CHECK(cuFileBatchIOGetStatus(cufile_desc.handle, 0, &nr, cufile_desc.cufile_events_buf.data(), NULL));
@@ -121,7 +117,8 @@ namespace mooncake
             {
                 #ifndef USE_LOCAL_DESC
                 segment_desc_map[target_id] = meta_->getSegmentDescByID(target_id);
-                #else
+                assert(segment_desc_map[target_id] != nullptr);
+#else
                 LOG_ASSERT(target_id == LOCAL_SEGMENT_ID);
                 auto local_seg_desc = std::make_shared<SegmentDesc>();
                 local_seg_desc->name = local_server_name_;
@@ -137,7 +134,8 @@ namespace mooncake
             }
 
             auto &desc = segment_desc_map.at(target_id);
-            assert(desc->protocol == "nvmeof");
+            // LOG(INFO) << "desc " << desc->name << " " << desc->protocol;
+            assert(desc->protocol == "NVMeoF" || desc->protocol == "nvmeof");
             // TODO: add mutex
             // TODO: solving iterator invalidation due to vector resize
             // Handle File Offset
@@ -147,6 +145,11 @@ namespace mooncake
             uint64_t current_offset = 0;
             for (auto &buffer_desc : desc->nvmeof_buffers)
             {
+                LOG(INFO) << "buffer " << buffer_desc.file_path << " " << buffer_desc.length;
+                for (auto &local_path : buffer_desc.local_path_map)
+                {
+                    LOG(INFO) << "local path " << local_path.first << " " << local_path.second;
+                }
                 bool overlap = buffer_start < current_offset + buffer_desc.length && buffer_end > current_offset; // this buffer intersects with user's target
                 if (overlap)
                 {
@@ -157,6 +160,7 @@ namespace mooncake
                     // 3. init slice and put into TransferTask
                     #ifndef USE_LOCAL_DESC
                     const char *file_path = buffer_desc.local_path_map[local_server_name_].c_str();
+                    LOG(INFO) << "local name " << local_server_name_ << " file path " << file_path;
                     #else
                     const char* file_path = "/mnt/nvme0n1/dsf/mooncake.img";
                     #endif
@@ -248,5 +252,4 @@ namespace mooncake
         CUFILE_CHECK(cuFileBufDeregister(addr));
         return 0;
     }
-
 }

@@ -49,9 +49,9 @@ if __name__ == "__main__":
   file_path = sys.argv[2]
   local_path = sys.argv[3]
 
-  local_server_name = socket.gethostname()
+  local_server_name = "optane14"
 
-  etcd = etcd3.client(host='localhost', port=2379)
+  etcd = etcd3.client(host='optane12', port=2379)
   value, _ = etcd.get(segment_name)
 
   if value is None:

@@ -41,7 +41,7 @@ namespace mooncake
                 return false;
             }
             auto json_file = resp.value().as_string();
-            if (!reader.parse(json_file, value))
+            if (!reader.parse(json_file, value)) {
                 return false;
             if (globalConfig().verbose)
                 LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
@@ -91,6 +91,7 @@ namespace mooncake
             LOG(ERROR) << "Cannot allocate TransferMetadataImpl objects";
             exit(EXIT_FAILURE);
         }
+        next_segment_id_.store(0);
     }
 
     TransferMetadata::~TransferMetadata()
@@ -181,7 +182,7 @@ namespace mooncake
     std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(const std::string &server_name)
     {
         Json::Value serverJSON;
-        if (!impl_->get(ServerDescPrefix + server_name, serverJSON))
+        if (!impl_->get(server_name, serverJSON))
         {
             LOG(ERROR) << "Failed to get description of " << server_name;
             return nullptr;
@@ -272,9 +273,17 @@ namespace mooncake
                 {
                     buffer.local_path_map[key] = local_path_map[key].asString();
                 }
+                desc->nvmeof_buffers.push_back(buffer);
             }
         }
-
+        LOG(INFO) << "name " << desc->name << " protocol " << desc->protocol;
+        // LOG(INFO) << "devices " << desc->devices.size() << " buffers " << desc->buffers.size();
+        for (const auto& nvmebuf : desc->nvmeof_buffers) {
+            LOG(INFO) << "file_path " << nvmebuf.file_path << " length " << nvmebuf.length;
+            for (const auto& entry : nvmebuf.local_path_map) {
+                LOG(INFO) << "local_path_map " << entry.first << " " << entry.second;
+            }
+        }
         return desc;
     }
 
@@ -305,6 +314,7 @@ namespace mooncake
 
     std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDescByID(SegmentID segment_id, bool force_update)
     {
+        LOG(INFO) << "get " << segment_id;
         if (force_update)
         {
             RWSpinlock::WriteGuard guard(segment_lock_);
@@ -340,6 +350,7 @@ namespace mooncake
         if (!server_desc)
             return -1;
         SegmentID id = next_segment_id_.fetch_add(1);
+        LOG(INFO) << "put " << id;
         segment_id_to_desc_map_[id] = server_desc;
         segment_name_to_id_map_[segment_name] = id;
         return id;

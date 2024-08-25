@@ -54,6 +54,7 @@ public:
     /// Create a GDS segment from file name. Return NULL on error.
     explicit CuFileContext(const char* filename)
     {
+        // LOG(INFO) << "construct " << filename;
         int fd = open(filename, O_RDWR | O_DIRECT, 0664);
         // LOG(INFO) << "open " << filename << " get " << fd;
         memset(&desc, 0, sizeof(desc));
@@ -62,6 +63,9 @@ public:
 
         CUFILE_CHECK(cuFileHandleRegister(&handle, &desc));
     }
+
+    CuFileContext(const CuFileContext &) = delete;
+    CuFileContext &operator=(const CuFileContext &) = delete;
 
     ~CuFileContext()
     {
