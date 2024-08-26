@@ -146,6 +146,8 @@ namespace mooncake
         auto iter = endpoint_map_.find(peer_nic_path);
         if (iter != endpoint_map_.end())
         {
+            // 我们不立即删除，而是等待 Endpoint 被使用完后再施以删除
+            waiting_list_.push_back(iter->second.first);
             endpoint_map_.erase(iter);
             auto fifo_iter = fifo_map_[peer_nic_path];
             if (hand_.has_value() && hand_.value() == fifo_iter)
@@ -189,10 +191,10 @@ namespace mooncake
 
     int SIEVEEndpointStore::destroyQPs()
     {
+        for (auto &endpoint : waiting_list_)
+            endpoint->destroyQP();
         for (auto &kv : endpoint_map_)
-        {
             kv.second.first->destroyQP();
-        }
         return 0;
     }
 

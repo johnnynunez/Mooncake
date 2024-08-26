@@ -212,6 +212,8 @@ namespace mooncake
                                << ", source_addr: " << slice->source_addr
                                << ", length: " << slice->length
                                << ", dest_addr: " << slice->rdma.dest_addr
+                               << ", local nic: " << context_.deviceName()
+                               << ", peer nic: " << slice->peer_nic_path
                                << "): " << ibv_wc_status_str(wc[i].status);
                     context_.deleteEndpoint(slice->peer_nic_path);
                     processFailedSlice(slice, thread_id);
@@ -293,16 +295,22 @@ namespace mooncake
         ibv_async_event event;
         if (ibv_get_async_event(context_.context(), &event) < 0)
             return ERR_CONTEXT;
-        LOG(ERROR) << "Received context async event: " << ibv_event_type_str(event.event_type)
-                   << " for context " << context_.deviceName() << ". It will be inactive.";
+        LOG(INFO) << "Received context async event: " << ibv_event_type_str(event.event_type)
+                  << " for context " << context_.deviceName();
         // IBV_EVENT_DEVICE_FATAL 事件下，本次运行将永久停止该 context 的使用
         // 而在 IBV_EVENT_PORT_ERR 事件下只是暂停，后续收到 IBV_EVENT_PORT_ACTIVE 就可恢复
         if (event.event_type == IBV_EVENT_DEVICE_FATAL 
             || event.event_type == IBV_EVENT_PORT_ERR
             || event.event_type == IBV_EVENT_LID_CHANGE)
+        {
             context_.set_active(false);
+            LOG(INFO) << "Context " << context_.deviceName() << " is inactive";
+        }
         else if (event.event_type == IBV_EVENT_PORT_ACTIVE)
-            context_.set_active(true);        
+        {
+            context_.set_active(true);
+            LOG(INFO) << "Context " << context_.deviceName() << " is active";
+        }
         // 余下情况似乎不需要特殊处理，对于 QP 关联的事件可以通过 WC status 字段检测出来并做处理。
         ibv_ack_async_event(&event);
         return 0;

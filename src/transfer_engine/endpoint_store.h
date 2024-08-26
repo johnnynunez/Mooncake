@@ -75,6 +75,8 @@ namespace mooncake
 
         std::optional<std::list<std::string>::iterator> hand_;
 
+        std::vector<std::shared_ptr<RdmaEndPoint>> waiting_list_;
+
         size_t max_size_;
     };
 }

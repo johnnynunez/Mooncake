@@ -134,11 +134,13 @@ namespace mooncake
             return ERR_REJECT_HANDSHAKE;
         }
 
-        auto &nic_list = context_.engine().getSegmentDescByName(peer_server_name)->devices;
-        for (auto &nic : nic_list)
-            if (nic.name == peer_nic_name)
-                return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
-
+        auto segment_desc = context_.engine().getSegmentDescByName(peer_server_name);
+        if (segment_desc)
+        {
+            for (auto &nic : segment_desc->devices)
+                if (nic.name == peer_nic_name)
+                    return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num);
+        }
         LOG(ERROR) << "Peer NIC " << peer_nic_name << " not found in " << peer_server_name;
         return ERR_DEVICE_NOT_FOUND;
     }
@@ -148,7 +150,7 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(lock_);
         if (connected())
         {
-            LOG(WARNING) << "Discard connection: " << toString();
+            LOG(WARNING) << "Re-establish connection: " << toString();
             disconnectUnlocked();
         }
 
@@ -173,11 +175,13 @@ namespace mooncake
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
 
-        auto &nic_list = context_.engine().getSegmentDescByName(peer_server_name)->devices;
-        for (auto &nic : nic_list)
-            if (nic.name == peer_nic_name)
-                return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num, &local_desc.reply_msg);
-
+        auto segment_desc = context_.engine().getSegmentDescByName(peer_server_name);
+        if (segment_desc)
+        {
+            for (auto &nic : segment_desc->devices)
+                if (nic.name == peer_nic_name)
+                    return doSetupConnection(nic.gid, nic.lid, peer_desc.qp_num, &local_desc.reply_msg);
+        }
         local_desc.reply_msg = "Peer nic not found in that server: " + peer_nic_path_;
         LOG(ERROR) << local_desc.reply_msg;
         return ERR_DEVICE_NOT_FOUND;
@@ -194,12 +198,11 @@ namespace mooncake
         ibv_qp_attr attr;
         memset(&attr, 0, sizeof(attr));
         attr.qp_state = IBV_QPS_RESET;
-        for (auto &qp : qp_list_)
+        for (size_t i = 0; i < qp_list_.size(); ++i)
         {
-            if (ibv_modify_qp(qp, &attr, IBV_QP_STATE))
+            if (ibv_modify_qp(qp_list_[i], &attr, IBV_QP_STATE))
                 PLOG(ERROR) << "Failed to modity QP to RESET";
         }
-
         peer_nic_path_.clear();
         for (size_t i = 0; i < qp_list_.size(); ++i)
             wr_depth_list_[i] = 0;
@@ -253,12 +256,16 @@ namespace mooncake
         if (rc)
         {
             PLOG(ERROR) << "ibv_post_send failed";
-            for (int i = 0; i < wr_count; ++i)
+            while (bad_wr)
+            {
+                int i = bad_wr - wr_list;
                 failed_slice_list.push_back(slice_list[i]);
-            __sync_fetch_and_sub(&wr_depth_list_[qp_index], wr_count);
+                __sync_fetch_and_sub(&wr_depth_list_[qp_index], 1);
+                bad_wr = bad_wr->next;
+            }
         }
         slice_list.erase(slice_list.begin(), slice_list.begin() + wr_count);
-        return rc;
+        return 0;
     }
 
     std::vector<uint32_t> RdmaEndPoint::qpNum() const
