@@ -1,6 +1,7 @@
 // worker_pool.cpp
 // Copyright (C) 2024 Feng Ren
 
+#include <cassert>
 #include <sys/epoll.h>
 
 #include "transfer_engine/config.h"
@@ -160,7 +161,7 @@ namespace mooncake
                 endpoint = context_.endpoint(entry.first);
             if (!endpoint)
             {
-                LOG(ERROR) << "Cannot allocate endpoint: " << entry.first;
+                LOG(ERROR) << "Worker: Cannot allocate endpoint: " << entry.first;
                 for (auto &slice : entry.second)
                     failed_slice_list.push_back(slice);
                 entry.second.clear();
@@ -168,7 +169,7 @@ namespace mooncake
             }
             if (!endpoint->connected() && endpoint->setupConnectionsByActive())
             {
-                LOG(ERROR) << "Cannot make connection for endpoint: " << entry.first;
+                LOG(ERROR) << "Worker: Cannot make connection for endpoint: " << entry.first;
                 for (auto &slice : entry.second)
                     failed_slice_list.push_back(slice);
                 entry.second.clear();
@@ -199,6 +200,7 @@ namespace mooncake
             for (int i = 0; i < nr_poll; ++i)
             {
                 TransferEngine::Slice *slice = (TransferEngine::Slice *)wc[i].wr_id;
+                assert(slice);
                 if (qp_depth_set.count(slice->rdma.qp_depth))
                     qp_depth_set[slice->rdma.qp_depth]++;
                 else
@@ -293,7 +295,15 @@ namespace mooncake
             return ERR_CONTEXT;
         LOG(ERROR) << "Received context async event: " << ibv_event_type_str(event.event_type)
                    << " for context " << context_.deviceName() << ". It will be inactive.";
-        context_.inactive();
+        // IBV_EVENT_DEVICE_FATAL 事件下，本次运行将永久停止该 context 的使用
+        // 而在 IBV_EVENT_PORT_ERR 事件下只是暂停，后续收到 IBV_EVENT_PORT_ACTIVE 就可恢复
+        if (event.event_type == IBV_EVENT_DEVICE_FATAL 
+            || event.event_type == IBV_EVENT_PORT_ERR
+            || event.event_type == IBV_EVENT_LID_CHANGE)
+            context_.set_active(false);
+        else if (event.event_type == IBV_EVENT_PORT_ACTIVE)
+            context_.set_active(true);        
+        // 余下情况似乎不需要特殊处理，对于 QP 关联的事件可以通过 WC status 字段检测出来并做处理。
         ibv_ack_async_event(&event);
         return 0;
     }

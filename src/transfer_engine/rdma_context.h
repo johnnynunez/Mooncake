@@ -57,7 +57,7 @@ namespace mooncake
 
         bool active() const { return active_; }
 
-        void inactive() { active_ = false; }
+        void set_active(bool flag) { active_ = flag; }
 
     public:
         // EndPoint 管理

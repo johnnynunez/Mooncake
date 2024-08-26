@@ -215,12 +215,6 @@ namespace mooncake
 
     int RdmaContext::registerMemoryRegion(void *addr, size_t length, int access)
     {
-        if (!active_)
-        {
-            LOG(ERROR) << "Endpoint not longer active";
-            return ERR_CONTEXT;
-        }
-
         // Currently if the memory region overlaps with existing one, return negative value
         // Or Merge it with existing mr?
         {
@@ -315,7 +309,7 @@ namespace mooncake
     {
         if (!active_)
         {
-            LOG(ERROR) << "Endpoint not longer active";
+            LOG(ERROR) << "Endpoint is not active";
             return nullptr;
         }
 
