@@ -8,13 +8,13 @@
 #include <functional>
 #include <glog/logging.h>
 #include <memory>
+#include <netdb.h>
 #include <string>
 #include <thread>
 #include <unordered_map>
-#include <netdb.h>
 
-#include <jsoncpp/json/json.h>
 #include <etcd/SyncClient.hpp>
+#include <jsoncpp/json/json.h>
 
 #include "transfer_engine/common.h"
 
@@ -104,7 +104,7 @@ namespace mooncake
             std::string local_nic_path;
             std::string peer_nic_path;
             std::vector<uint32_t> qp_num;
-            std::string reply_msg;              // 该字段非空表示握手过程期间发生错误
+            std::string reply_msg; // 该字段非空表示握手过程期间发生错误
         };
 
     public:

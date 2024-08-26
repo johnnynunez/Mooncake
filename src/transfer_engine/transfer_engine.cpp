@@ -2,17 +2,17 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/transfer_engine.h"
+#include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/config.h"
 
 #include <cassert>
 #include <cstddef>
+#include <future>
 #include <glog/logging.h>
 #include <set>
 #include <sys/mman.h>
 #include <sys/time.h>
-#include <future>
 
 namespace mooncake
 {
@@ -109,7 +109,7 @@ namespace mooncake
             if (!new_segment_desc)
             {
                 LOG(ERROR) << "Failed to allocate segment description";
-                return ERR_OUT_OF_MEMORY;
+                return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
             *new_segment_desc = *segment_desc;
@@ -131,7 +131,7 @@ namespace mooncake
             if (!new_segment_desc)
             {
                 LOG(ERROR) << "Failed to allocate segment description";
-                return ERR_OUT_OF_MEMORY;
+                return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
             *new_segment_desc = *segment_desc;
@@ -156,17 +156,18 @@ namespace mooncake
             return 0;
     }
 
-    int TransferEngine::registerLocalMemoryBatch(const std::vector<TransferEngine::BufferEntry> &buffer_list, 
+    int TransferEngine::registerLocalMemoryBatch(const std::vector<TransferEngine::BufferEntry> &buffer_list,
                                                  const std::string &location)
     {
         std::vector<std::future<int>> results;
-        for (auto &buffer : buffer_list) {
-            results.emplace_back(std::async(std::launch::async, [this, buffer, location]() -> int {
-                return registerLocalMemory(buffer.addr, buffer.length, location, false);
-            }));
+        for (auto &buffer : buffer_list)
+        {
+            results.emplace_back(std::async(std::launch::async, [this, buffer, location]() -> int
+                                            { return registerLocalMemory(buffer.addr, buffer.length, location, false); }));
         }
 
-        for (size_t i = 0; i < buffer_list.size(); ++i) {
+        for (size_t i = 0; i < buffer_list.size(); ++i)
+        {
             if (results[i].get())
             {
                 LOG(WARNING) << "Failed to register memory: addr " << buffer_list[i].addr
@@ -180,13 +181,14 @@ namespace mooncake
     int TransferEngine::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
     {
         std::vector<std::future<int>> results;
-        for (auto &addr : addr_list) {
-            results.emplace_back(std::async(std::launch::async, [this, addr]() -> int {
-                return unregisterLocalMemory(addr, false);
-            }));
+        for (auto &addr : addr_list)
+        {
+            results.emplace_back(std::async(std::launch::async, [this, addr]() -> int
+                                            { return unregisterLocalMemory(addr, false); }));
         }
 
-        for (size_t i = 0; i < addr_list.size(); ++i) {
+        for (size_t i = 0; i < addr_list.size(); ++i)
+        {
             if (results[i].get())
                 LOG(WARNING) << "Failed to unregister memory: addr " << addr_list[i];
         }
@@ -256,7 +258,7 @@ namespace mooncake
                     task.slices.push_back(slice);
                     break;
                 }
-                if (device_id < 0) 
+                if (device_id < 0)
                 {
                     LOG(ERROR) << "Address not registered by any device(s) " << slice->source_addr;
                     return ERR_ADDRESS_NOT_REGISTERED;
@@ -328,7 +330,7 @@ namespace mooncake
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
         {
-            auto &task = batch_desc.task_list[task_id];   
+            auto &task = batch_desc.task_list[task_id];
             if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
             {
                 LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
@@ -368,7 +370,7 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(segment_lock_);
         auto desc = std::make_shared<SegmentDesc>();
         if (!desc)
-            return ERR_OUT_OF_MEMORY;
+            return ERR_MEMORY;
         desc->name = local_server_name_;
         for (auto &entry : context_list_)
         {
@@ -468,12 +470,12 @@ namespace mooncake
         {
             auto context = std::make_shared<RdmaContext>(*this, device_name);
             if (!context)
-                return ERR_OUT_OF_MEMORY;
+                return ERR_MEMORY;
 
             auto &config = globalConfig();
-            int ret = context->construct(config.num_cq_per_ctx, 
-                                         config.num_comp_channels_per_ctx, 
-                                         config.port, 
+            int ret = context->construct(config.num_cq_per_ctx,
+                                         config.num_comp_channels_per_ctx,
+                                         config.port,
                                          config.gid_index,
                                          config.max_cqe,
                                          config.max_ep_per_ctx);

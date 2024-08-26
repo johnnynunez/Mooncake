@@ -11,11 +11,10 @@
 #define ERR_DEVICE_NOT_FOUND        (-6)
 #define ERR_ADDRESS_OVERLAPPED      (-7)
 
-#define ERR_DNS_FAIL            (-101)
-#define ERR_SOCKET_FAIL         (-102)
+#define ERR_DNS                 (-101)
+#define ERR_SOCKET              (-102)
 #define ERR_MALFORMED_JSON      (-103)
 #define ERR_REJECT_HANDSHAKE    (-104)
-#define ERR_MALFORMED_RESPONSE  (-105)
 
 #define ERR_METADATA            (-200)
 #define ERR_ENDPOINT            (-201)
@@ -23,6 +22,6 @@
 
 #define ERR_NUMA                (-300)
 #define ERR_CLOCK               (-301)
-#define ERR_OUT_OF_MEMORY       (-302)
+#define ERR_MEMORY              (-302)
 
 #endif // ERROR_H

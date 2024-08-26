@@ -145,8 +145,7 @@ static void freeMemoryPool(void *addr, size_t size)
 volatile bool running = true;
 std::atomic<size_t> total_batch_count(0);
 
-int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
-                    void *addr)
+int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id, void *addr)
 {
     bindToSocket(0);
     TransferRequest::OpCode opcode;

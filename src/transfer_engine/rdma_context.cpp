@@ -2,19 +2,19 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_context.h"
+#include "transfer_engine/config.h"
 #include "transfer_engine/endpoint_store.h"
 #include "transfer_engine/rdma_endpoint.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
-#include "transfer_engine/config.h"
 
 #include <atomic>
 #include <cassert>
 #include <fcntl.h>
+#include <fstream>
 #include <memory>
 #include <sys/epoll.h>
 #include <thread>
-#include <fstream>
 
 namespace mooncake
 {
@@ -50,10 +50,10 @@ namespace mooncake
                                int max_endpoints)
     {
         endpoint_store_ = std::make_shared<SIEVEEndpointStore>(max_endpoints);
-        if (!endpoint_store_) 
+        if (!endpoint_store_)
         {
             PLOG(ERROR) << "RDMA context setup failed: endpoint store";
-            return ERR_OUT_OF_MEMORY;
+            return ERR_MEMORY;
         }
 
         if (openRdmaDevice(device_name_, port, gid_index))
@@ -74,7 +74,7 @@ namespace mooncake
         if (!comp_channel_)
         {
             PLOG(ERROR) << "RDMA context setup failed: completion channel array";
-            return ERR_OUT_OF_MEMORY;
+            return ERR_MEMORY;
         }
         for (size_t i = 0; i < num_comp_channels; ++i)
         {
@@ -95,14 +95,14 @@ namespace mooncake
 
         if (joinNonblockingPollList(event_fd_, context_->async_fd))
         {
-            PLOG(ERROR) << "RDMA context setup failed: register event file descriptor"; 
+            PLOG(ERROR) << "RDMA context setup failed: register event file descriptor";
             return ERR_CONTEXT;
         }
 
         for (size_t i = 0; i < num_comp_channel_; ++i)
             if (joinNonblockingPollList(event_fd_, comp_channel_[i]->fd))
             {
-                PLOG(ERROR) << "RDMA context setup failed: register event file descriptor"; 
+                PLOG(ERROR) << "RDMA context setup failed: register event file descriptor";
                 return ERR_CONTEXT;
             }
 
@@ -116,7 +116,7 @@ namespace mooncake
                                         compVector());
             if (!cq_list_[i])
             {
-                PLOG(ERROR) << "RDMA context setup failed: completion queue"; 
+                PLOG(ERROR) << "RDMA context setup failed: completion queue";
                 return ERR_CONTEXT;
             }
         }
@@ -124,8 +124,8 @@ namespace mooncake
         worker_pool_ = std::make_shared<WorkerPool>(*this, socketId());
         if (!worker_pool_)
         {
-            PLOG(ERROR) << "RDMA context setup failed: worker pool"; 
-            return ERR_OUT_OF_MEMORY;
+            PLOG(ERROR) << "RDMA context setup failed: worker pool";
+            return ERR_MEMORY;
         }
 
         LOG(INFO) << "RDMA device: " << context_->device->name
@@ -139,12 +139,15 @@ namespace mooncake
     {
         std::string path = "/sys/class/infiniband/" + device_name_ + "/device/numa_node";
         std::ifstream file(path);
-        if (file.is_open()) {
+        if (file.is_open())
+        {
             int socket_id;
             file >> socket_id;
             file.close();
             return socket_id;
-        } else {
+        }
+        else
+        {
             return 0;
         }
     }
@@ -155,15 +158,19 @@ namespace mooncake
 
         endpoint_store_->destroyQPs();
 
-        for (auto &entry : memory_region_list_) {
-            if (ibv_dereg_mr(entry)) {
+        for (auto &entry : memory_region_list_)
+        {
+            if (ibv_dereg_mr(entry))
+            {
                 PLOG(ERROR) << "Fail to unregister memory region";
             }
         }
         memory_region_list_.clear();
 
-        for (size_t i = 0; i < cq_list_.size(); ++i) {
-            if (ibv_destroy_cq(cq_list_[i])) {
+        for (size_t i = 0; i < cq_list_.size(); ++i)
+        {
+            if (ibv_destroy_cq(cq_list_[i]))
+            {
                 PLOG(ERROR) << "Fail to destroy completion queue";
             }
         }
@@ -218,7 +225,8 @@ namespace mooncake
         // Or Merge it with existing mr?
         {
             RWSpinlock::ReadGuard guard(memory_regions_lock_);
-            for (const auto &entry : memory_region_list_) {
+            for (const auto &entry : memory_region_list_)
+            {
                 bool start_overlapped = entry->addr <= addr && addr < (char *)entry->addr + entry->length;
                 bool end_overlapped = entry->addr < (char *)addr + length && (char *)addr + length <= (char *)entry->addr + entry->length;
                 bool covered = addr <= entry->addr && (char *)entry->addr + entry->length <= (char *)addr + length;
@@ -247,10 +255,10 @@ namespace mooncake
         if (globalConfig().verbose)
         {
             LOG(INFO) << "Memory region: " << addr << " -- " << (void *)((uintptr_t)addr + length)
-                    << ", Device name: " << device_name_
-                    << ", Length: " << length << " (" << length / 1024 / 1024 << " MB)"
-                    << ", Permission: " << access << std::hex
-                    << ", LKey: " << mr->lkey << ", RKey: " << mr->rkey;
+                      << ", Device name: " << device_name_
+                      << ", Length: " << length << " (" << length / 1024 / 1024 << " MB)"
+                      << ", Permission: " << access << std::hex
+                      << ", LKey: " << mr->lkey << ", RKey: " << mr->rkey;
         }
 
         return 0;
@@ -318,9 +326,12 @@ namespace mooncake
         }
 
         auto endpoint = endpoint_store_->getEndpoint(peer_nic_path);
-        if (endpoint) {
+        if (endpoint)
+        {
             return endpoint;
-        } else {
+        }
+        else
+        {
             auto endpoint = endpoint_store_->insertEndpoint(peer_nic_path, this);
             return endpoint;
         }
@@ -352,7 +363,8 @@ namespace mooncake
         return gid_str;
     }
 
-    ibv_cq *RdmaContext::cq() { 
+    ibv_cq *RdmaContext::cq()
+    {
         int index = (next_cq_list_index_++) % cq_list_.size();
         return cq_list_[index];
     }
@@ -396,7 +408,8 @@ namespace mooncake
             if (ibv_query_port(context, port, &attr))
             {
                 PLOG(WARNING) << "Fail to query port " << port << " on " << device_name;
-                if (ibv_close_device(context)) {
+                if (ibv_close_device(context))
+                {
                     PLOG(ERROR) << "Fail to close device " << device_name;
                 }
                 ibv_free_device_list(devices);
@@ -406,7 +419,8 @@ namespace mooncake
             if (attr.state != IBV_PORT_ACTIVE)
             {
                 LOG(WARNING) << "Device " << device_name << " port not active";
-                if (ibv_close_device(context)) {
+                if (ibv_close_device(context))
+                {
                     PLOG(ERROR) << "Fail to close device " << device_name;
                 }
                 ibv_free_device_list(devices);
@@ -417,7 +431,8 @@ namespace mooncake
             if (ibv_query_device(context, &device_attr))
             {
                 PLOG(WARNING) << "Fail to query attributes on " << device_name;
-                if (ibv_close_device(context)) {
+                if (ibv_close_device(context))
+                {
                     PLOG(ERROR) << "Fail to close device " << device_name;
                 }
                 ibv_free_device_list(devices);
@@ -430,7 +445,8 @@ namespace mooncake
             {
                 PLOG(WARNING) << "Device " << device_name
                               << " GID " << gid_index << " not available";
-                if (ibv_close_device(context)) {
+                if (ibv_close_device(context))
+                {
                     PLOG(ERROR) << "Fail to close device " << device_name;
                 }
                 ibv_free_device_list(devices);

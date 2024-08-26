@@ -25,7 +25,8 @@ static std::string getHostname()
     return hostname;
 }
 
-void test_endpoint(RdmaContext* content) {
+void test_endpoint(RdmaContext *content)
+{
     for (int i = 0; i < 256; ++i)
     {
         LOG(INFO) << "ep " << i;
@@ -53,14 +54,13 @@ void test_endpoint(RdmaContext* content) {
     }
 }
 
-
 int main(int argc, char **argv)
 {
     auto metadata_client = std::make_unique<TransferMetadata>("dummy");
     // malloc and set name to bypass transfer engine init
     auto engine = std::make_unique<TransferEngine>(metadata_client, getHostname(),
                                                    "", true);
-    RdmaContext* content = new RdmaContext(*engine.get(), "mlx5_0");
+    RdmaContext *content = new RdmaContext(*engine.get(), "mlx5_0");
     content->construct();
 
     std::vector<std::thread> threads;
@@ -68,7 +68,7 @@ int main(int argc, char **argv)
     {
         threads.push_back(std::thread(test_endpoint, content));
     }
-    for (auto& t : threads)
+    for (auto &t : threads)
     {
         t.join();
     }

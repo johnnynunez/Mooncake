@@ -30,7 +30,8 @@ namespace mooncake
                                 size_t max_wr_depth,
                                 size_t max_inline_bytes)
     {
-        if (status_.load(std::memory_order_relaxed) != INITIALIZING) {
+        if (status_.load(std::memory_order_relaxed) != INITIALIZING)
+        {
             PLOG(ERROR) << "Endpoint has already been constructed";
             return ERR_ENDPOINT;
         }
@@ -42,7 +43,7 @@ namespace mooncake
         if (!wr_depth_list_)
         {
             PLOG(ERROR) << "Failed to allocate memory for work request depth list";
-            return ERR_OUT_OF_MEMORY;
+            return ERR_MEMORY;
         }
         for (size_t i = 0; i < num_qp_list; ++i)
         {
@@ -70,8 +71,10 @@ namespace mooncake
 
     int RdmaEndPoint::deconstruct()
     {
-        for (size_t i = 0; i < qp_list_.size(); ++i) {
-            if (ibv_destroy_qp(qp_list_[i])) {
+        for (size_t i = 0; i < qp_list_.size(); ++i)
+        {
+            if (ibv_destroy_qp(qp_list_[i]))
+            {
                 PLOG(ERROR) << "Failed to destroy QP";
                 return ERR_ENDPOINT;
             }
@@ -128,7 +131,7 @@ namespace mooncake
         if (peer_desc.local_nic_path != peer_nic_path_ || peer_desc.peer_nic_path != local_desc.local_nic_path)
         {
             LOG(ERROR) << "Invalid argument: received packet mismatch";
-            return ERR_MALFORMED_RESPONSE;
+            return ERR_REJECT_HANDSHAKE;
         }
 
         auto &nic_list = context_.engine().getSegmentDescByName(peer_server_name)->devices;
@@ -154,7 +157,7 @@ namespace mooncake
         {
             local_desc.reply_msg = "Invalid argument: peer nic path inconsistency";
             LOG(ERROR) << local_desc.reply_msg;
-            return ERR_MALFORMED_RESPONSE;
+            return ERR_REJECT_HANDSHAKE;
         }
 
         auto peer_server_name = getServerNameFromNicPath(peer_nic_path_);

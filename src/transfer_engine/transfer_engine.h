@@ -110,7 +110,8 @@ namespace mooncake
         // - 返回值：若成功，返回 0；否则返回负数值。
         int unregisterLocalMemory(void *addr, bool update_metadata = true);
 
-        struct BufferEntry {
+        struct BufferEntry
+        {
             void *addr;
             size_t length;
         };
@@ -242,7 +243,7 @@ namespace mooncake
 
         struct TransferTask
         {
-            ~TransferTask() 
+            ~TransferTask()
             {
                 for (auto &entry : slices)
                     delete entry;

@@ -1,14 +1,14 @@
 // transfer_metadata.cpp
 // Copyright (C) 2024 Feng Ren
 
+#include "transfer_engine/transfer_metadata.h"
 #include "transfer_engine/common.h"
 #include "transfer_engine/config.h"
 #include "transfer_engine/error.h"
-#include "transfer_engine/transfer_metadata.h"
 
 #include <arpa/inet.h>
-#include <sys/socket.h>
 #include <set>
+#include <sys/socket.h>
 
 namespace mooncake
 {
@@ -290,14 +290,14 @@ namespace mooncake
 
     static inline const std::string toString(struct sockaddr *addr)
     {
-        if (addr->sa_family == AF_INET) 
+        if (addr->sa_family == AF_INET)
         {
             struct sockaddr_in *sock_addr = (struct sockaddr_in *)addr;
             char ip[INET_ADDRSTRLEN];
             if (inet_ntop(addr->sa_family, &(sock_addr->sin_addr), ip, INET_ADDRSTRLEN) != NULL)
                 return ip;
         }
-        else if (addr->sa_family == AF_INET6) 
+        else if (addr->sa_family == AF_INET6)
         {
             struct sockaddr_in6 *sock_addr = (struct sockaddr_in6 *)addr;
             char ip[INET6_ADDRSTRLEN];
@@ -320,7 +320,7 @@ namespace mooncake
         if (listen_fd < 0)
         {
             PLOG(ERROR) << "Failed to create socket";
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         struct timeval timeout;
@@ -330,28 +330,28 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to set socket timeout";
             close(listen_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
         {
             PLOG(ERROR) << "Failed to set address reusable";
             close(listen_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         if (bind(listen_fd, (sockaddr *)&bind_address, sizeof(sockaddr_in)) < 0)
         {
             PLOG(ERROR) << "Failed to bind address";
             close(listen_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         if (listen(listen_fd, 5))
         {
             PLOG(ERROR) << "Failed to listen";
             close(listen_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         listener_running_ = true;
@@ -437,7 +437,7 @@ namespace mooncake
             auto port_str = peer_server_name.substr(pos + 1);
             int val = std::atoi(port_str.c_str());
             if (val <= 0 || val > 65535)
-                PLOG(WARNING) << "Illegal port number in " << peer_server_name 
+                PLOG(WARNING) << "Illegal port number in " << peer_server_name
                               << ". Use default port " << port << " instead";
             else
                 port = (uint16_t)port;
@@ -449,7 +449,7 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to get IP address of peer server " << peer_server_name
                         << ", check DNS and /etc/hosts, or use IPv4 address instead";
-            return ERR_DNS_FAIL;
+            return ERR_DNS;
         }
 
         int ret = 0;
@@ -467,8 +467,8 @@ namespace mooncake
         return ret;
     }
 
-    int TransferMetadata::doSendHandshake(struct addrinfo *addr, 
-                                          const HandShakeDesc &local_desc, 
+    int TransferMetadata::doSendHandshake(struct addrinfo *addr,
+                                          const HandShakeDesc &local_desc,
                                           HandShakeDesc &peer_desc)
     {
         if (globalConfig().verbose)
@@ -479,15 +479,15 @@ namespace mooncake
         if (conn_fd == -1)
         {
             PLOG(ERROR) << "Failed to create socket";
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
         if (setsockopt(conn_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
         {
             PLOG(ERROR) << "Failed to set address reusable";
             close(conn_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
-        
+
         struct timeval timeout;
         timeout.tv_sec = 60;
         timeout.tv_usec = 0;
@@ -495,14 +495,14 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to set socket timeout";
             close(conn_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         if (connect(conn_fd, addr->ai_addr, addr->ai_addrlen))
         {
             PLOG(ERROR) << "Failed to connect " << toString(addr->ai_addr);
             close(conn_fd);
-            return ERR_SOCKET_FAIL;
+            return ERR_SOCKET;
         }
 
         int ret = writeString(conn_fd, encode(local_desc));

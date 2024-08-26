@@ -47,7 +47,7 @@ namespace mooncake
         thread_local std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
         uint64_t current_ts = getCurrentTimeInNano();
 
-        if (current_ts - tl_last_cache_ts > 1000000000) 
+        if (current_ts - tl_last_cache_ts > 1000000000)
         {
             segment_desc_map.clear();
             tl_last_cache_ts = current_ts;
@@ -71,7 +71,7 @@ namespace mooncake
                 peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
                 if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
                 {
-                    LOG(ERROR) << "Failed to select remote NIC for address " << (void *) slice->rdma.dest_addr;
+                    LOG(ERROR) << "Failed to select remote NIC for address " << (void *)slice->rdma.dest_addr;
                     slice->markFailed();
                     continue;
                 }
@@ -124,7 +124,7 @@ namespace mooncake
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map;
         uint64_t current_ts = getCurrentTimeInNano();
-        if (current_ts - tl_last_cache_ts > 1000000000) 
+        if (current_ts - tl_last_cache_ts > 1000000000)
         {
             endpoint_map.clear();
             tl_last_cache_ts = current_ts;
@@ -135,13 +135,13 @@ namespace mooncake
         {
             if (entry.second.empty())
                 continue;
-            
+
             if (entry.second[0]->target_id == LOCAL_SEGMENT_ID)
             {
                 for (auto &slice : entry.second)
                 {
                     LOG_ASSERT(slice->target_id == LOCAL_SEGMENT_ID);
-                    memcpy((void *) slice->rdma.dest_addr, slice->source_addr, slice->length);
+                    memcpy((void *)slice->rdma.dest_addr, slice->source_addr, slice->length);
                     slice->markSuccess();
                 }
                 processed_slice_count_.fetch_add(entry.second.size());
@@ -291,7 +291,7 @@ namespace mooncake
         ibv_async_event event;
         if (ibv_get_async_event(context_.context(), &event) < 0)
             return ERR_CONTEXT;
-        LOG(ERROR) << "Received context async event: " << ibv_event_type_str(event.event_type) 
+        LOG(ERROR) << "Received context async event: " << ibv_event_type_str(event.event_type)
                    << " for context " << context_.deviceName() << ". It will be inactive.";
         context_.inactive();
         ibv_ack_async_event(&event);

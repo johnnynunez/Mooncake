@@ -12,27 +12,29 @@ void printSeparator()
     std::cout << "========================================" << std::endl;
 }
 
-
-void printTransferRequests(const std::vector<TransferRequest>& transfer_tasks) {
+void printTransferRequests(const std::vector<TransferRequest> &transfer_tasks)
+{
     std::cout << "Transfer Tasks:" << std::endl;
-    for (size_t i = 0; i < transfer_tasks.size(); ++i) {
-        const auto& task = transfer_tasks[i];
+    for (size_t i = 0; i < transfer_tasks.size(); ++i)
+    {
+        const auto &task = transfer_tasks[i];
         std::cout << "Task " << i + 1 << ":" << std::endl;
-        
+
         std::cout << "  OpCode: ";
-        switch (task.opcode) {
-            case TransferRequest::READ:
-                std::cout << "READ";
-                break;
-            case TransferRequest::WRITE:
-                std::cout << "WRITE";
-                break;
-            case TransferRequest::REPLICA_INCR:
-                std::cout << "REPLICA_INCR";
-                break;
-            case TransferRequest::REPLICA_DECR:
-                std::cout << "REPLICA_DECR";
-                break;
+        switch (task.opcode)
+        {
+        case TransferRequest::READ:
+            std::cout << "READ";
+            break;
+        case TransferRequest::WRITE:
+            std::cout << "WRITE";
+            break;
+        case TransferRequest::REPLICA_INCR:
+            std::cout << "REPLICA_INCR";
+            break;
+        case TransferRequest::REPLICA_DECR:
+            std::cout << "REPLICA_DECR";
+            break;
         }
         std::cout << std::endl;
 
@@ -40,12 +42,12 @@ void printTransferRequests(const std::vector<TransferRequest>& transfer_tasks) {
         std::cout << "  Target ID: " << task.target_id << std::endl;
         std::cout << "  Target Offset: " << task.target_offset << std::endl;
         std::cout << "  Length: " << task.length << std::endl;
-        
+
         std::cout << "  Source Replica:" << std::endl;
         std::cout << "    Target ID: " << task.source_replica.target_id << std::endl;
         std::cout << "    Target Offset: " << task.source_replica.target_offset << std::endl;
         std::cout << "    Length: " << task.source_replica.length << std::endl;
-        
+
         std::cout << std::endl;
     }
 }
@@ -70,29 +72,35 @@ void runTests()
     CacheAllocator allocator(SHARD_SIZE, std::move(strategy));
     allocator.registerBuffer("RAM", 1, 0, SHARD_SIZE);
     allocator.registerBuffer("RAM", 1, SHARD_SIZE * 2, SHARD_SIZE * 20);
-     allocator.registerBuffer("RAM", 2, 0, SHARD_SIZE);
+    allocator.registerBuffer("RAM", 2, 0, SHARD_SIZE);
     allocator.registerBuffer("RAM", 2, SHARD_SIZE * 2, SHARD_SIZE * 20);
-     allocator.registerBuffer("RAM", 3, 0, SHARD_SIZE);
+    allocator.registerBuffer("RAM", 3, 0, SHARD_SIZE);
     allocator.registerBuffer("RAM", 3, SHARD_SIZE * 2, SHARD_SIZE * 20);
 
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 20; ++j) {
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 20; ++j)
+        {
             allocator.registerBuffer("RAM", 1, SHARD_SIZE * (i + 1) * (10 + j), SHARD_SIZE * 20);
         }
     }
 
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 20; ++j) {
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 20; ++j)
+        {
             allocator.registerBuffer("RAM", 2, SHARD_SIZE * (i + 1) * (10 + j), SHARD_SIZE * 20);
         }
     }
 
-    for (int i = 0; i < 4; ++i) {
-        for (int j = 0; j < 20; ++j) {
+    for (int i = 0; i < 4; ++i)
+    {
+        for (int j = 0; j < 20; ++j)
+        {
             allocator.registerBuffer("RAM", 3, SHARD_SIZE * (i + 1) * (10 + j), SHARD_SIZE * 20);
         }
     }
-    
+
     // 测试用例 1: makePut with multiple input blocks
     {
         printSeparator();
@@ -123,7 +131,7 @@ void runTests()
         std::vector<void *> ptrs = {buffer.data()};
         std::vector<void *> sizes = {reinterpret_cast<void *>(buffer.size())};
 
-        TaskID task_id = allocator.makeGet(key, PtrType::HOST, ptrs, sizes, 0, 0,  transfer_tasks);
+        TaskID task_id = allocator.makeGet(key, PtrType::HOST, ptrs, sizes, 0, 0, transfer_tasks);
         assert(task_id > 0);
 
         // TODO: 验证数据是否被正确读取

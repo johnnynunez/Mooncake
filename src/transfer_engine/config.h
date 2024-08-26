@@ -4,16 +4,17 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#include <cstdint>
 #include <cstddef>
-#include <mutex>
+#include <cstdint>
 #include <glog/logging.h>
-#include <jsoncpp/json/json.h>
 #include <infiniband/verbs.h>
+#include <jsoncpp/json/json.h>
+#include <mutex>
 
 namespace mooncake
 {
-    struct GlobalConfig {
+    struct GlobalConfig
+    {
         size_t num_cq_per_ctx = 1;
         size_t num_comp_channels_per_ctx = 1;
         uint8_t port = 1;
@@ -38,12 +39,12 @@ namespace mooncake
 
     void updateGlobalConfig(ibv_device_attr &device_attr);
 
-    static inline GlobalConfig &globalConfig() {
+    static inline GlobalConfig &globalConfig()
+    {
         static GlobalConfig config;
         static std::once_flag g_once_flag;
-        std::call_once(g_once_flag, []() {
-            loadGlobalConfig(config);
-        });
+        std::call_once(g_once_flag, []()
+                       { loadGlobalConfig(config); });
         return config;
     }
 }

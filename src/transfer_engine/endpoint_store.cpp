@@ -1,7 +1,7 @@
 #include "transfer_engine/endpoint_store.h"
+#include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/config.h"
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -35,7 +35,7 @@ namespace mooncake
             return nullptr;
         }
         auto &config = globalConfig();
-        int ret = endpoint->construct(context->cq(), 
+        int ret = endpoint->construct(context->cq(),
                                       config.num_qp_per_ep,
                                       config.max_sge,
                                       config.max_wr,
@@ -85,8 +85,10 @@ namespace mooncake
         return endpoint_map_.size();
     }
 
-    int FIFOEndpointStore::destroyQPs() {
-        for (auto &kv : endpoint_map_) {
+    int FIFOEndpointStore::destroyQPs()
+    {
+        for (auto &kv : endpoint_map_)
+        {
             kv.second->destroyQP();
         }
         return 0;
@@ -120,12 +122,12 @@ namespace mooncake
             return nullptr;
         }
         auto &config = globalConfig();
-        int ret = endpoint->construct(context->cq(), 
+        int ret = endpoint->construct(context->cq(),
                                       config.num_qp_per_ep,
                                       config.max_sge,
                                       config.max_wr,
                                       config.max_inline);
-        if (ret) 
+        if (ret)
             return nullptr;
 
         while (this->getSize() >= max_size_)
@@ -185,8 +187,10 @@ namespace mooncake
         return;
     }
 
-    int SIEVEEndpointStore::destroyQPs() {
-        for (auto &kv : endpoint_map_) {
+    int SIEVEEndpointStore::destroyQPs()
+    {
+        for (auto &kv : endpoint_map_)
+        {
             kv.second.first->destroyQP();
         }
         return 0;

@@ -47,7 +47,8 @@ extern "C"
 
     typedef struct transfer_status transfer_status_t;
 
-    struct buffer_entry {
+    struct buffer_entry
+    {
         void *addr;
         size_t length;
     };
