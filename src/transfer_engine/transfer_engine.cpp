@@ -2,12 +2,13 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/transfer_engine.h"
+#include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/config.h"
 
 #include <cassert>
 #include <cstddef>
+#include <future>
 #include <glog/logging.h>
 #include <set>
 #include <sys/mman.h>
@@ -18,14 +19,14 @@ namespace mooncake
     TransferEngine::TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                                    const std::string &local_server_name,
                                    const std::string &nic_priority_matrix,
-                                   bool dummy)
+                                   bool dry_run)
         : metadata_(std::move(metadata)),
           next_segment_id_(1),
           local_server_name_(local_server_name)
     {
         TransferMetadata::PriorityMatrix local_priority_matrix;
 
-        if (dummy)
+        if (dry_run)
             return;
 
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
@@ -85,7 +86,7 @@ namespace mooncake
         context_list_.clear();
     }
 
-    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name)
+    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name, bool update_metadata)
     {
         BufferDesc buffer_desc;
         buffer_desc.name = name;
@@ -98,7 +99,7 @@ namespace mooncake
         {
             int ret = context->registerMemoryRegion(addr, length, access_rights);
             if (ret)
-                return -1;
+                return ret;
             buffer_desc.lkey.push_back(context->lkey(addr));
             buffer_desc.rkey.push_back(context->rkey(addr));
         }
@@ -108,17 +109,21 @@ namespace mooncake
             if (!new_segment_desc)
             {
                 LOG(ERROR) << "Failed to allocate segment description";
-                return -1;
+                return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
             segment_desc->buffers.push_back(buffer_desc);
         }
-        return updateLocalSegmentDesc();
+
+        if (update_metadata)
+            return updateLocalSegmentDesc();
+        else
+            return 0;
     }
 
-    int TransferEngine::unregisterLocalMemory(void *addr)
+    int TransferEngine::unregisterLocalMemory(void *addr, bool update_metadata)
     {
         {
             RWSpinlock::WriteGuard guard(segment_lock_);
@@ -126,7 +131,7 @@ namespace mooncake
             if (!new_segment_desc)
             {
                 LOG(ERROR) << "Failed to allocate segment description";
-                return -1;
+                return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
             *new_segment_desc = *segment_desc;
@@ -145,14 +150,55 @@ namespace mooncake
             }
         }
 
+        if (update_metadata)
+            return updateLocalSegmentDesc();
+        else
+            return 0;
+    }
+
+    int TransferEngine::registerLocalMemoryBatch(const std::vector<TransferEngine::BufferEntry> &buffer_list,
+                                                 const std::string &location)
+    {
+        std::vector<std::future<int>> results;
+        for (auto &buffer : buffer_list)
+        {
+            results.emplace_back(std::async(std::launch::async, [this, buffer, location]() -> int
+                                            { return registerLocalMemory(buffer.addr, buffer.length, location, false); }));
+        }
+
+        for (size_t i = 0; i < buffer_list.size(); ++i)
+        {
+            if (results[i].get())
+            {
+                LOG(WARNING) << "Failed to register memory: addr " << buffer_list[i].addr
+                             << " length " << buffer_list[i].length;
+            }
+        }
+
+        return updateLocalSegmentDesc();
+    }
+
+    int TransferEngine::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
+    {
+        std::vector<std::future<int>> results;
+        for (auto &addr : addr_list)
+        {
+            results.emplace_back(std::async(std::launch::async, [this, addr]() -> int
+                                            { return unregisterLocalMemory(addr, false); }));
+        }
+
+        for (size_t i = 0; i < addr_list.size(); ++i)
+        {
+            if (results[i].get())
+                LOG(WARNING) << "Failed to unregister memory: addr " << addr_list[i];
+        }
+
         return updateLocalSegmentDesc();
     }
 
     TransferEngine::BatchID TransferEngine::allocateBatchID(size_t batch_size)
     {
         auto batch_desc = new BatchDesc();
-        if (!batch_desc)
-            return -1;
         batch_desc->id = BatchID(batch_desc);
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
@@ -171,27 +217,20 @@ namespace mooncake
         if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
         {
             LOG(ERROR) << "Exceed the limitation of current batch's capacity";
-            return -1;
+            return ERR_TOO_MANY_REQUESTS;
         }
 
         std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
-
-        std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
-        segment_desc_map[LOCAL_SEGMENT_ID] = getSegmentDescByID(LOCAL_SEGMENT_ID);
-        for (auto &request : entries)
-        {
-            auto target_id = request.target_id;
-            if (!segment_desc_map.count(target_id))
-                segment_desc_map[target_id] = getSegmentDescByID(target_id);
-        }
+        auto local_segment_desc = getSegmentDescByID(LOCAL_SEGMENT_ID);
+        const size_t kBlockSize = globalConfig().slice_size;
+        const int kMaxRetryCount = globalConfig().retry_cnt;
 
         for (auto &request : entries)
         {
             TransferTask &task = batch_desc.task_list[task_id];
             ++task_id;
-            const static size_t kBlockSize = 65536;
             for (uint64_t offset = 0; offset < request.length; offset += kBlockSize)
             {
                 auto slice = new Slice();
@@ -199,25 +238,31 @@ namespace mooncake
                 slice->length = std::min(request.length - offset, kBlockSize);
                 slice->opcode = request.opcode;
                 slice->rdma.dest_addr = request.target_offset + offset;
-
-                auto &local_segment_desc = segment_desc_map[LOCAL_SEGMENT_ID];
-                std::string device_name;
-                int buffer_id = 0, device_id = 0;
-                if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, slice->length, buffer_id, device_id))
-                {
-                    LOG(ERROR) << "Unrecorgnized source address " << slice->source_addr;
-                    return -1;
-                }
-                auto &context = context_list_[device_id];
-                slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
                 slice->rdma.retry_cnt = 0;
-                slice->rdma.max_retry_cnt = 4;
+                slice->rdma.max_retry_cnt = kMaxRetryCount;
                 slice->task = &task;
+                slice->target_id = request.target_id;
                 slice->status = Slice::PENDING;
-                slice->peer_segment_desc = segment_desc_map[request.target_id].get();
-                slices_to_post[context].push_back(slice);
-                task.total_bytes += slice->length;
-                task.slices.push_back(slice);
+
+                int buffer_id = -1, device_id = -1, retry_cnt = 0;
+                while (retry_cnt < kMaxRetryCount)
+                {
+                    if (selectDevice(local_segment_desc.get(), (uint64_t)slice->source_addr, slice->length, buffer_id, device_id, retry_cnt++))
+                        continue;
+                    auto &context = context_list_[device_id];
+                    if (!context->active())
+                        continue;
+                    slice->rdma.source_lkey = local_segment_desc->buffers[buffer_id].lkey[device_id];
+                    slices_to_post[context].push_back(slice);
+                    task.total_bytes += slice->length;
+                    task.slices.push_back(slice);
+                    break;
+                }
+                if (device_id < 0)
+                {
+                    LOG(ERROR) << "Address not registered by any device(s) " << slice->source_addr;
+                    return ERR_ADDRESS_NOT_REGISTERED;
+                }
             }
         }
         for (auto &entry : slices_to_post)
@@ -244,7 +289,6 @@ namespace mooncake
                     status[task_id].s = TransferStatusEnum::FAILED;
                 else
                     status[task_id].s = TransferStatusEnum::COMPLETED;
-                task.is_finished = true;
             }
             else
             {
@@ -260,7 +304,7 @@ namespace mooncake
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();
         if (task_id >= task_count)
-            return -1;
+            return ERR_INVALID_ARGUMENT;
         auto &task = batch_desc.task_list[task_id];
         status.transferred_bytes = task.transferred_bytes;
         uint64_t success_slice_count = task.success_slice_count;
@@ -272,7 +316,6 @@ namespace mooncake
                 status.s = TransferStatusEnum::FAILED;
             else
                 status.s = TransferStatusEnum::COMPLETED;
-            task.is_finished = true;
         }
         else
         {
@@ -287,10 +330,11 @@ namespace mooncake
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
         {
-            if (!batch_desc.task_list[task_id].is_finished)
+            auto &task = batch_desc.task_list[task_id];
+            if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
             {
                 LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
-                return -1;
+                return ERR_BATCH_BUSY;
             }
         }
         delete &batch_desc;
@@ -314,7 +358,7 @@ namespace mooncake
             return segment_name_to_id_map_[segment_name];
         auto server_desc = metadata_->getSegmentDesc(segment_name);
         if (!server_desc)
-            return -1;
+            return ERR_METADATA;
         SegmentID id = next_segment_id_.fetch_add(1);
         segment_id_to_desc_map_[id] = server_desc;
         segment_name_to_id_map_[segment_name] = id;
@@ -326,7 +370,7 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(segment_lock_);
         auto desc = std::make_shared<SegmentDesc>();
         if (!desc)
-            return -1;
+            return ERR_MEMORY;
         desc->name = local_server_name_;
         for (auto &entry : context_list_)
         {
@@ -405,11 +449,11 @@ namespace mooncake
     {
         auto local_nic_name = getNicNameFromNicPath(peer_desc.peer_nic_path);
         if (local_nic_name.empty())
-            return -1;
+            return ERR_INVALID_ARGUMENT;
         auto context = context_list_[device_name_to_index_map_[local_nic_name]];
         auto endpoint = context->endpoint(peer_desc.local_nic_path);
         if (!endpoint)
-            return -1;
+            return ERR_ENDPOINT;
         return endpoint->setupConnectionsByPassive(peer_desc, local_desc);
     }
 
@@ -418,24 +462,25 @@ namespace mooncake
         if (device_name_list_.empty())
         {
             LOG(ERROR) << "No available RNIC!";
-            return -1;
+            return ERR_DEVICE_NOT_FOUND;
         }
 
         std::vector<int> device_speed_list;
         for (auto &device_name : device_name_list_)
         {
             auto context = std::make_shared<RdmaContext>(*this, device_name);
-            if (!context) {
-                return -1;
-            }
+            if (!context)
+                return ERR_MEMORY;
+
             auto &config = globalConfig();
-            if (context->construct(config.num_cq_per_ctx, 
-                                   config.num_comp_channels_per_ctx, 
-                                   config.port, 
-                                   config.gid_index,
-                                   config.max_cqe,
-                                   config.max_ep_per_ctx))
-                return -1;
+            int ret = context->construct(config.num_cq_per_ctx,
+                                         config.num_comp_channels_per_ctx,
+                                         config.port,
+                                         config.gid_index,
+                                         config.max_cqe,
+                                         config.max_ep_per_ctx);
+            if (ret)
+                return ret;
             device_speed_list.push_back(context->activeSpeed());
             context_list_.push_back(context);
         }
@@ -464,7 +509,7 @@ namespace mooncake
             size_t available_rnic_list_len = priority.available_rnic_list.size();
             size_t rnic_list_len = preferred_rnic_list_len + available_rnic_list_len;
             if (rnic_list_len == 0)
-                return -1;
+                return ERR_DEVICE_NOT_FOUND;
 
             if (retry_count == 0)
             {
@@ -486,6 +531,6 @@ namespace mooncake
             return 0;
         }
 
-        return -1;
+        return ERR_ADDRESS_NOT_REGISTERED;
     }
 }

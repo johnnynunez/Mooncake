@@ -46,6 +46,14 @@ extern "C"
     };
 
     typedef struct transfer_status transfer_status_t;
+
+    struct buffer_entry
+    {
+        void *addr;
+        size_t length;
+    };
+    typedef struct buffer_entry buffer_entry_t;
+
     typedef void *transfer_engine_t;
 
     transfer_engine_t createTransferEngine(const char *metadata_uri,
@@ -57,6 +65,10 @@ extern "C"
     int registerLocalMemory(transfer_engine_t engine, void *addr, size_t length, const char *location);
 
     int unregisterLocalMemory(transfer_engine_t engine, void *addr);
+
+    int registerLocalMemoryBatch(transfer_engine_t engine, buffer_entry_t *buffer_list, size_t buffer_len, const char *location);
+
+    int unregisterLocalMemoryBatch(transfer_engine_t engine, void **addr_list, size_t addr_len);
 
     batch_id_t allocateBatchID(transfer_engine_t engine, size_t batch_size);
 

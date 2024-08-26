@@ -13,6 +13,8 @@
 #include <sys/time.h>
 #include <thread>
 
+#include "transfer_engine/error.h"
+
 #if defined(__x86_64__)
 #include <immintrin.h>
 #define PAUSE() _mm_pause()
@@ -30,7 +32,7 @@ namespace mooncake
         if (unlikely(numa_available() < 0))
         {
             LOG(ERROR) << "The platform does not support NUMA";
-            return -1;
+            return ERR_NUMA;
         }
         cpu_set_t cpu_set;
         CPU_ZERO(&cpu_set);
@@ -48,7 +50,7 @@ namespace mooncake
         if (pthread_setaffinity_np(pthread_self(), sizeof(cpu_set_t), &cpu_set))
         {
             LOG(ERROR) << "Failed to set socket affinity";
-            return -1;
+            return ERR_NUMA;
         }
         return 0;
     }
@@ -60,7 +62,7 @@ namespace mooncake
         if (clock_gettime(CLOCK_REALTIME, &ts))
         {
             PLOG(ERROR) << "Failed to read real-time lock";
-            return -1;
+            return ERR_CLOCK;
         }
         return (int64_t{ts.tv_sec} * kNanosPerSecond + int64_t{ts.tv_nsec});
     }
@@ -79,7 +81,7 @@ namespace mooncake
                 PLOG(ERROR) << "Socket write failed";
                 return rc;
             }
-            else if (rc == 0) 
+            else if (rc == 0)
             {
                 LOG(WARNING) << "Socket write incompleted: expected " << len
                              << " bytes, actual " << len - nbytes << " bytes";
@@ -105,7 +107,7 @@ namespace mooncake
                 PLOG(ERROR) << "Socket read failed";
                 return rc;
             }
-            else if (rc == 0) 
+            else if (rc == 0)
             {
                 LOG(WARNING) << "Socket read incompleted: expected " << len
                              << " bytes, actual " << len - nbytes << " bytes";
@@ -121,9 +123,9 @@ namespace mooncake
     {
         uint64_t length = str.size();
         if (writeFully(fd, &length, sizeof(length)) != (ssize_t)sizeof(length))
-            return -1;
+            return ERR_SOCKET;
         if (writeFully(fd, str.data(), length) != (ssize_t)length)
-            return -1;
+            return ERR_SOCKET;
         return 0;
     }
 
@@ -330,29 +332,59 @@ namespace mooncake
         uint64_t padding_[15];
     };
 
-    class SimpleRandom {
+    class TicketLock
+    {
+    public:
+        TicketLock() : next_ticket_(0), now_serving_(0) {}
+
+        void lock()
+        {
+            int my_ticket = next_ticket_.fetch_add(1, std::memory_order_relaxed);
+            while (now_serving_.load(std::memory_order_acquire) != my_ticket)
+            {
+                std::this_thread::yield();
+            }
+        }
+
+        void unlock()
+        {
+            now_serving_.fetch_add(1, std::memory_order_release);
+        }
+
+    private:
+        std::atomic<int> next_ticket_;
+        std::atomic<int> now_serving_;
+        uint64_t padding_[14];
+    };
+
+    class SimpleRandom
+    {
     public:
         SimpleRandom(uint32_t seed) : current(seed) {}
 
-        static SimpleRandom &Get() {
-            thread_local SimpleRandom g_random(time(NULL));
+        static SimpleRandom &Get()
+        {
+            static std::atomic<uint64_t> g_incr_val(0);
+            thread_local SimpleRandom g_random(getCurrentTimeInNano() + g_incr_val.fetch_add(1));
             return g_random;
         }
 
         // 生成下一个伪随机数
-        uint32_t next() {
+        uint32_t next()
+        {
             current = (a * current + c) % m;
             return current;
         }
 
         // 生成0到max之间的伪随机数
-        uint32_t next(uint32_t max) {
+        uint32_t next(uint32_t max)
+        {
             return next() % max;
         }
 
     private:
-        uint32_t current; // 当前状态
-        static const uint32_t a = 1664525; // 乘法因子
+        uint32_t current;                     // 当前状态
+        static const uint32_t a = 1664525;    // 乘法因子
         static const uint32_t c = 1013904223; // 加法因子
         static const uint32_t m = 0xFFFFFFFF; // 模数
     };

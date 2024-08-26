@@ -1,7 +1,7 @@
 #include "transfer_engine/endpoint_store.h"
+#include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/config.h"
 #include <atomic>
 #include <cassert>
 #include <cstddef>
@@ -35,7 +35,7 @@ namespace mooncake
             return nullptr;
         }
         auto &config = globalConfig();
-        int ret = endpoint->construct(context->cq(), 
+        int ret = endpoint->construct(context->cq(),
                                       config.num_qp_per_ep,
                                       config.max_sge,
                                       config.max_wr,
@@ -85,8 +85,10 @@ namespace mooncake
         return endpoint_map_.size();
     }
 
-    int FIFOEndpointStore::destroyQPs() {
-        for (auto &kv : endpoint_map_) {
+    int FIFOEndpointStore::destroyQPs()
+    {
+        for (auto &kv : endpoint_map_)
+        {
             kv.second->destroyQP();
         }
         return 0;
@@ -120,12 +122,12 @@ namespace mooncake
             return nullptr;
         }
         auto &config = globalConfig();
-        int ret = endpoint->construct(context->cq(), 
+        int ret = endpoint->construct(context->cq(),
                                       config.num_qp_per_ep,
                                       config.max_sge,
                                       config.max_wr,
                                       config.max_inline);
-        if (ret) 
+        if (ret)
             return nullptr;
 
         while (this->getSize() >= max_size_)
@@ -144,6 +146,8 @@ namespace mooncake
         auto iter = endpoint_map_.find(peer_nic_path);
         if (iter != endpoint_map_.end())
         {
+            // 我们不立即删除，而是等待 Endpoint 被使用完后再施以删除
+            waiting_list_.push_back(iter->second.first);
             endpoint_map_.erase(iter);
             auto fifo_iter = fifo_map_[peer_nic_path];
             if (hand_.has_value() && hand_.value() == fifo_iter)
@@ -185,10 +189,12 @@ namespace mooncake
         return;
     }
 
-    int SIEVEEndpointStore::destroyQPs() {
-        for (auto &kv : endpoint_map_) {
+    int SIEVEEndpointStore::destroyQPs()
+    {
+        for (auto &endpoint : waiting_list_)
+            endpoint->destroyQP();
+        for (auto &kv : endpoint_map_)
             kv.second.first->destroyQP();
-        }
         return 0;
     }
 

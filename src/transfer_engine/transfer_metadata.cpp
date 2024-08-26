@@ -1,21 +1,20 @@
 // transfer_metadata.cpp
 // Copyright (C) 2024 Feng Ren
 
+#include "transfer_engine/transfer_metadata.h"
 #include "transfer_engine/common.h"
 #include "transfer_engine/config.h"
-#include "transfer_engine/transfer_metadata.h"
+#include "transfer_engine/error.h"
 
 #include <arpa/inet.h>
-#include <netdb.h>
-#include <sys/socket.h>
 #include <set>
+#include <sys/socket.h>
 
 namespace mooncake
 {
 
     const static std::string ServerDescPrefix = "mooncake/serverdesc/";
 
-#ifdef MOONCAKE_USE_ETCD
     struct TransferMetadataImpl
     {
         TransferMetadataImpl(const std::string &metadata_uri)
@@ -77,62 +76,6 @@ namespace mooncake
 
         etcd::SyncClient client_;
     };
-#else
-    struct TransferMetadataImpl
-    {
-        TransferMetadataImpl(const std::string &metadata_uri)
-        {
-            const std::string connect_string = "--SERVER=" + metadata_uri;
-            client_ = memcached(connect_string.c_str(), connect_string.length());
-            if (!client_)
-            {
-                LOG(ERROR) << "Cannot allocate memcached objects";
-                exit(EXIT_FAILURE);
-            }
-        }
-
-        ~TransferMetadataImpl()
-        {
-            if (client_)
-            {
-                memcached_free(client_);
-                client_ = nullptr;
-            }
-        }
-
-        bool get(const std::string &key, Json::Value &value)
-        {
-            Json::Reader reader;
-            uint32_t flags = 0;
-            memcached_return_t rc;
-            size_t length = 0;
-            char *json_file = memcached_get(client_, key.c_str(), key.length(), &length, &flags, &rc);
-            if (!json_file || !reader.parse(json_file, json_file + length, value))
-                return false;
-            if (globalConfig().verbose)
-                LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
-            free(json_file);
-            return true;
-        }
-
-        bool set(const std::string &key, const Json::Value &value)
-        {
-            Json::FastWriter writer;
-            const std::string json_file = writer.write(value);
-            if (globalConfig().verbose)
-                LOG(INFO) << "Put ServerDesc, key=" << key << ", value=" << json_file;
-            memcached_return_t rc = memcached_set(client_, key.c_str(), key.length(), &json_file[0], json_file.size(), 0, 0);
-            return memcached_success(rc);
-        }
-
-        bool remove(const std::string &key)
-        {
-            return memcached_success(memcached_delete(client_, key.c_str(), key.length(), 0));
-        }
-
-        memcached_st *client_;
-    };
-#endif // MOONCAKE_USE_ETCD
 
     TransferMetadata::TransferMetadata(const std::string &metadata_uri)
         : listener_running_(false)
@@ -208,7 +151,7 @@ namespace mooncake
         if (!impl_->set(ServerDescPrefix + server_name, serverJSON))
         {
             LOG(ERROR) << "Failed to put description of " << server_name;
-            return -1;
+            return ERR_METADATA;
         }
 
         return 0;
@@ -219,7 +162,7 @@ namespace mooncake
         if (!impl_->remove(ServerDescPrefix + server_name))
         {
             LOG(ERROR) << "Failed to remove description of " << server_name;
-            return -1;
+            return ERR_METADATA;
         }
         return 0;
     }
@@ -318,6 +261,7 @@ namespace mooncake
         for (const auto &qp : desc.qp_num)
             qpNums.append(qp);
         root["qp_num"] = qpNums;
+        root["reply_msg"] = desc.reply_msg;
         Json::FastWriter writer;
         auto serialized = writer.write(root);
         if (globalConfig().verbose)
@@ -331,7 +275,7 @@ namespace mooncake
         Json::Reader reader;
 
         if (serialized.empty() || !reader.parse(serialized, root))
-            return -1;
+            return ERR_MALFORMED_JSON;
 
         if (globalConfig().verbose)
             LOG(INFO) << "Receive Endpoint Handshake Info: " << serialized;
@@ -339,8 +283,28 @@ namespace mooncake
         desc.peer_nic_path = root["peer_nic_path"].asString();
         for (const auto &qp : root["qp_num"])
             desc.qp_num.push_back(qp.asUInt());
+        desc.reply_msg = root["reply_msg"].asString();
 
         return 0;
+    }
+
+    static inline const std::string toString(struct sockaddr *addr)
+    {
+        if (addr->sa_family == AF_INET)
+        {
+            struct sockaddr_in *sock_addr = (struct sockaddr_in *)addr;
+            char ip[INET_ADDRSTRLEN];
+            if (inet_ntop(addr->sa_family, &(sock_addr->sin_addr), ip, INET_ADDRSTRLEN) != NULL)
+                return ip;
+        }
+        else if (addr->sa_family == AF_INET6)
+        {
+            struct sockaddr_in6 *sock_addr = (struct sockaddr_in6 *)addr;
+            char ip[INET6_ADDRSTRLEN];
+            if (inet_ntop(addr->sa_family, &(sock_addr->sin6_addr), ip, INET6_ADDRSTRLEN) != NULL)
+                return ip;
+        }
+        return "<unknown>";
     }
 
     int TransferMetadata::startHandshakeDaemon(OnReceiveHandShake on_receive_handshake, uint16_t listen_port)
@@ -356,7 +320,7 @@ namespace mooncake
         if (listen_fd < 0)
         {
             PLOG(ERROR) << "Failed to create socket";
-            return -1;
+            return ERR_SOCKET;
         }
 
         struct timeval timeout;
@@ -366,28 +330,28 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to set socket timeout";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET;
         }
 
         if (setsockopt(listen_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
         {
             PLOG(ERROR) << "Failed to set address reusable";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET;
         }
 
         if (bind(listen_fd, (sockaddr *)&bind_address, sizeof(sockaddr_in)) < 0)
         {
             PLOG(ERROR) << "Failed to bind address";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET;
         }
 
         if (listen(listen_fd, 5))
         {
             PLOG(ERROR) << "Failed to listen";
             close(listen_fd);
-            return -1;
+            return ERR_SOCKET;
         }
 
         listener_running_ = true;
@@ -406,17 +370,9 @@ namespace mooncake
                         continue;
                     }
 
-                    if (addr.sin_family != AF_INET)
+                    if (addr.sin_family != AF_INET && addr.sin_family != AF_INET6)
                     {
-                        LOG(ERROR) << "Unsupported socket type: " << addr.sin_family;
-                        close(conn_fd);
-                        continue;
-                    }
-
-                    char inet_str[INET_ADDRSTRLEN];
-                    if (!inet_ntop(AF_INET, &(addr.sin_addr), inet_str, INET_ADDRSTRLEN))
-                    {
-                        PLOG(ERROR) << "Failed to parse incoming address";
+                        LOG(ERROR) << "Unsupported socket type, should be AF_INET or AF_INET6";
                         close(conn_fd);
                         continue;
                     }
@@ -432,29 +388,24 @@ namespace mooncake
                     }
 
                     if (globalConfig().verbose)
-                        LOG(INFO) << "New connection: " << inet_str << ":" << ntohs(addr.sin_port) << ", fd: " << conn_fd;
+                        LOG(INFO) << "New connection: "
+                                  << toString((struct sockaddr *)&addr)
+                                  << ":" << ntohs(addr.sin_port);
 
                     HandShakeDesc local_desc, peer_desc;
                     int ret = decode(readString(conn_fd), peer_desc);
                     if (ret)
                     {
-                        PLOG(ERROR) << "Failed to receive and decode remote handshake descriptor";
+                        PLOG(ERROR) << "Failed to receive handshake message";
                         close(conn_fd);
                         continue;
                     }
 
-                    ret = on_receive_handshake(peer_desc, local_desc);
-                    if (ret)
-                    {
-                        PLOG(ERROR) << "Failed to perform QP handshake";
-                        close(conn_fd);
-                        continue;
-                    }
-
+                    on_receive_handshake(peer_desc, local_desc);
                     ret = writeString(conn_fd, encode(local_desc));
                     if (ret)
                     {
-                        PLOG(ERROR) << "Failed to encode and send local handshake descriptor";
+                        PLOG(ERROR) << "Failed to send handshake message";
                         close(conn_fd);
                         continue;
                     }
@@ -471,8 +422,6 @@ namespace mooncake
                                         const HandShakeDesc &local_desc,
                                         HandShakeDesc &peer_desc)
     {
-        int conn_fd = -1;
-        int on = 1;
         struct addrinfo hints;
         struct addrinfo *result, *rp;
         memset(&hints, 0, sizeof(hints));
@@ -488,7 +437,8 @@ namespace mooncake
             auto port_str = peer_server_name.substr(pos + 1);
             int val = std::atoi(port_str.c_str());
             if (val <= 0 || val > 65535)
-                PLOG(ERROR) << "Illegal port number in " << peer_server_name;
+                PLOG(WARNING) << "Illegal port number in " << peer_server_name
+                              << ". Use default port " << port << " instead";
             else
                 port = (uint16_t)port;
         }
@@ -497,37 +447,46 @@ namespace mooncake
         sprintf(service, "%u", port);
         if (getaddrinfo(hostname.c_str(), service, &hints, &result))
         {
-            PLOG(ERROR) << "Failed to get address from " << peer_server_name;
-            return -1;
+            PLOG(ERROR) << "Failed to get IP address of peer server " << peer_server_name
+                        << ", check DNS and /etc/hosts, or use IPv4 address instead";
+            return ERR_DNS;
         }
 
-        for (rp = result; conn_fd < 0 && rp; rp = rp->ai_next)
+        int ret = 0;
+        for (rp = result; rp; rp = rp->ai_next)
         {
-            conn_fd = socket(rp->ai_family, rp->ai_socktype, rp->ai_protocol);
-            if (conn_fd == -1)
+            ret = doSendHandshake(rp, local_desc, peer_desc);
+            if (ret == 0)
             {
-                LOG(ERROR) << "Failed to create socket";
-                continue;
-            }
-            if (setsockopt(conn_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
-            {
-                PLOG(ERROR) << "Failed to set address reusable";
-                close(conn_fd);
-                conn_fd = -1;
-                continue;
-            }
-            if (connect(conn_fd, rp->ai_addr, rp->ai_addrlen))
-            {
-                PLOG(ERROR) << "Failed to connect " << peer_server_name;
-                close(conn_fd);
-                conn_fd = -1;
-                continue;
+                freeaddrinfo(result);
+                return 0;
             }
         }
 
         freeaddrinfo(result);
-        if (conn_fd < 0)
-            return -1;
+        return ret;
+    }
+
+    int TransferMetadata::doSendHandshake(struct addrinfo *addr,
+                                          const HandShakeDesc &local_desc,
+                                          HandShakeDesc &peer_desc)
+    {
+        if (globalConfig().verbose)
+            LOG(INFO) << "Try connecting " << toString(addr->ai_addr);
+
+        int on = 1;
+        int conn_fd = socket(addr->ai_family, addr->ai_socktype, addr->ai_protocol);
+        if (conn_fd == -1)
+        {
+            PLOG(ERROR) << "Failed to create socket";
+            return ERR_SOCKET;
+        }
+        if (setsockopt(conn_fd, SOL_SOCKET, SO_REUSEADDR, &on, sizeof(on)))
+        {
+            PLOG(ERROR) << "Failed to set address reusable";
+            close(conn_fd);
+            return ERR_SOCKET;
+        }
 
         struct timeval timeout;
         timeout.tv_sec = 60;
@@ -536,13 +495,20 @@ namespace mooncake
         {
             PLOG(ERROR) << "Failed to set socket timeout";
             close(conn_fd);
-            return -1;
+            return ERR_SOCKET;
+        }
+
+        if (connect(conn_fd, addr->ai_addr, addr->ai_addrlen))
+        {
+            PLOG(ERROR) << "Failed to connect " << toString(addr->ai_addr);
+            close(conn_fd);
+            return ERR_SOCKET;
         }
 
         int ret = writeString(conn_fd, encode(local_desc));
         if (ret)
         {
-            PLOG(ERROR) << "Failed to encode and send local handshake descriptor to " << peer_server_name;
+            LOG(ERROR) << "Failed to send handshake message";
             close(conn_fd);
             return ret;
         }
@@ -550,9 +516,16 @@ namespace mooncake
         ret = decode(readString(conn_fd), peer_desc);
         if (ret)
         {
-            PLOG(ERROR) << "Failed to receive and decode remote handshake descriptor from " << peer_server_name;
+            LOG(ERROR) << "Failed to receive handshake message";
             close(conn_fd);
             return ret;
+        }
+
+        if (!peer_desc.reply_msg.empty())
+        {
+            LOG(ERROR) << "Handshake request rejected by peer endpoint: " << peer_desc.reply_msg;
+            close(conn_fd);
+            return ERR_REJECT_HANDSHAKE;
         }
 
         close(conn_fd);
@@ -569,18 +542,16 @@ namespace mooncake
 
         if (nic_priority_matrix.empty() || !reader.parse(nic_priority_matrix, root))
         {
-            LOG(ERROR) << "JSON parsing failed";
-            return -1;
+            LOG(ERROR) << "Malformed format of NIC priority matrix: illegal JSON format";
+            return ERR_MALFORMED_JSON;
         }
 
-        // 检查根节点是否为对象
         if (!root.isObject())
         {
-            LOG(ERROR) << "JSON root is not an object";
-            return -1;
+            LOG(ERROR) << "Malformed format of NIC priority matrix: root is not an object";
+            return ERR_MALFORMED_JSON;
         }
 
-        // 遍历 JSON 对象
         priority_map.clear();
         for (const auto &key : root.getMemberNames())
         {
@@ -622,9 +593,8 @@ namespace mooncake
             }
             else
             {
-                LOG(ERROR) << "size " << value.size() << " " << value.isArray();
-                LOG(ERROR) << "Invalid array structure in JSON";
-                return -1;
+                LOG(ERROR) << "Malformed format of NIC priority matrix: format error";
+                return ERR_MALFORMED_JSON;
             }
         }
 

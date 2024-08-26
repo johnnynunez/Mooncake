@@ -1,8 +1,8 @@
 #include "transfer_engine/transfer_engine.h"
 
+#include <fstream>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
-#include <fstream>
 #include <iomanip>
 #include <sys/time.h>
 
@@ -43,13 +43,13 @@ static std::string getHostname()
 }
 
 DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
-DEFINE_string(metadata_server, "test-8:2379", "etcd server host address");
+DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
 DEFINE_string(operation, "read", "Operation type: read or write");
-DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_0\", \"mlx5_1\", \"mlx5_2\", \"mlx5_3\"], []]}", "NIC priority matrix");
-DEFINE_string(segment_id, "test-8", "Segment ID to access data");
+DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], []], \"cpu:1\": [[\"mlx5_2\"], []]}", "NIC priority matrix");
+DEFINE_string(segment_id, "optane20", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");
@@ -129,6 +129,11 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
     size_t batch_count = 0;
     while (running)
     {
+        segment_desc = engine->getSegmentDescByID(segment_id, true);
+        if (segment_desc == nullptr || segment_desc->buffers.size() < 2)
+            continue;
+        remote_base = (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
+
         auto batch_id = engine->allocateBatchID(FLAGS_batch_size);
         LOG_ASSERT(batch_id >= 0);
         int ret = 0;
@@ -150,7 +155,7 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
         {
             bool completed = false;
             TransferStatus status;
-            while (!completed) 
+            while (!completed)
             {
                 int ret = engine->getTransferStatus(batch_id, task_id, status);
                 LOG_ASSERT(!ret);
@@ -160,7 +165,7 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
                     completed = true;
             }
         }
-
+        
         ret = engine->freeBatchID(batch_id);
         LOG_ASSERT(!ret);
         batch_count++;
@@ -173,12 +178,15 @@ int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id,
 std::string loadNicPriorityMatrix(const std::string &path)
 {
     std::ifstream file(path);
-    if (file.is_open()) {
-        std::string content((std::istreambuf_iterator<char>(file)), 
-                             std::istreambuf_iterator<char>());
+    if (file.is_open())
+    {
+        std::string content((std::istreambuf_iterator<char>(file)),
+                            std::istreambuf_iterator<char>());
         file.close();
         return content;
-    } else {
+    }
+    else
+    {
         return path;
     }
 }
@@ -195,8 +203,9 @@ int initiator()
                                                    nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr[NR_SOCKETS] = { nullptr };
-    for (int i = 0; i < NR_SOCKETS; ++i) {
+    void *addr[NR_SOCKETS] = {nullptr};
+    for (int i = 0; i < NR_SOCKETS; ++i)
+    {
         addr[i] = allocateMemoryPool(dram_buffer_size, i);
         int rc = engine->registerLocalMemory(addr[i], dram_buffer_size, "cpu:" + std::to_string(i));
         LOG_ASSERT(!rc);
@@ -253,8 +262,9 @@ int target()
                                                    nic_priority_matrix);
     LOG_ASSERT(engine);
 
-    void *addr[2] = { nullptr };
-    for (int i = 0; i < NR_SOCKETS; ++i) {
+    void *addr[2] = {nullptr};
+    for (int i = 0; i < NR_SOCKETS; ++i)
+    {
         addr[i] = allocateMemoryPool(dram_buffer_size, i);
         int rc = engine->registerLocalMemory(addr[i], dram_buffer_size, "cpu:" + std::to_string(i));
         LOG_ASSERT(!rc);

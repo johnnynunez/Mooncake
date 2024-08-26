@@ -17,6 +17,8 @@
 
 #include "transfer_engine/transfer_metadata.h"
 
+#define LOCAL_SEGMENT_ID (0)
+
 namespace mooncake
 {
 
@@ -34,10 +36,7 @@ namespace mooncake
 
     public:
         using SegmentID = int32_t;
-        const static SegmentID LOCAL_SEGMENT_ID = 0;
-
         using BatchID = uint64_t;
-        const static BatchID INVALID_BATCH_ID = UINT64_MAX;
 
         struct TransferRequest
         {
@@ -89,7 +88,7 @@ namespace mooncake
         TransferEngine(std::unique_ptr<TransferMetadata> &metadata,
                        const std::string &local_server_name,
                        const std::string &nic_priority_matrix,
-                       bool dummy = false);
+                       bool dry_run = false);
 
         // 回收分配的所有类型资源。
         ~TransferEngine();
@@ -104,12 +103,22 @@ namespace mooncake
         // - length：注册空间长度；
         // - location：这块内存所处的位置提示，如 cpu:0 等，将用于和 PriorityMatrix 匹配可用的 RNIC 列表
         // - 返回值：若成功，返回 0；否则返回负数值。
-        int registerLocalMemory(void *addr, size_t length, const std::string &location);
+        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata = true);
 
         // 解注册区域。
         // - addr: 注册空间起始地址；
         // - 返回值：若成功，返回 0；否则返回负数值。
-        int unregisterLocalMemory(void *addr);
+        int unregisterLocalMemory(void *addr, bool update_metadata = true);
+
+        struct BufferEntry
+        {
+            void *addr;
+            size_t length;
+        };
+
+        int registerLocalMemoryBatch(const std::vector<BufferEntry> &buffer_list, const std::string &location);
+
+        int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list);
 
         // TRANSFER
 
@@ -198,6 +207,10 @@ namespace mooncake
             void *source_addr;
             size_t length;
             TransferRequest::OpCode opcode;
+            SegmentID target_id;
+            std::string peer_nic_path;
+            SliceStatus status;
+            TransferTask *task;
 
             union
             {
@@ -211,25 +224,26 @@ namespace mooncake
                     uint32_t retry_cnt;
                     uint32_t max_retry_cnt;
                 } rdma;
-                struct
-                {
-                    void *dest_addr;
-                } local;
-                struct
-                {
-                    // TBD
-                } nvmeof;
             };
 
-            // TODO remove it
-            SegmentDesc *peer_segment_desc;
-            SliceStatus status;
-            TransferTask *task;
+        public:
+            void markSuccess()
+            {
+                status = TransferEngine::Slice::SUCCESS;
+                __sync_fetch_and_add(&task->transferred_bytes, length);
+                __sync_fetch_and_add(&task->success_slice_count, 1);
+            }
+
+            void markFailed()
+            {
+                status = TransferEngine::Slice::FAILED;
+                __sync_fetch_and_add(&task->failed_slice_count, 1);
+            }
         };
 
         struct TransferTask
         {
-            ~TransferTask() 
+            ~TransferTask()
             {
                 for (auto &entry : slices)
                     delete entry;
@@ -239,8 +253,8 @@ namespace mooncake
             std::vector<Slice *> slices;
             volatile uint64_t success_slice_count = 0;
             volatile uint64_t failed_slice_count = 0;
+
             volatile uint64_t transferred_bytes = 0;
-            volatile bool is_finished = false;
             uint64_t total_bytes = 0;
         };
 

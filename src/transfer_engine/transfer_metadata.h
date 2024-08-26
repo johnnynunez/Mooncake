@@ -8,16 +8,13 @@
 #include <functional>
 #include <glog/logging.h>
 #include <memory>
+#include <netdb.h>
 #include <string>
 #include <thread>
 #include <unordered_map>
 
+#include <etcd/SyncClient.hpp>
 #include <jsoncpp/json/json.h>
-#ifdef MOONCAKE_USE_ETCD
-#include <etcd/Client.hpp>
-#else
-#include <libmemcached/memcached.hpp>
-#endif
 
 #include "transfer_engine/common.h"
 
@@ -107,6 +104,7 @@ namespace mooncake
             std::string local_nic_path;
             std::string peer_nic_path;
             std::vector<uint32_t> qp_num;
+            std::string reply_msg; // 该字段非空表示握手过程期间发生错误
         };
 
     public:
@@ -133,6 +131,8 @@ namespace mooncake
                                           std::vector<std::string> &rnic_list);
 
     private:
+        int doSendHandshake(struct addrinfo *addr, const HandShakeDesc &local_desc, HandShakeDesc &peer_desc);
+
         std::string encode(const HandShakeDesc &desc);
 
         int decode(const std::string &ser, HandShakeDesc &desc);

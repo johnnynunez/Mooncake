@@ -1,124 +1,145 @@
 package checkpoint
 
 import (
-	"sort"
+	"log"
 	"sync"
 )
 
-type MemoryRegionEntry struct {
-	Addr     uintptr
-	Length   uint64
-	RefCount int
+type physicalMemoryRegion struct {
+	addr     uintptr
+	length   uint64
+	refCount int
 }
 
 type RegisteredMemory struct {
-	entries        []MemoryRegionEntry
-	transferEngine *TransferEngine
-	mu             sync.Mutex
+	engine       *TransferEngine
+	regionList   []physicalMemoryRegion
+	mu           sync.Mutex
+	maxChunkSize uint64
 }
 
-func NewRegisteredMemory(transferEngine *TransferEngine) *RegisteredMemory {
-	return &RegisteredMemory{transferEngine: transferEngine}
+func NewRegisteredMemory(transferEngine *TransferEngine, maxChunkSize uint64) *RegisteredMemory {
+	return &RegisteredMemory{engine: transferEngine, maxChunkSize: maxChunkSize}
 }
 
-func (memory *RegisteredMemory) Add(addr uintptr, length uint64) error {
+// 将地址 [addr, addr + length] 加入注册列表。如果地址已注册，则引用计数+1。暂不支持相交（但不一致）的内存区域注册
+func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize uint64) error {
+	if memory.maxChunkSize == 0 || memory.maxChunkSize%maxShardSize != 0 {
+		return ErrInvalidArgument
+	}
+
 	memory.mu.Lock()
-	defer memory.mu.Unlock()
+	for idx, entry := range memory.regionList {
+		if entry.addr == addr && entry.length == length {
+			memory.regionList[idx].refCount++
+			memory.mu.Unlock()
+			return nil
+		}
 
-	var newEntries []MemoryRegionEntry
+		entryEndAddr := entry.addr + uintptr(entry.length)
+		requestEndAddr := addr + uintptr(length)
+		if addr < entryEndAddr && requestEndAddr > entry.addr {
+			memory.mu.Unlock()
+			return ErrAddressOverlapped
+		}
+	}
+	memory.regionList = append(memory.regionList,
+		physicalMemoryRegion{addr: addr, length: length, refCount: 1})
+	memory.mu.Unlock()
 
-	// assert: current.Addr + current.length == addr + length
-	current := MemoryRegionEntry{
-		Addr:     addr,
-		Length:   length,
-		RefCount: 1,
+	// Proceed memory registration
+	var wg sync.WaitGroup
+	errChan := make(chan error, 1)
+	successfulTasks := make([]uintptr, 0)
+	mu := &sync.Mutex{}
+
+	for offset := uint64(0); offset < length; offset += memory.maxChunkSize {
+		chunkSize := memory.maxChunkSize
+		if chunkSize > length-offset {
+			chunkSize = length - offset
+		}
+
+		wg.Add(1)
+		go func(offset, chunkSize uint64) {
+			defer wg.Done()
+			baseAddr := addr + uintptr(offset)
+			err := memory.engine.registerLocalMemory(baseAddr, chunkSize, "cpu:0")
+			if err != nil {
+				select {
+				case errChan <- err:
+					close(errChan)
+					return
+				default:
+				}
+			} else {
+				mu.Lock()
+				successfulTasks = append(successfulTasks, baseAddr)
+				mu.Unlock()
+			}
+		}(offset, chunkSize)
 	}
 
-	currentEndAddr := addr + uintptr(length)
-	for _, existing := range memory.entries {
-		existingEndAddr := existing.Addr + uintptr(existing.Length)
+	wg.Wait()
+	close(errChan)
 
-		if currentEndAddr <= existing.Addr {
-			break
+	if err := <-errChan; err != nil {
+		for _, baseAddr := range successfulTasks {
+			unregisterErr := memory.engine.unregisterLocalMemory(baseAddr)
+			if unregisterErr != nil {
+				log.Println("cascading error:", unregisterErr)
+			}
 		}
-
-		if current.Addr >= existingEndAddr {
-			continue
-		}
-
-		// Overlapped
-		if current.Addr < existing.Addr {
-			newEntries = append(newEntries, MemoryRegionEntry{
-				Addr:     current.Addr,
-				Length:   uint64(existing.Addr - current.Addr),
-				RefCount: 1,
-			})
-		}
-
-		if currentEndAddr > existingEndAddr {
-			current.Addr = existingEndAddr
-			current.Length = uint64(currentEndAddr - current.Addr)
-		} else {
-			current.Length = 0
-		}
-
-		existing.RefCount++
-	}
-
-	if current.Length != 0 {
-		newEntries = append(newEntries, current)
-	}
-
-	for _, currentRange := range newEntries {
-		err := memory.transferEngine.registerLocalMemory(currentRange.Addr, currentRange.Length, "cpu:0")
-		if err != nil {
-			return err
-		}
-
-		insertIndex := sort.Search(len(memory.entries), func(i int) bool {
-			return memory.entries[i].Addr >= currentRange.Addr
-		})
-
-		// Insert new range at the found index
-		memory.entries = append(memory.entries[:insertIndex],
-			append([]MemoryRegionEntry{currentRange}, memory.entries[insertIndex:]...)...)
+		return err
 	}
 
 	return nil
 }
 
-func (memory *RegisteredMemory) Remove(addr uintptr, length uint64) error {
+func (memory *RegisteredMemory) Remove(addr uintptr, length uint64, maxShardSize uint64) error {
+	if memory.maxChunkSize == 0 || memory.maxChunkSize%maxShardSize != 0 {
+		return ErrInvalidArgument
+	}
+
 	memory.mu.Lock()
-	defer memory.mu.Unlock()
-
-	var removeEntries []MemoryRegionEntry
-	var nextEntries []MemoryRegionEntry
-
-	currentAddr := addr
-	currentEndAddr := addr + uintptr(length)
-
-	for _, existing := range memory.entries {
-		existingEndAddr := existing.Addr + uintptr(existing.Length)
-		if existing.Addr < currentEndAddr && existing.Addr == currentAddr {
-			existing.RefCount--
-			if existing.RefCount == 0 {
-				removeEntries = append(removeEntries, existing)
-			} else {
-				nextEntries = append(nextEntries, existing)
+	found := false
+	for idx, entry := range memory.regionList {
+		if entry.addr == addr && entry.length == length {
+			found = true
+			entry.refCount--
+			if entry.refCount == 0 {
+				memory.regionList = append(memory.regionList[:idx],
+					memory.regionList[idx+1:]...)
+				break
 			}
-			currentAddr = existingEndAddr
-		} else {
-			nextEntries = append(nextEntries, existing)
 		}
 	}
-
-	memory.entries = nextEntries
-	for _, currentRange := range removeEntries {
-		err := memory.transferEngine.unregisterLocalMemory(currentRange.Addr)
-		if err != nil {
-			return err
-		}
+	memory.mu.Unlock()
+	if !found {
+		return ErrInvalidArgument
 	}
 
+	var wg sync.WaitGroup
+	errChan := make(chan error, 1)
+	for offset := uint64(0); offset < length; offset += memory.maxChunkSize {
+		wg.Add(1)
+		go func(offset uint64) {
+			defer wg.Done()
+			err := memory.engine.unregisterLocalMemory(addr + uintptr(offset))
+			if err != nil {
+				select {
+				case errChan <- err:
+				default:
+				}
+			}
+		}(offset)
+	}
+
+	wg.Wait()
+	close(errChan)
+	select {
+	case err := <-errChan:
+		return err
+	default:
+	}
 	return nil
 }

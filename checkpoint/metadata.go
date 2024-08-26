@@ -35,7 +35,7 @@ type Location struct {
 }
 
 type Shard struct {
-	Size        uint64     `json:"size"`
+	Length      uint64     `json:"size"`
 	Gold        []Location `json:"gold"`
 	ReplicaList []Location `json:"replica_list"`
 }
@@ -109,7 +109,7 @@ func (metadata *Metadata) Close() error {
 	return metadata.etcdClient.Close()
 }
 
-func (metadata *Metadata) Create(name string, checkpoint *Checkpoint, ctx context.Context) error {
+func (metadata *Metadata) Create(ctx context.Context, name string, checkpoint *Checkpoint) error {
 	jsonData, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
@@ -123,12 +123,12 @@ func (metadata *Metadata) Create(name string, checkpoint *Checkpoint, ctx contex
 		return err
 	}
 	if !txnResp.Succeeded {
-		return fmt.Errorf("key '%s' already exists", key)
+		return fmt.Errorf("error: key '%s' already exists", key)
 	}
 	return nil
 }
 
-func (metadata *Metadata) Put(name string, checkpoint *Checkpoint, ctx context.Context) error {
+func (metadata *Metadata) Put(ctx context.Context, name string, checkpoint *Checkpoint) error {
 	jsonData, err := json.Marshal(checkpoint)
 	if err != nil {
 		return err
@@ -138,7 +138,7 @@ func (metadata *Metadata) Put(name string, checkpoint *Checkpoint, ctx context.C
 	return err
 }
 
-func (metadata *Metadata) Update(name string, checkpoint *Checkpoint, revision int64, ctx context.Context) (bool, error) {
+func (metadata *Metadata) Update(ctx context.Context, name string, checkpoint *Checkpoint, revision int64) (bool, error) {
 	key := kCheckpointMetadataPrefix + name
 	if checkpoint.IsEmpty() {
 		txnResp, err := metadata.etcdClient.Txn(ctx).
@@ -165,7 +165,7 @@ func (metadata *Metadata) Update(name string, checkpoint *Checkpoint, revision i
 	}
 }
 
-func (metadata *Metadata) Get(name string, ctx context.Context) (*Checkpoint, int64, error) {
+func (metadata *Metadata) Get(ctx context.Context, name string) (*Checkpoint, int64, error) {
 	key := kCheckpointMetadataPrefix + name
 	response, err := metadata.etcdClient.Get(ctx, key)
 	if err != nil {
@@ -182,7 +182,7 @@ func (metadata *Metadata) Get(name string, ctx context.Context) (*Checkpoint, in
 	return nil, -1, nil
 }
 
-func (metadata *Metadata) List(namePrefix string, ctx context.Context) ([]*Checkpoint, error) {
+func (metadata *Metadata) List(ctx context.Context, namePrefix string) ([]*Checkpoint, error) {
 	startRange := kCheckpointMetadataPrefix + namePrefix
 	stopRange := kCheckpointMetadataPrefix + namePrefix + string([]byte{0xFF})
 	response, err := metadata.etcdClient.Get(ctx, startRange, clientv3.WithRange(stopRange))
