@@ -1,9 +1,14 @@
 #include "multi_transfer_engine.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transport.h"
+#include "rdma_transport.h"
+#ifdef USE_CUDA
+#include "nvmeof_transport.h"
+#endif
 
 namespace mooncake
 {
+
     int TransferEnginev2::init(const char *server_name, const char * connectable_name, uint64_t rpc_port) {
         local_server_name_ = server_name;
         // TODO: write to meta server
@@ -110,10 +115,12 @@ namespace mooncake
         {
             return new RDMATransport();
         }
+        #ifdef USE_CUDA
         else if (std::string(proto) == "nvmeof")
         {
             return new NVMeoFTransport();
         }
+        #endif
         else
         {
             LOG(ERROR) << "Unsupported Transport Protocol: " << proto;
