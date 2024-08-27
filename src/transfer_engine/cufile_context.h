@@ -4,8 +4,6 @@
 #include <cstddef>
 #include <glog/logging.h>
 #include <unistd.h>
-#ifdef USE_CUDA
-
 #include "cufile.h"
 #include <cstring>
 #include <string>
@@ -80,7 +78,5 @@ public:
         }
     }
 };
-
-#endif
 
 #endif

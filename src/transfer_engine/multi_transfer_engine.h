@@ -14,8 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "nvmeof_transport.h"
-#include "rdma_transport.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transfer_metadata.h"
 #include "transport.h"
