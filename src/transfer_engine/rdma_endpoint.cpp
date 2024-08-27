@@ -218,6 +218,14 @@ namespace mooncake
             return "EndPoint: local " + context_.nicPath() + " (unconnected)";
     }
 
+    bool RdmaEndPoint::hasOutstandingSlice() const
+    {
+        for (size_t i = 0; i < qp_list_.size(); i++)
+            if (wr_depth_list_[i] != 0)
+                return true;
+        return false;
+    }
+
     int RdmaEndPoint::submitPostSend(std::vector<TransferEngine::Slice *> &slice_list,
                                      std::vector<TransferEngine::Slice *> &failed_slice_list)
     {
