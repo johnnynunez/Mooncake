@@ -66,6 +66,8 @@ namespace mooncake
         using HandShakeDesc = TransferMetadata::HandShakeDesc;
         int setupConnectionsByPassive(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc);
 
+        bool hasOutstandingSlice() const;
+
     public:
         // 连接状态管理
 

@@ -330,6 +330,7 @@ namespace mooncake
             return endpoint;
         }
 
+        endpoint_store_->reclaimEndpoint();
         return nullptr;
     }
 
