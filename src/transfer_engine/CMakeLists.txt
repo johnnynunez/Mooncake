@@ -10,6 +10,7 @@ add_library(transfer_engine transfer_engine.cpp
                             endpoint_store.cpp
                             transfer_engine_c.cpp
                             config.cpp
+                            cufile_desc_pool.cpp
                             cufile_context.cpp
                             )
 
@@ -21,7 +22,7 @@ if (USE_CUDA)
   include_directories("/usr/local/cuda/include")
   add_compile_definitions(transfer_engine PUBLIC USE_CUDA)
   target_link_directories(transfer_engine PRIVATE /usr/local/cuda/lib64)
-  target_link_libraries(transfer_engine PUBLIC cufile cudart)
+  target_link_libraries(transfer_engine PUBLIC cufile cudart rt)
 endif()
 
 #target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa memcached)

@@ -1,5 +1,6 @@
 #include "nvmeof_transport.h"
 #include "transfer_engine/cufile_context.h"
+#include "transfer_engine/cufile_desc_pool.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transfer_metadata.h"
 #include "transfer_engine/transport.h"
@@ -14,6 +15,15 @@
 
 namespace mooncake
 {
+    NVMeoFTransport::NVMeoFTransport() {
+        LOG(INFO) << "register one handle";
+        // CUFILE_CHECK(cuFileBatchIOSetUp(&handle, 8));
+        LOG(INFO) << "make desc pool";
+        desc_pool_ = std::make_shared<CUFileDescPool>();
+        LOG(INFO) << "after make desc pool";
+    }
+
+    NVMeoFTransport::~NVMeoFTransport() {}
 
     Transport::TransferStatusEnum from_cufile_transfer_status(CUfileStatus_t status)
     {
@@ -40,16 +50,15 @@ namespace mooncake
 
     BatchID NVMeoFTransport::allocateBatchID(size_t batch_size)
     {
-        auto cufile_desc = new CuFileBatchDesc();
+        LOG(INFO) << "register one handle 2";
+        LOG(INFO) << "register one handle 3";
+        auto nvmeof_desc = new NVMeoFBatchDesc();
         auto batch_id = Transport::allocateBatchID(batch_size);
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        cufile_desc->cufile_io_params.reserve(batch_size);
-        cufile_desc->cufile_events_buf.resize(batch_size);
-        // TODO(FIXME): solving iterator invalidation due to vector resize
-        cufile_desc->transfer_status.reserve(batch_size);
-        cufile_desc->task_to_slices.reserve(batch_size);
-        batch_desc.context = cufile_desc;
-        CUFILE_CHECK(cuFileBatchIOSetUp(&cufile_desc->handle, batch_size));
+        nvmeof_desc->desc_idx_ = desc_pool_->allocCUfileDesc(batch_size);
+        nvmeof_desc->transfer_status.reserve(batch_size);
+        nvmeof_desc->task_to_slices.reserve(batch_size);
+        batch_desc.context = nvmeof_desc;
         return batch_id;
     }
 
@@ -57,27 +66,25 @@ namespace mooncake
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         auto &task = batch_desc.task_list[task_id];
-        auto &cufile_desc = *((CuFileBatchDesc *)(batch_desc.context));
-        unsigned nr = cufile_desc.cufile_io_params.size();
+        auto &nvmeof_desc = *((NVMeoFBatchDesc *)(batch_desc.context));
         // LOG(DEBUG) << "get t n " << nr;
         // 1. get task -> id map
-        auto [slice_id, slice_num] = cufile_desc.task_to_slices[task_id];
+        auto [slice_id, slice_num] = nvmeof_desc.task_to_slices[task_id];
         #ifdef USE_LOCAL_DESC
         assert(slice_id == task_id);
         assert(slice_num == 1);
         #endif
-        CUFILE_CHECK(cuFileBatchIOGetStatus(cufile_desc.handle, 0, &nr, cufile_desc.cufile_events_buf.data(), NULL));
 
-        // LOG(INFO) << "cufile events buf nr " << cufile_desc.cufile_events_buf.size();
-        // for (int i = 0; i < cufile_desc.cufile_events_buf.size(); ++i) {
-        //     LOG(INFO) << i << " status " << cufile_desc.cufile_events_buf[i].status <<  " ret " << cufile_desc.cufile_events_buf[i].ret;
+        // LOG(INFO) << "cufile events buf nr " << nvmeof_desc.cufile_events_buf.size();
+        // for (int i = 0; i < nvmeof_desc.cufile_events_buf.size(); ++i) {
+        //     LOG(INFO) << i << " status " << nvmeof_desc.cufile_events_buf[i].status <<  " ret " << nvmeof_desc.cufile_events_buf[i].ret;
         // }
 
         TransferStatus transfer_status = {.transferred_bytes = 0};
         for (size_t i = slice_id; i < slice_id + slice_num; ++i)
         {
             // LOG(INFO) << "task " << task_id << " i " << i << " upper bound " << slice_num;
-            auto &event = cufile_desc.cufile_events_buf[i];
+            auto event = desc_pool_->getTransferStatus(nvmeof_desc.desc_idx_, slice_id);
             transfer_status.s = from_cufile_transfer_status(event.status);
             // TODO(FIXME): what to do if multi slices have different status?
             if (transfer_status.s == COMPLETED)
@@ -97,15 +104,13 @@ namespace mooncake
     int NVMeoFTransport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        auto &cufile_desc = *((CuFileBatchDesc *)(batch_desc.context));
+        auto &nvmeof_desc = *((NVMeoFBatchDesc *)(batch_desc.context));
 
-        // std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
         if (batch_desc.task_list.size() + entries.size() > batch_desc.batch_size)
             return -1;
 
         size_t task_id = batch_desc.task_list.size();
-        size_t slice_id = cufile_desc.cufile_io_params.size();
-        size_t start_slice_id = slice_id;
+        size_t slice_id = desc_pool_->getSliceNum(nvmeof_desc.desc_idx_);
         batch_desc.task_list.resize(task_id + entries.size());
         std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
         // segment_desc_map[LOCAL_SEGMENT_ID] = getSegmentDescByID(LOCAL_SEGMENT_ID);
@@ -125,7 +130,7 @@ namespace mooncake
                 local_seg_desc->protocol = "nvmeof";
                 TransferMetadata::NVMeoFBufferDesc local_buffer;
                 local_buffer.length = 32 * 1024 * 1024 * 1024ULL;
-                local_buffer.file_path = "/mnt/nvme0n1/dsf/mooncake.img";
+                local_buffer.file_path = "/mnt/data/dsf/mooncake.img";
                 local_buffer.local_path_map[local_server_name_] = local_buffer.file_path;
                 local_seg_desc->nvmeof_buffers.push_back(local_buffer);
                 LOG_ASSERT(local_seg_desc->nvmeof_buffers.size() == 1);
@@ -192,14 +197,14 @@ namespace mooncake
                     params.u.batch.size = slice_end - slice_start;
                     // LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
 
-                    cufile_desc.cufile_io_params.push_back(params);
+                    desc_pool_->pushParams(nvmeof_desc.desc_idx_, params);
                     
                 }
                 current_offset += buffer_desc.length;
             }
 
-            cufile_desc.transfer_status.push_back(TransferStatus{.s = PENDING, .transferred_bytes = 0});
-            cufile_desc.task_to_slices.push_back({slice_id, task.slices.size()});
+            nvmeof_desc.transfer_status.push_back(TransferStatus{.s = PENDING, .transferred_bytes = 0});
+            nvmeof_desc.task_to_slices.push_back({slice_id, task.slices.size()});
             ++task_id;
             slice_id += task.slices.size();
             #ifdef USE_LOCAL_DESC
@@ -207,27 +212,22 @@ namespace mooncake
             LOG_ASSERT(slice_id == task_id);
             #endif
         }
-        
+
+        desc_pool_->submitBatch(nvmeof_desc.desc_idx_);        
         // LOG(INFO) << "submit nr " << slice_id << " start " << start_slice_id;
-        CUFILE_CHECK(cuFileBatchIOSubmit(cufile_desc.handle, slice_id - start_slice_id, cufile_desc.cufile_io_params.data() + start_slice_id, 0));
         // LOG(INFO) << "After submit";
         return 0;
     }
 
     int NVMeoFTransport::freeBatchID(BatchID batch_id) {
         auto &batch_desc = *((BatchDesc *)(batch_id));
-        const size_t task_count = batch_desc.task_list.size();
-        for (size_t task_id = 0; task_id < task_count; task_id++)
-        {
-            if (!batch_desc.task_list[task_id].is_finished)
-            {
-                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
-                return -1;
-            }
+        auto &nvmeof_desc = *((NVMeoFBatchDesc *)(batch_desc.context));
+        int desc_idx = nvmeof_desc.desc_idx_;
+        int rc = Transport::freeBatchID(batch_id);
+        if (rc < 0) {
+            return -1;
         }
-        auto &cufile_desc = *((CuFileBatchDesc *)(batch_desc.context));
-        cuFileBatchIODestroy(cufile_desc.handle);
-        delete &batch_desc;
+        desc_pool_->freeCUfileDesc(desc_idx);
         return 0;
     }
 

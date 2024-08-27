@@ -2,6 +2,7 @@
 #define NVMEOF_TRANSPORT_H_
 
 #include "transfer_engine/cufile_context.h"
+#include "transfer_engine/cufile_desc_pool.h"
 #include "transfer_engine/transfer_metadata.h"
 #include "transport.h"
 #include <bits/stdint-uintn.h>
@@ -16,6 +17,10 @@ namespace mooncake
     class NVMeoFTransport : public Transport
     {
     public:
+        NVMeoFTransport();
+
+        ~NVMeoFTransport();
+
         BatchID allocateBatchID(size_t batch_size) override;
 
         int submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries) override;
@@ -25,11 +30,9 @@ namespace mooncake
         int freeBatchID(BatchID batch_id) override;
 
     private:
-        struct CuFileBatchDesc
+        struct NVMeoFBatchDesc
         {
-            CUfileBatchHandle_t handle;
-            std::vector<CUfileIOParams_t> cufile_io_params;
-            std::vector<CUfileIOEvents_t> cufile_events_buf;
+            size_t desc_idx_;
             std::vector<TransferStatus> transfer_status;
             std::vector<std::pair<uint64_t, uint64_t>> task_to_slices; // task id -> (slice_begin, slice_num)
             // unsigned nr_completed;
@@ -55,10 +58,12 @@ namespace mooncake
         const char *getName() const override { return "nvmeof"; }
 
         std::unordered_map<std::pair<SegmentHandle, uint64_t>, std::shared_ptr<CuFileContext>, pair_hash> segment_to_context_;
-        std::vector<std::thread> workers;
+        std::vector<std::thread> workers_;
+        std::shared_ptr<CUFileDescPool> desc_pool_;
 
         std::unordered_map<BatchID, BatchDesc> batch_map_;
         unsigned nr_completed = 0;
+        CUfileBatchHandle_t handle = NULL;
     };
 }
 

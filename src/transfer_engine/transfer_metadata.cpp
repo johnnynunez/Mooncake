@@ -41,7 +41,7 @@ namespace mooncake
                 return false;
             }
             auto json_file = resp.value().as_string();
-            if (!reader.parse(json_file, value)) {
+            if (!reader.parse(json_file, value))
                 return false;
             if (globalConfig().verbose)
                 LOG(INFO) << "Get ServerDesc, key=" << key << ", value=" << json_file;
@@ -715,5 +715,6 @@ namespace mooncake
 
         return 0;
     }
+
 
 }

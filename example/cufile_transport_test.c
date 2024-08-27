@@ -7,6 +7,7 @@
 #include <sys/select.h>
 #include <time.h>
 #include <sys/time.h>
+#include <cufile.h>
 
 #include "transfer_engine/transfer_engine_c.h"
 
@@ -21,6 +22,12 @@ const char* META_SERVER = "192.168.3.72:2379";
 int main(void)
 {
     char *server_name = "optane14";
+    CUfileBatchHandle_t handle;
+    CUfileError_t e = cuFileBatchIOSetUp(handle, 8);
+    if (e.err != CU_FILE_SUCCESS) {
+        printf("cuFileBatchIOSetUp failed with %d\n", e.err);
+        return -1;
+    }
     transfer_engine_t *engine = createTransferEngine(META_SERVER);
     void **args = (void **)malloc(sizeof(void *));
     // args[0] = malloc(16);
