@@ -23,7 +23,7 @@ namespace mooncake
     /// The errno is set accordingly on failure.
     class Transport
     {
-        friend class TransferEnginev2;
+        friend class TransferEngine;
 
     public:
         using SegmentID = uint64_t;

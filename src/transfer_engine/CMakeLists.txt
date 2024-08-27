@@ -4,11 +4,11 @@ add_library(transfer_engine transfer_engine.cpp
                             rdma_context.cpp
                             rdma_endpoint.cpp
                             rdma_transport.cpp
-                            multi_transfer_engine.cpp
                             worker_pool.cpp
                             endpoint_store.cpp
                             transfer_engine_c.cpp
                             config.cpp
+                            old_transfer_engine.cpp
                             )
 
 add_compile_definitions(transfer_engine PUBLIC MOONCAKE_USE_ETCD)

@@ -2,7 +2,7 @@
 #include "transfer_engine/transfer_engine.h"
 
 namespace mooncake {
-    BatchID Transport::allocateBatchID(size_t batch_size) {
+    Transport::BatchID Transport::allocateBatchID(size_t batch_size) {
         auto batch_desc = new BatchDesc();
         if (!batch_desc)
             return -1;

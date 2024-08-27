@@ -48,7 +48,7 @@ namespace mooncake
         }
     }
 
-    BatchID NVMeoFTransport::allocateBatchID(size_t batch_size)
+    NVMeoFTransport::BatchID NVMeoFTransport::allocateBatchID(size_t batch_size)
     {
         LOG(INFO) << "register one handle 2";
         LOG(INFO) << "register one handle 3";

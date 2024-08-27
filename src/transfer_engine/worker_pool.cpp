@@ -7,7 +7,7 @@
 #include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/transfer_engine.h"
+#include "transfer_engine/old_transfer_engine.h"
 #include "transfer_engine/worker_pool.h"
 
 namespace mooncake
@@ -42,10 +42,10 @@ namespace mooncake
         }
     }
 
-    int WorkerPool::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
+    int WorkerPool::submitPostSend(const std::vector<OldTransferEngine::Slice *> &slice_list)
     {
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
-        thread_local std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
+        thread_local std::unordered_map<SegmentID, std::shared_ptr<OldTransferEngine::SegmentDesc>> segment_desc_map;
         uint64_t current_ts = getCurrentTimeInNano();
 
         if (current_ts - tl_last_cache_ts > 1000000000)
@@ -67,10 +67,10 @@ namespace mooncake
         {
             auto &peer_segment_desc = segment_desc_map[slice->target_id];
             int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
+            if (OldTransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
             {
                 peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
-                if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
+                if (OldTransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Failed to select remote NIC for address " << (void *)slice->rdma.dest_addr;
                     slice->markFailed();
@@ -199,7 +199,7 @@ namespace mooncake
 
             for (int i = 0; i < nr_poll; ++i)
             {
-                TransferEngine::Slice *slice = (TransferEngine::Slice *)wc[i].wr_id;
+                OldTransferEngine::Slice *slice = (OldTransferEngine::Slice *)wc[i].wr_id;
                 assert(slice);
                 if (qp_depth_set.count(slice->rdma.qp_depth))
                     qp_depth_set[slice->rdma.qp_depth]++;
@@ -233,7 +233,7 @@ namespace mooncake
             processed_slice_count_.fetch_add(processed_slice_count);
     }
 
-    void WorkerPool::processFailedSlice(TransferEngine::Slice *slice, int thread_id)
+    void WorkerPool::processFailedSlice(OldTransferEngine::Slice *slice, int thread_id)
     {
         if (slice->rdma.retry_cnt == slice->rdma.max_retry_cnt)
         {
@@ -245,7 +245,7 @@ namespace mooncake
             slice->rdma.retry_cnt++;
             auto peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
             int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
+            if (OldTransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
             {
                 slice->markFailed();
                 processed_slice_count_++;
