@@ -1,11 +1,11 @@
-package checkpoint
+package p2pstore
 
 import (
 	"log"
 	"sync"
 )
 
-type physicalMemoryRegion struct {
+type BufferHandle struct {
 	addr     uintptr
 	length   uint64
 	refCount int
@@ -13,7 +13,7 @@ type physicalMemoryRegion struct {
 
 type RegisteredMemory struct {
 	engine       *TransferEngine
-	regionList   []physicalMemoryRegion
+	bufferList   []BufferHandle
 	mu           sync.Mutex
 	maxChunkSize uint64
 }
@@ -23,15 +23,15 @@ func NewRegisteredMemory(transferEngine *TransferEngine, maxChunkSize uint64) *R
 }
 
 // 将地址 [addr, addr + length] 加入注册列表。如果地址已注册，则引用计数+1。暂不支持相交（但不一致）的内存区域注册
-func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize uint64) error {
+func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize uint64, location string) error {
 	if memory.maxChunkSize == 0 || memory.maxChunkSize%maxShardSize != 0 {
 		return ErrInvalidArgument
 	}
 
 	memory.mu.Lock()
-	for idx, entry := range memory.regionList {
+	for idx, entry := range memory.bufferList {
 		if entry.addr == addr && entry.length == length {
-			memory.regionList[idx].refCount++
+			memory.bufferList[idx].refCount++
 			memory.mu.Unlock()
 			return nil
 		}
@@ -43,8 +43,8 @@ func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize ui
 			return ErrAddressOverlapped
 		}
 	}
-	memory.regionList = append(memory.regionList,
-		physicalMemoryRegion{addr: addr, length: length, refCount: 1})
+	memory.bufferList = append(memory.bufferList,
+		BufferHandle{addr: addr, length: length, refCount: 1})
 	memory.mu.Unlock()
 
 	// Proceed memory registration
@@ -63,7 +63,7 @@ func (memory *RegisteredMemory) Add(addr uintptr, length uint64, maxShardSize ui
 		go func(offset, chunkSize uint64) {
 			defer wg.Done()
 			baseAddr := addr + uintptr(offset)
-			err := memory.engine.registerLocalMemory(baseAddr, chunkSize, "cpu:0")
+			err := memory.engine.registerLocalMemory(baseAddr, chunkSize, location)
 			if err != nil {
 				select {
 				case errChan <- err:
@@ -102,13 +102,13 @@ func (memory *RegisteredMemory) Remove(addr uintptr, length uint64, maxShardSize
 
 	memory.mu.Lock()
 	found := false
-	for idx, entry := range memory.regionList {
+	for idx, entry := range memory.bufferList {
 		if entry.addr == addr && entry.length == length {
 			found = true
 			entry.refCount--
 			if entry.refCount == 0 {
-				memory.regionList = append(memory.regionList[:idx],
-					memory.regionList[idx+1:]...)
+				memory.bufferList = append(memory.bufferList[:idx],
+					memory.bufferList[idx+1:]...)
 				break
 			}
 		}

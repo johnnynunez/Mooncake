@@ -1,10 +1,10 @@
 package main
 
 import (
-	"checkpoint"
 	"context"
 	"fmt"
 	"os"
+	"p2pstore"
 	"syscall"
 	"time"
 	"unsafe"
@@ -41,7 +41,7 @@ func trainer() {
 	}
 
 	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], []]}"
-	checkpointEngine, err := checkpoint.NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
+	store, err := p2pstore.NewP2PStore("http://optane21:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
 		os.Exit(1)
@@ -56,18 +56,18 @@ func trainer() {
 	startTimestamp := time.Now()
 	addrList := []uintptr{uintptr(unsafe.Pointer(&addr[0]))}
 	sizeList := []uint64{uint64(memoryMappedSize)}
-	err = checkpointEngine.RegisterCheckpoint(ctx, "foo/bar", addrList, sizeList, 64*1024*1024)
+	err = store.Register(ctx, "foo/bar", addrList, sizeList, 64*1024*1024, "cpu:0")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "RegisterCheckpoint failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Register failed: %v\n", err)
 		os.Exit(1)
 	}
 
 	phaseOneTimestamp := time.Now()
 	fmt.Println("Phase 1 duration ", phaseOneTimestamp.Sub(startTimestamp).Milliseconds())
 
-	checkpointInfoList, err := checkpointEngine.GetCheckpointInfo(ctx, "foo")
+	checkpointInfoList, err := store.List(ctx, "foo")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "GetCheckpointInfo failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "List failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -76,9 +76,9 @@ func trainer() {
 	time.Sleep(100 * time.Second)
 	fmt.Println("========================= IDLE ========================= ")
 
-	err = checkpointEngine.UnregisterCheckpoint(ctx, "foo/bar")
+	err = store.Unregister(ctx, "foo/bar")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "UnregisterCheckpoint failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "Unregister failed: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -87,7 +87,7 @@ func trainer() {
 		os.Exit(1)
 	}
 
-	err = checkpointEngine.Close()
+	err = store.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Shutdown failed: %v\n", err)
 		os.Exit(1)
@@ -106,8 +106,8 @@ func inferencer() {
 		os.Exit(1)
 	}
 
-	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_0\", \"mlx5_2\"], []]}"
-	checkpointEngine, err := checkpoint.NewCheckpointEngine("http://test-8:2379", hostname, nicPriorityMatrix)
+	nicPriorityMatrix := "{ \"cpu:0\": [[\"mlx5_2\"], []]}"
+	store, err := p2pstore.NewP2PStore("http://optane21:2379", hostname, nicPriorityMatrix)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Error creating checkpoint engine: %v\n", err)
 		os.Exit(1)
@@ -122,7 +122,7 @@ func inferencer() {
 	startTimestamp := time.Now()
 	addrList := []uintptr{uintptr(unsafe.Pointer(&addr[0]))}
 	sizeList := []uint64{uint64(memoryMappedSize)}
-	err = checkpointEngine.GetLocalCheckpoint(ctx, "foo/bar", addrList, sizeList)
+	err = store.GetReplica(ctx, "foo/bar", addrList, sizeList)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "GetLocalCheckpoint failed: %v\n", err)
 		os.Exit(1)
@@ -132,9 +132,9 @@ func inferencer() {
 	fmt.Println("Phase 1 duration ", phaseOneTimestamp.Sub(startTimestamp).Milliseconds())
 	// Cloned
 
-	err = checkpointEngine.DeleteLocalCheckpoint(ctx, "foo/bar")
+	err = store.DeleteReplica(ctx, "foo/bar")
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "DeleteLocalCheckpoint failed: %v\n", err)
+		fmt.Fprintf(os.Stderr, "DeleteReplica failed: %v\n", err)
 		os.Exit(1)
 	}
 
