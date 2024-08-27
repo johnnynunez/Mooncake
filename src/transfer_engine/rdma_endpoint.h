@@ -5,7 +5,6 @@
 #define RDMA_ENDPOINT_H
 
 #include "transfer_engine/rdma_context.h"
-#include "transfer_engine/old_transfer_engine.h"
 
 #include <queue>
 
@@ -94,8 +93,8 @@ namespace mooncake
 
     public:
         // 提交并执行其中的部分工作请求，已提交的任务会从 slice_list 中删除，提交失败的任务会加入 failed_slice_list。
-        int submitPostSend(std::vector<OldTransferEngine::Slice *> &slice_list,
-                           std::vector<OldTransferEngine::Slice *> &failed_slice_list);
+        int submitPostSend(std::vector<Transport::Slice *> &slice_list,
+                           std::vector<Transport::Slice *> &failed_slice_list);
 
     private:
         std::vector<uint32_t> qpNum() const;

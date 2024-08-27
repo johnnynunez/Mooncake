@@ -5,7 +5,8 @@
 #include "transfer_engine/config.h"
 #include "transfer_engine/endpoint_store.h"
 #include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/old_transfer_engine.h"
+#include "transfer_engine/rdma_transport.h"
+#include "transfer_engine/transport.h"
 #include "transfer_engine/worker_pool.h"
 
 #include <atomic>
@@ -18,7 +19,7 @@
 
 namespace mooncake
 {
-    RdmaContext::RdmaContext(OldTransferEngine &engine, const std::string &device_name)
+    RdmaContext::RdmaContext(RdmaTransport &engine, const std::string &device_name)
         : device_name_(device_name),
           engine_(engine),
           next_comp_channel_index_(0),
@@ -504,7 +505,7 @@ namespace mooncake
         return nr_poll;
     }
 
-    int RdmaContext::submitPostSend(const std::vector<OldTransferEngine::Slice *> &slice_list)
+    int RdmaContext::submitPostSend(const std::vector<Transport::Slice *> &slice_list)
     {
         return worker_pool_->submitPostSend(slice_list);
     }

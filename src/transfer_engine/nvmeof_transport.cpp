@@ -121,7 +121,7 @@ namespace mooncake
             if (!segment_desc_map.count(target_id))
             {
                 #ifndef USE_LOCAL_DESC
-                segment_desc_map[target_id] = meta_->getSegmentDescByID(target_id);
+                segment_desc_map[target_id] = metadata_->getSegmentDescByID(target_id);
                 assert(segment_desc_map[target_id] != nullptr);
 #else
                 LOG_ASSERT(target_id == LOCAL_SEGMENT_ID);
@@ -247,7 +247,7 @@ namespace mooncake
         return 0;
     }
 
-    int NVMeoFTransport::unregisterLocalMemory(void *addr)
+    int NVMeoFTransport::unregisterLocalMemory(void *addr, bool update_metadata)
     {
         CUFILE_CHECK(cuFileBufDeregister(addr));
         return 0;

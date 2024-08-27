@@ -18,15 +18,15 @@ namespace mooncake
 
         ~WorkerPool();
 
-        // 由 OldTransferEngine 调用，向队列添加 Slice
-        int submitPostSend(const std::vector<OldTransferEngine::Slice *> &slice_list);
+        // 由 Transport 调用，向队列添加 Slice
+        int submitPostSend(const std::vector<Transport::Slice *> &slice_list);
 
     private:
         void performPostSend(int thread_id);
 
         void performPollCq(int thread_id);
 
-        void processFailedSlice(OldTransferEngine::Slice *slice, int thread_id);
+        void processFailedSlice(Transport::Slice *slice, int thread_id);
 
         void transferWorker(int thread_id);
 
@@ -45,7 +45,7 @@ namespace mooncake
         std::mutex cond_mutex_;
         std::condition_variable cond_var_;
 
-        using SliceList = std::vector<OldTransferEngine::Slice *>;
+        using SliceList = std::vector<Transport::Slice *>;
 
         const static int kShardCount = 8;
         std::unordered_map<std::string, SliceList> slice_queue_[kShardCount];

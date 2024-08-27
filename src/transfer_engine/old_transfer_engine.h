@@ -17,7 +17,6 @@
 
 #include "transfer_engine/transfer_metadata.h"
 
-const int LOCAL_SEGMENT_ID = 0;
 
 namespace mooncake
 {

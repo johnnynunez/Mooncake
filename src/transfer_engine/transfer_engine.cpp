@@ -34,7 +34,7 @@ namespace mooncake
             return NULL;
         }
 
-        if (xport->install(local_server_name_, meta_, args) < 0)
+        if (xport->install(local_server_name_, metadata_, args) < 0)
         {
             goto fail;
         }
@@ -62,11 +62,11 @@ namespace mooncake
 
     Transport::SegmentHandle TransferEngine::openSegment(const char *segment_name)
     {
-        // return meta_->getSegmentDesc(segment_name);
+        // return metadata_->getSegmentDesc(segment_name);
         #ifdef USE_LOCAL_DESC
         return 0;
         #else
-        return meta_->getSegmentID(segment_name);
+        return metadata_->getSegmentID(segment_name);
         #endif
     }
 
@@ -112,7 +112,7 @@ namespace mooncake
     {
         if (std::string(proto) == "rdma")
         {
-            return new RDMATransport();
+            return new RdmaTransport();
         }
         #ifdef USE_CUDA
         else if (std::string(proto) == "nvmeof")

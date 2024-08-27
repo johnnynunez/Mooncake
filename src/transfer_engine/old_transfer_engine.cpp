@@ -1,7 +1,6 @@
 // transfer_engine.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/old_transfer_engine.h"
 #include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"

@@ -23,7 +23,7 @@ namespace mooncake
     class TransferEngine
     {
     public:
-        TransferEngine(std::shared_ptr<TransferMetadata> meta) : meta_(meta) {}
+        TransferEngine(std::shared_ptr<TransferMetadata> meta) : metadata_(meta) {}
 
         ~TransferEngine()
         {
@@ -58,9 +58,15 @@ namespace mooncake
 
         std::vector<Transport *> installed_transports_;
         string local_server_name_;
-        std::shared_ptr<TransferMetadata> meta_;
+        std::shared_ptr<TransferMetadata> metadata_;
         std::vector<MemoryRegion> local_memory_regions_;
     };
+
+    using TransferRequest = Transport::TransferRequest;
+    using TransferStatus = Transport::TransferStatus;
+    using TransferStatusEnum = Transport::TransferStatusEnum;
+    using SegmentID = Transport::SegmentID;
+    using BatchID = Transport::BatchID; 
 }
 
 #endif

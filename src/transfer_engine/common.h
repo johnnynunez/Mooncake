@@ -27,6 +27,7 @@
 
 namespace mooncake
 {
+    const int LOCAL_SEGMENT_ID = 0;
     static inline int bindToSocket(int socket_id)
     {
         if (unlikely(numa_available() < 0))
