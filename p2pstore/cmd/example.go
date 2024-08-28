@@ -10,7 +10,7 @@ import (
 	"unsafe"
 )
 
-const memoryMappedSize int = 1024 * 1024 * 1024
+const memoryMappedSize int = 40 * 1024 * 1024 * 1024
 
 func main() {
 	if len(os.Args) < 2 {
@@ -57,7 +57,7 @@ func doTrainer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 
 	fmt.Println(checkpointInfoList)
 	fmt.Println("========================= IDLE ========================= ")
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	fmt.Println("========================= IDLE ========================= ")
 
 	err = store.Unregister(ctx, name)
@@ -160,7 +160,7 @@ func inferencer() {
 
 	doInferencer(ctx, store, "foo/bar")
 	fmt.Println("========================= IDLE ========================= ")
-	time.Sleep(10 * time.Second)
+	time.Sleep(20 * time.Second)
 	fmt.Println("========================= IDLE ========================= ")
 	doInferencer(ctx, store, "foo/bar2")
 

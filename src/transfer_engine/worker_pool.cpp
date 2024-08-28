@@ -45,6 +45,7 @@ namespace mooncake
 
     int WorkerPool::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
+#ifdef CONFIG_CACHE_SEGMENT_DESC
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
         uint64_t current_ts = getCurrentTimeInNano();
@@ -61,6 +62,15 @@ namespace mooncake
             if (!segment_desc_map.count(target_id))
                 segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id);
         }
+#else 
+        std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
+        for (auto &slice : slice_list)
+        {
+            auto target_id = slice->target_id;
+            if (!segment_desc_map.count(target_id))
+                segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id, true);
+        }
+#endif // CONFIG_CACHE_SEGMENT_DESC
 
         SliceList slice_list_map[kShardCount];
         uint64_t submitted_slice_count = 0;
@@ -134,6 +144,7 @@ namespace mooncake
             return;
         }
 
+#ifdef CONFIG_CACHE_ENDPOINT
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map;
         uint64_t current_ts = getCurrentTimeInNano();
@@ -142,6 +153,7 @@ namespace mooncake
             endpoint_map.clear();
             tl_last_cache_ts = current_ts;
         }
+#endif
 
         SliceList failed_slice_list;
         for (auto &entry : local_slice_queue)
@@ -168,7 +180,7 @@ namespace mooncake
             processed_slice_count_.fetch_add(entry.second.size());
             entry.second.clear();
 #else
-#ifdef USE_ENDPOINT_CACHING
+#ifdef CONFIG_CACHE_ENDPOINT
             auto &endpoint = endpoint_map[entry.first];
             if (endpoint == nullptr || !endpoint->active())
                 endpoint = context_.endpoint(entry.first);
