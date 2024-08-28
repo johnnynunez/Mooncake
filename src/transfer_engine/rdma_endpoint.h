@@ -66,6 +66,10 @@ namespace mooncake
         int setupConnectionsByPassive(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc);
 
         bool hasOutstandingSlice() const;
+        
+        bool active() const { return active_; }
+
+        void set_active(bool flag) { active_ = flag; }
 
     public:
         // 连接状态管理
@@ -114,6 +118,8 @@ namespace mooncake
 
         volatile int *wr_depth_list_;
         int max_wr_depth_;
+        
+        volatile bool active_;
     };
 
 }
