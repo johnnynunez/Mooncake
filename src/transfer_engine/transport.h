@@ -23,11 +23,10 @@ namespace mooncake
     /// The errno is set accordingly on failure.
     class Transport
     {
-        friend class TransferEnginev2;
+        friend class TransferEngine;
 
     public:
         using SegmentID = uint64_t;
-        const static SegmentID LOCAL_SEGMENT_ID = 0;
         using SegmentHandle = SegmentID;
 
 
@@ -86,6 +85,10 @@ namespace mooncake
             void *source_addr;
             size_t length;
             TransferRequest::OpCode opcode;
+            SegmentID target_id;
+            std::string peer_nic_path;
+            SliceStatus status;
+            TransferTask *task;
 
             union
             {
@@ -111,11 +114,19 @@ namespace mooncake
                     uint64_t buffer_id;
                 } nvmeof;
             };
+        public:
+            void markSuccess()
+            {
+                status = Slice::SUCCESS;
+                __sync_fetch_and_add(&task->transferred_bytes, length);
+                __sync_fetch_and_add(&task->success_slice_count, 1);
+            }
 
-            // TODO remove it
-            SegmentDesc *peer_segment_desc;
-            SliceStatus status;
-            TransferTask *task;
+            void markFailed()
+            {
+                status = Slice::FAILED;
+                __sync_fetch_and_add(&task->failed_slice_count, 1);
+            }
         };
 
         struct TransferTask
@@ -166,15 +177,24 @@ namespace mooncake
         // virtual int freeBatchContext(BatchID batch_id) = 0;
 
         std::string local_server_name_;
-        std::shared_ptr<TransferMetadata> meta_;
+        std::shared_ptr<TransferMetadata> metadata_;
 
         RWSpinlock batch_desc_lock_;
         std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
+        struct BufferEntry
+        {
+            void *addr;
+            size_t length;
+        };
 
     private:
         virtual int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) = 0;
 
-        virtual int unregisterLocalMemory(void *addr) = 0;
+        virtual int unregisterLocalMemory(void *addr, bool update_metadata = true) = 0;
+
+        virtual int registerLocalMemoryBatch(const std::vector<BufferEntry> &buffer_list, const std::string &location) = 0;
+
+        virtual int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list) = 0;
 
         virtual const char *getName() const = 0;
     };

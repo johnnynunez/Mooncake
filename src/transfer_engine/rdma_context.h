@@ -17,13 +17,15 @@
 #include <unordered_map>
 
 #include "transfer_engine/common.h"
-#include "transfer_engine/transfer_engine.h"
+// #include "transfer_engine/transfer_engine.h"
+#include "transfer_engine/rdma_transport.h"
+#include "transfer_engine/transport.h"
 
 namespace mooncake
 {
 
     class RdmaEndPoint;
-    class TransferEngine;
+    class RdmaTransport;
     class WorkerPool;
     class EndpointStore;
 
@@ -31,7 +33,7 @@ namespace mooncake
     class RdmaContext
     {
     public:
-        RdmaContext(TransferEngine &engine, const std::string &device_name);
+        RdmaContext(RdmaTransport &engine, const std::string &device_name);
 
         ~RdmaContext();
 
@@ -82,7 +84,7 @@ namespace mooncake
 
         ibv_context *context() const { return context_; }
 
-        TransferEngine &engine() const { return engine_; }
+        RdmaTransport &engine() const { return engine_; }
 
         ibv_pd *pd() const { return pd_; }
 
@@ -112,11 +114,11 @@ namespace mooncake
         int joinNonblockingPollList(int event_fd, int data_fd);
 
     public:
-        int submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list);
+        int submitPostSend(const std::vector<Transport::Slice *> &slice_list);
 
     private:
         const std::string device_name_;
-        TransferEngine &engine_;
+        RdmaTransport &engine_;
 
         ibv_context *context_ = nullptr;
         ibv_pd *pd_ = nullptr;

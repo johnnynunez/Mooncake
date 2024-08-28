@@ -226,8 +226,8 @@ namespace mooncake
         return false;
     }
 
-    int RdmaEndPoint::submitPostSend(std::vector<TransferEngine::Slice *> &slice_list,
-                                     std::vector<TransferEngine::Slice *> &failed_slice_list)
+    int RdmaEndPoint::submitPostSend(std::vector<Transport::Slice *> &slice_list,
+                                     std::vector<Transport::Slice *> &failed_slice_list)
     {
         RWSpinlock::WriteGuard guard(lock_);
         int qp_index = SimpleRandom::Get().next(qp_list_.size());
@@ -248,7 +248,7 @@ namespace mooncake
 
             auto &wr = wr_list[i];
             wr.wr_id = (uint64_t)slice;
-            wr.opcode = slice->opcode == TransferEngine::TransferRequest::READ ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
+            wr.opcode = slice->opcode == Transport::TransferRequest::READ ? IBV_WR_RDMA_READ : IBV_WR_RDMA_WRITE;
             wr.num_sge = 1;
             wr.sg_list = &sge;
             wr.send_flags = IBV_SEND_SIGNALED;
@@ -256,7 +256,7 @@ namespace mooncake
             wr.imm_data = 0;
             wr.wr.rdma.remote_addr = slice->rdma.dest_addr;
             wr.wr.rdma.rkey = slice->rdma.dest_rkey;
-            slice->status = TransferEngine::Slice::POSTED;
+            slice->status = Transport::Slice::POSTED;
             slice->rdma.qp_depth = &wr_depth_list_[qp_index];
         }
         __sync_fetch_and_add(&wr_depth_list_[qp_index], wr_count);

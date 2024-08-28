@@ -1,7 +1,6 @@
 // transfer_engine.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/rdma_transport.h"
 #include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
@@ -16,30 +15,18 @@
 
 namespace mooncake
 {
-    RdmaTransport::RdmaTransport()
-        : next_segment_id_(1) {}
-
-    RdmaTransport::~RdmaTransport()
+    OldTransferEngine::OldTransferEngine(std::unique_ptr<TransferMetadata> &metadata,
+                                   const std::string &local_server_name,
+                                   const std::string &nic_priority_matrix,
+                                   bool dry_run)
+        : metadata_(std::move(metadata)),
+          next_segment_id_(1),
+          local_server_name_(local_server_name)
     {
-#ifdef CONFIG_USE_BATCH_DESC_SET
-        for (auto &entry : batch_desc_set_)
-            delete entry.second;
-        batch_desc_set_.clear();
-#endif
-        removeLocalSegmentDesc();
-        segment_id_to_desc_map_.clear();
-        segment_name_to_id_map_.clear();
-        batch_desc_set_.clear();
-        context_list_.clear();
-    }
-
-    int RdmaTransport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args) {
-        const std::string &nic_priority_matrix = *static_cast<std::string *>(args[0]);
-        bool dry_run = *static_cast<bool *>(args[1]);
         TransferMetadata::PriorityMatrix local_priority_matrix;
 
         if (dry_run)
-            return 0;
+            return;
 
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
         if (ret)
@@ -84,7 +71,21 @@ namespace mooncake
         }
     }
 
-    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool update_metadata)
+    OldTransferEngine::~OldTransferEngine()
+    {
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        for (auto &entry : batch_desc_set_)
+            delete entry.second;
+        batch_desc_set_.clear();
+#endif
+        removeLocalSegmentDesc();
+        segment_id_to_desc_map_.clear();
+        segment_name_to_id_map_.clear();
+        batch_desc_set_.clear();
+        context_list_.clear();
+    }
+
+    int OldTransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &name, bool update_metadata)
     {
         BufferDesc buffer_desc;
         buffer_desc.name = name;
@@ -121,7 +122,7 @@ namespace mooncake
             return 0;
     }
 
-    int RdmaTransport::unregisterLocalMemory(void *addr, bool update_metadata)
+    int OldTransferEngine::unregisterLocalMemory(void *addr, bool update_metadata)
     {
         {
             RWSpinlock::WriteGuard guard(segment_lock_);
@@ -154,7 +155,7 @@ namespace mooncake
             return 0;
     }
 
-    int RdmaTransport::registerLocalMemoryBatch(const std::vector<RdmaTransport::BufferEntry> &buffer_list,
+    int OldTransferEngine::registerLocalMemoryBatch(const std::vector<OldTransferEngine::BufferEntry> &buffer_list,
                                                  const std::string &location)
     {
         std::vector<std::future<int>> results;
@@ -176,7 +177,7 @@ namespace mooncake
         return updateLocalSegmentDesc();
     }
 
-    int RdmaTransport::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
+    int OldTransferEngine::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
     {
         std::vector<std::future<int>> results;
         for (auto &addr : addr_list)
@@ -194,7 +195,21 @@ namespace mooncake
         return updateLocalSegmentDesc();
     }
 
-    int RdmaTransport::submitTransfer(
+    OldTransferEngine::BatchID OldTransferEngine::allocateBatchID(size_t batch_size)
+    {
+        auto batch_desc = new BatchDesc();
+        batch_desc->id = BatchID(batch_desc);
+        batch_desc->batch_size = batch_size;
+        batch_desc->task_list.reserve(batch_size);
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        batch_desc_lock_.lock();
+        batch_desc_set_[batch_desc->id] = batch_desc;
+        batch_desc_lock_.unlock();
+#endif
+        return batch_desc->id;
+    }
+
+    int OldTransferEngine::submitTransfer(
         BatchID batch_id, const std::vector<TransferRequest> &entries)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
@@ -254,7 +269,7 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaTransport::getTransferStatus(BatchID batch_id,
+    int OldTransferEngine::getTransferStatus(BatchID batch_id,
                                           std::vector<TransferStatus> &status)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
@@ -282,7 +297,7 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaTransport::getTransferStatus(BatchID batch_id, size_t task_id,
+    int OldTransferEngine::getTransferStatus(BatchID batch_id, size_t task_id,
                                           TransferStatus &status)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
@@ -308,7 +323,28 @@ namespace mooncake
         return 0;
     }
 
-    RdmaTransport::SegmentID RdmaTransport::getSegmentID(const std::string &segment_name)
+    int OldTransferEngine::freeBatchID(BatchID batch_id)
+    {
+        auto &batch_desc = *((BatchDesc *)(batch_id));
+        const size_t task_count = batch_desc.task_list.size();
+        for (size_t task_id = 0; task_id < task_count; task_id++)
+        {
+            auto &task = batch_desc.task_list[task_id];
+            if (task.success_slice_count + task.failed_slice_count < (uint64_t)task.slices.size())
+            {
+                LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
+                return ERR_BATCH_BUSY;
+            }
+        }
+        delete &batch_desc;
+#ifdef CONFIG_USE_BATCH_DESC_SET
+        RWSpinlock::WriteGuard guard(batch_desc_lock_);
+        batch_desc_set_.erase(batch_id);
+#endif
+        return 0;
+    }
+
+    OldTransferEngine::SegmentID OldTransferEngine::getSegmentID(const std::string &segment_name)
     {
         {
             RWSpinlock::ReadGuard guard(segment_lock_);
@@ -328,7 +364,7 @@ namespace mooncake
         return id;
     }
 
-    int RdmaTransport::allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix)
+    int OldTransferEngine::allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix)
     {
         RWSpinlock::WriteGuard guard(segment_lock_);
         auto desc = std::make_shared<SegmentDesc>();
@@ -349,7 +385,7 @@ namespace mooncake
         return 0;
     }
 
-    std::shared_ptr<RdmaTransport::SegmentDesc> RdmaTransport::getSegmentDescByName(const std::string &segment_name, bool force_update)
+    std::shared_ptr<OldTransferEngine::SegmentDesc> OldTransferEngine::getSegmentDescByName(const std::string &segment_name, bool force_update)
     {
         if (!force_update)
         {
@@ -374,7 +410,7 @@ namespace mooncake
         return server_desc;
     }
 
-    std::shared_ptr<RdmaTransport::SegmentDesc> RdmaTransport::getSegmentDescByID(SegmentID segment_id, bool force_update)
+    std::shared_ptr<OldTransferEngine::SegmentDesc> OldTransferEngine::getSegmentDescByID(SegmentID segment_id, bool force_update)
     {
         if (force_update)
         {
@@ -396,19 +432,19 @@ namespace mooncake
         }
     }
 
-    int RdmaTransport::updateLocalSegmentDesc()
+    int OldTransferEngine::updateLocalSegmentDesc()
     {
         RWSpinlock::ReadGuard guard(segment_lock_);
         auto desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
         return metadata_->updateSegmentDesc(local_server_name_, *desc);
     }
 
-    int RdmaTransport::removeLocalSegmentDesc()
+    int OldTransferEngine::removeLocalSegmentDesc()
     {
         return metadata_->removeSegmentDesc(local_server_name_);
     }
 
-    int RdmaTransport::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)
+    int OldTransferEngine::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)
     {
         auto local_nic_name = getNicNameFromNicPath(peer_desc.peer_nic_path);
         if (local_nic_name.empty())
@@ -420,7 +456,7 @@ namespace mooncake
         return endpoint->setupConnectionsByPassive(peer_desc, local_desc);
     }
 
-    int RdmaTransport::initializeRdmaResources()
+    int OldTransferEngine::initializeRdmaResources()
     {
         if (device_name_list_.empty())
         {
@@ -451,15 +487,15 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaTransport::startHandshakeDaemon()
+    int OldTransferEngine::startHandshakeDaemon()
     {
         return metadata_->startHandshakeDaemon(
-            std::bind(&RdmaTransport::onSetupRdmaConnections, this,
+            std::bind(&OldTransferEngine::onSetupRdmaConnections, this,
                       std::placeholders::_1, std::placeholders::_2),
             globalConfig().handshake_port);
     }
 
-    int RdmaTransport::selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_count)
+    int OldTransferEngine::selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_count)
     {
         for (buffer_id = 0; buffer_id < (int)desc->buffers.size(); ++buffer_id)
         {

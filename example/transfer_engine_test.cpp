@@ -1,9 +1,13 @@
+#include "transfer_engine/rdma_transport.h"
 #include "transfer_engine/transfer_engine.h"
+#include "transfer_engine/transport.h"
 
+#include <cstdlib>
 #include <fstream>
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <iomanip>
+#include <memory>
 #include <sys/time.h>
 
 #define NR_SOCKETS (2)
@@ -109,7 +113,7 @@ static void freeMemoryPool(void *addr, size_t size)
 volatile bool running = true;
 std::atomic<size_t> total_batch_count(0);
 
-int initiatorWorker(TransferEngine *engine, SegmentID segment_id, int thread_id, void *addr)
+int initiatorWorker(RdmaTransport *engine, SegmentID segment_id, int thread_id, void *addr)
 {
     bindToSocket(thread_id % NR_SOCKETS);
     TransferRequest::OpCode opcode;
@@ -193,14 +197,21 @@ std::string loadNicPriorityMatrix(const std::string &path)
 
 int initiator()
 {
-    auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server);
+    auto metadata_client = std::make_shared<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
     auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
     const size_t dram_buffer_size = 1ull << 30;
-    auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   FLAGS_local_server_name,
-                                                   nic_priority_matrix);
+    auto engine = std::make_unique<TransferEngine>(metadata_client);
+
+    void** args = (void**) malloc(2 * sizeof(void*));
+    args[0] = (void*)FLAGS_nic_priority_matrix.c_str();
+    args[1] = nullptr;
+
+    const string& connectable_name = FLAGS_local_server_name;
+    engine->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
+    RdmaTransport* xport = static_cast<RdmaTransport*>(engine->installOrGetTransport("rdma", args));
+
     LOG_ASSERT(engine);
 
     void *addr[NR_SOCKETS] = {nullptr};
@@ -211,7 +222,7 @@ int initiator()
         LOG_ASSERT(!rc);
     }
 
-    auto segment_id = engine->getSegmentID(FLAGS_segment_id);
+    auto segment_id = engine->openSegment(FLAGS_segment_id.c_str());
     LOG_ASSERT(segment_id >= 0);
 
     std::thread workers[FLAGS_threads];
@@ -220,7 +231,7 @@ int initiator()
     gettimeofday(&start_tv, nullptr);
 
     for (int i = 0; i < FLAGS_threads; ++i)
-        workers[i] = std::thread(initiatorWorker, engine.get(), segment_id, i, addr[i % NR_SOCKETS]);
+        workers[i] = std::thread(initiatorWorker, xport, segment_id, i, addr[i % NR_SOCKETS]);
 
     sleep(FLAGS_duration);
     running = false;
@@ -246,20 +257,28 @@ int initiator()
         freeMemoryPool(addr[i], dram_buffer_size);
     }
 
+    engine->uninstallTransport("rdma");
     return 0;
 }
 
 int target()
 {
-    auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server);
+    auto metadata_client = std::make_shared<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
     auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
 
     const size_t dram_buffer_size = 1ull << 30;
-    auto engine = std::make_unique<TransferEngine>(metadata_client,
-                                                   FLAGS_local_server_name,
-                                                   nic_priority_matrix);
+    auto engine = std::make_unique<TransferEngine>(metadata_client);
+
+    void** args = (void**) malloc(2 * sizeof(void*));
+    args[0] = (void*)FLAGS_nic_priority_matrix.c_str();
+    args[1] = nullptr;
+
+    const string& connectable_name = FLAGS_local_server_name;
+    engine->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
+    engine->installOrGetTransport("rdma", args);
+
     LOG_ASSERT(engine);
 
     void *addr[2] = {nullptr};

@@ -1,8 +1,9 @@
 #include "transport.h"
 #include "transfer_engine/transfer_engine.h"
+#include "error.h"
 
 namespace mooncake {
-    BatchID Transport::allocateBatchID(size_t batch_size) {
+    Transport::BatchID Transport::allocateBatchID(size_t batch_size) {
         auto batch_desc = new BatchDesc();
         if (!batch_desc)
             return -1;
@@ -39,7 +40,7 @@ namespace mooncake {
 
     int Transport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void** args) {
         local_server_name_ = local_server_name;
-        meta_ = meta;
+        metadata_ = meta;
         return 0;
     }
 }

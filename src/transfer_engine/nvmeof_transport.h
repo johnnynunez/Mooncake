@@ -53,7 +53,11 @@ namespace mooncake
 
         int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) override;
 
-        int unregisterLocalMemory(void *addr) override;
+        int unregisterLocalMemory(void *addr, bool update_metadata = false) override;
+
+        int registerLocalMemoryBatch(const std::vector<Transport::BufferEntry> &buffer_list, const std::string &location) override { return 0; }
+
+        int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list) override { return 0; }
 
         const char *getName() const override { return "nvmeof"; }
 
