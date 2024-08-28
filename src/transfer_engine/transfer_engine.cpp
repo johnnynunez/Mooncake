@@ -227,6 +227,7 @@ namespace mooncake
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
         auto local_segment_desc = getSegmentDescByID(LOCAL_SEGMENT_ID);
+        assert(local_segment_desc);
         const size_t kBlockSize = globalConfig().slice_size;
         const int kMaxRetryCount = globalConfig().retry_cnt;
 
@@ -376,7 +377,8 @@ namespace mooncake
             if (entry.first == LOCAL_SEGMENT_ID)
                 continue;
             auto server_desc = metadata_->getSegmentDesc(entry.second->name);
-            entry.second = server_desc;
+            if (server_desc)
+                entry.second = server_desc;
         }
         return 0;
     }

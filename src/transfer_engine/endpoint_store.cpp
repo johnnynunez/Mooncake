@@ -200,8 +200,10 @@ namespace mooncake
         fifo_list_.erase(o);
         fifo_map_.erase(victim);
         LOG(INFO) << victim << " evicted";
+        auto victim_instance = endpoint_map_[victim].first;
+        victim_instance->set_active(false);
         waiting_list_len_++;
-        waiting_list_.insert(endpoint_map_[victim].first);
+        waiting_list_.insert(victim_instance);
         endpoint_map_.erase(victim);
         return;
     }
