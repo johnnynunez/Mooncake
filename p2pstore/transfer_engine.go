@@ -1,11 +1,10 @@
-package checkpoint
+package p2pstore
 
-//#cgo LDFLAGS: -L../build/src/transfer_engine -ltransfer_engine -lstdc++ -lnuma -lglog -libverbs -ljsoncpp -letcd-cpp-api
+//#cgo LDFLAGS: -L../build/src/transfer_engine -L../thirdparties/lib -ltransfer_engine -lstdc++ -lnuma -lglog -libverbs -ljsoncpp -letcd-cpp-api-core -lprotobuf -lgrpc++ -lgrpc
 //#include "../src/transfer_engine/transfer_engine_c.h"
 import "C"
 
 import (
-	"errors"
 	"unsafe"
 )
 
@@ -14,8 +13,6 @@ type BatchID int64
 type TransferEngine struct {
 	engine C.transfer_engine_t
 }
-
-var ErrTransferEngine = errors.New("error: transfer engine core")
 
 func NewTransferEngine(metadata_uri string, local_server_name string, nic_priority_matrix string) (*TransferEngine, error) {
 	engine := &TransferEngine{
@@ -117,4 +114,12 @@ func (engine *TransferEngine) getSegmentID(name string) (int64, error) {
 		return -1, ErrTransferEngine
 	}
 	return int64(ret), nil
+}
+
+func (engine *TransferEngine) syncSegmentCache() error {
+	ret := C.syncSegmentCache(engine.engine)
+	if ret < 0 {
+		return ErrTransferEngine
+	}
+	return nil
 }

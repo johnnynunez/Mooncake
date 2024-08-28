@@ -153,6 +153,8 @@ namespace mooncake
         // 获取 segment_name 对应的 SegmentID，其中 segment_name 在 RDMA 语义中表示目标服务器的名称 (与 server_name 相同)
         SegmentID getSegmentID(const std::string &segment_name);
 
+        int syncSegmentCache();
+
     private:
         int allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix);
 

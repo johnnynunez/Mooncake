@@ -61,6 +61,7 @@ namespace mooncake
         if (iter != endpoint_map_.end())
         {
             waiting_list_.insert(iter->second);
+            iter->second->set_active(false);
             endpoint_map_.erase(iter);
             auto fifo_iter = fifo_map_[peer_nic_path];
             fifo_list_.erase(fifo_iter);
@@ -160,6 +161,7 @@ namespace mooncake
         if (iter != endpoint_map_.end())
         {
             waiting_list_len_++;
+            iter->second.first->set_active(false);
             waiting_list_.insert(iter->second.first);
             endpoint_map_.erase(iter);
             auto fifo_iter = fifo_map_[peer_nic_path];
@@ -198,8 +200,10 @@ namespace mooncake
         fifo_list_.erase(o);
         fifo_map_.erase(victim);
         LOG(INFO) << victim << " evicted";
+        auto victim_instance = endpoint_map_[victim].first;
+        victim_instance->set_active(false);
         waiting_list_len_++;
-        waiting_list_.insert(endpoint_map_[victim].first);
+        waiting_list_.insert(victim_instance);
         endpoint_map_.erase(victim);
         return;
     }

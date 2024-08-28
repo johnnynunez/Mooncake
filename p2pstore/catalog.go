@@ -1,4 +1,4 @@
-package checkpoint
+package p2pstore
 
 import "sync"
 

@@ -26,7 +26,7 @@ namespace mooncake
 
         void performPollCq(int thread_id);
 
-        void processFailedSlice(TransferEngine::Slice *slice, int thread_id);
+        void redispatch(std::vector<TransferEngine::Slice *> &slice_list, int thread_id);
 
         void transferWorker(int thread_id);
 
@@ -41,6 +41,8 @@ namespace mooncake
         std::vector<std::thread> worker_thread_;
         std::atomic<bool> workers_running_;
         std::atomic<int> suspended_flag_;
+
+        std::atomic<int> redispatch_counter_;
 
         std::mutex cond_mutex_;
         std::condition_variable cond_var_;

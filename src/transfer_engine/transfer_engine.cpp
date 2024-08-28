@@ -112,6 +112,7 @@ namespace mooncake
                 return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+            assert(segment_desc);
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
             segment_desc->buffers.push_back(buffer_desc);
@@ -134,8 +135,10 @@ namespace mooncake
                 return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+            assert(segment_desc);
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
+            assert(segment_desc);
             for (auto iter = segment_desc->buffers.begin();
                  iter != segment_desc->buffers.end();
                  ++iter)
@@ -224,6 +227,7 @@ namespace mooncake
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
         auto local_segment_desc = getSegmentDescByID(LOCAL_SEGMENT_ID);
+        assert(local_segment_desc);
         const size_t kBlockSize = globalConfig().slice_size;
         const int kMaxRetryCount = globalConfig().retry_cnt;
 
@@ -365,6 +369,20 @@ namespace mooncake
         return id;
     }
 
+    int TransferEngine::syncSegmentCache()
+    {
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        for (auto &entry: segment_id_to_desc_map_)
+        {
+            if (entry.first == LOCAL_SEGMENT_ID)
+                continue;
+            auto server_desc = metadata_->getSegmentDesc(entry.second->name);
+            if (server_desc)
+                entry.second = server_desc;
+        }
+        return 0;
+    }
+
     int TransferEngine::allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix)
     {
         RWSpinlock::WriteGuard guard(segment_lock_);
@@ -437,6 +455,7 @@ namespace mooncake
     {
         RWSpinlock::ReadGuard guard(segment_lock_);
         auto desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+        assert(desc);
         return metadata_->updateSegmentDesc(local_server_name_, *desc);
     }
 

@@ -1,4 +1,4 @@
-package checkpoint
+package p2pstore
 
 import (
 	"context"
@@ -7,10 +7,10 @@ import (
 	"math/rand"
 	"time"
 
-	"go.etcd.io/etcd/clientv3"
+	"go.etcd.io/etcd/client/v3"
 )
 
-// key = ckpt_name/xxx
+// key = payload_name
 // value = {
 // 	size: 1GB
 // 	max_shard_size: 128MB
@@ -40,7 +40,7 @@ type Shard struct {
 	ReplicaList []Location `json:"replica_list"`
 }
 
-type Checkpoint struct {
+type Payload struct {
 	Name         string   `json:"name"`
 	Size         uint64   `json:"size"`
 	SizeList     []uint64 `json:"size_list"`
@@ -79,7 +79,7 @@ func (s *Shard) getRetryLocation(retryTimes int) *Location {
 	return nil
 }
 
-func (s *Checkpoint) IsEmpty() bool {
+func (s *Payload) IsEmpty() bool {
 	for _, shard := range s.Shards {
 		if len(shard.Gold) != 0 || len(shard.ReplicaList) != 0 {
 			return false
@@ -90,9 +90,10 @@ func (s *Checkpoint) IsEmpty() bool {
 
 type Metadata struct {
 	etcdClient *clientv3.Client
+	keyPrefix  string
 }
 
-func NewMetadata(metadataUri string) (*Metadata, error) {
+func NewMetadata(metadataUri string, keyPrefix string) (*Metadata, error) {
 	etcdClient, err := clientv3.New(clientv3.Config{
 		Endpoints:   []string{metadataUri},
 		DialTimeout: 5 * time.Second,
@@ -102,19 +103,19 @@ func NewMetadata(metadataUri string) (*Metadata, error) {
 		return nil, err
 	}
 
-	return &Metadata{etcdClient: etcdClient}, nil
+	return &Metadata{etcdClient: etcdClient, keyPrefix: keyPrefix}, nil
 }
 
 func (metadata *Metadata) Close() error {
 	return metadata.etcdClient.Close()
 }
 
-func (metadata *Metadata) Create(ctx context.Context, name string, checkpoint *Checkpoint) error {
-	jsonData, err := json.Marshal(checkpoint)
+func (metadata *Metadata) Create(ctx context.Context, name string, payload *Payload) error {
+	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	key := kCheckpointMetadataPrefix + name
+	key := metadata.keyPrefix + name
 	txnResp, err := metadata.etcdClient.Txn(ctx).
 		If(clientv3.Compare(clientv3.Version(key), "=", 0)).
 		Then(clientv3.OpPut(key, string(jsonData))).
@@ -128,19 +129,19 @@ func (metadata *Metadata) Create(ctx context.Context, name string, checkpoint *C
 	return nil
 }
 
-func (metadata *Metadata) Put(ctx context.Context, name string, checkpoint *Checkpoint) error {
-	jsonData, err := json.Marshal(checkpoint)
+func (metadata *Metadata) Put(ctx context.Context, name string, payload *Payload) error {
+	jsonData, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
-	key := kCheckpointMetadataPrefix + name
+	key := metadata.keyPrefix + name
 	_, err = metadata.etcdClient.Put(ctx, key, string(jsonData))
 	return err
 }
 
-func (metadata *Metadata) Update(ctx context.Context, name string, checkpoint *Checkpoint, revision int64) (bool, error) {
-	key := kCheckpointMetadataPrefix + name
-	if checkpoint.IsEmpty() {
+func (metadata *Metadata) Update(ctx context.Context, name string, payload *Payload, revision int64) (bool, error) {
+	key := metadata.keyPrefix + name
+	if payload.IsEmpty() {
 		txnResp, err := metadata.etcdClient.Txn(ctx).
 			If(clientv3.Compare(clientv3.ModRevision(key), "=", revision)).
 			Then(clientv3.OpDelete(key)).
@@ -150,7 +151,7 @@ func (metadata *Metadata) Update(ctx context.Context, name string, checkpoint *C
 		}
 		return txnResp.Succeeded, nil
 	} else {
-		jsonData, err := json.Marshal(checkpoint)
+		jsonData, err := json.Marshal(payload)
 		if err != nil {
 			return false, err
 		}
@@ -165,38 +166,38 @@ func (metadata *Metadata) Update(ctx context.Context, name string, checkpoint *C
 	}
 }
 
-func (metadata *Metadata) Get(ctx context.Context, name string) (*Checkpoint, int64, error) {
-	key := kCheckpointMetadataPrefix + name
+func (metadata *Metadata) Get(ctx context.Context, name string) (*Payload, int64, error) {
+	key := metadata.keyPrefix + name
 	response, err := metadata.etcdClient.Get(ctx, key)
 	if err != nil {
 		return nil, -1, err
 	}
 	if len(response.Kvs) > 0 {
-		var retrievedCheckpoint Checkpoint
-		err = json.Unmarshal(response.Kvs[0].Value, &retrievedCheckpoint)
+		var retrievedPayload Payload
+		err = json.Unmarshal(response.Kvs[0].Value, &retrievedPayload)
 		if err != nil {
 			return nil, -1, err
 		}
-		return &retrievedCheckpoint, response.Kvs[0].ModRevision, nil
+		return &retrievedPayload, response.Kvs[0].ModRevision, nil
 	}
 	return nil, -1, nil
 }
 
-func (metadata *Metadata) List(ctx context.Context, namePrefix string) ([]*Checkpoint, error) {
-	startRange := kCheckpointMetadataPrefix + namePrefix
-	stopRange := kCheckpointMetadataPrefix + namePrefix + string([]byte{0xFF})
+func (metadata *Metadata) List(ctx context.Context, namePrefix string) ([]*Payload, error) {
+	startRange := metadata.keyPrefix + namePrefix
+	stopRange := metadata.keyPrefix + namePrefix + string([]byte{0xFF})
 	response, err := metadata.etcdClient.Get(ctx, startRange, clientv3.WithRange(stopRange))
 	if err != nil {
 		return nil, err
 	}
-	var checkpoints []*Checkpoint
+	var payloads []*Payload
 	for _, record := range response.Kvs {
-		var retrievedCheckpoint Checkpoint
-		err = json.Unmarshal(record.Value, &retrievedCheckpoint)
+		var retrievedPayload Payload
+		err = json.Unmarshal(record.Value, &retrievedPayload)
 		if err != nil {
 			return nil, err
 		}
-		checkpoints = append(checkpoints, &retrievedCheckpoint)
+		payloads = append(payloads, &retrievedPayload)
 	}
-	return checkpoints, nil
+	return payloads, nil
 }

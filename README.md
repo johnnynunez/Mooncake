@@ -1,6 +1,32 @@
-# Mooncake
+# Mooncake Store
 
-## 编译
+Mooncake Store 是在一个慢速的对象存储之上基于高速互联的 DRAM/SSD 资源构建的一个池化的多级缓存。和传统缓存比，Mooncake Store 的最大特点是能够基于 (GPUDirect) RDMA 技术尽可能零拷贝的从发起端的 DRAM/VRAM 拷贝至接受端的 DRAM/SSD，且尽可能最大化利用单机多网卡的资源。[整体介绍](doc/overview.md)
+
+![mooncake](doc/fig/mooncake.png)
+
+## Mooncake Store 的关键组件
+
+### Mooncake Transfer Engine
+Mooncake Transfer Engine 是一个围绕  Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。其中 Segment 代表一段可被远程读写的连续地址空间，实际后端可以是 DRAM 或 VRAM 提供的非持久化存储 RAM Segment，也可以是 NVMeof 提供的持久化存储 NVMeof Segment。BatchTransfer 则负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
+
+![transfer_engine](doc/fig/transfer_engine.png)
+
+[Mooncake Transfer Engine 的详细介绍](doc/transfer_engine.md)
+
+### Mooncake Managed Store (WIP)
+在 TransferEngine 基础上，Mooncake Managed Store 实际上是上下两层的实现结构。上层控制面向 Client 提供 Object 级别的 Get/Put 等操作，下层数据面则是提供 VRAM/DRAM/NVM Buffer 层面的尽可能零拷贝和多网卡池化的数据传输。具体如下图所示。
+![managed_store](doc/fig/managed_store.png)
+
+### Mooncake P2P Store
+和由 Master 统一管理空间分配并负责维护固定数量的多个副本的 Managed Store 不同，P2P Store 的定位是临时中转数据的转存。典型的场景比如 checkpoint 的分发。为此，P2P Store 主要提供 Register 和 GetReplica 两个接口。
+
+Register 相当于 BT 中的做种，可将本地某个文件注册到全局元数据中去，此时并不会发生任何的数据传输仅仅是登记一个元数据。
+
+后续的节点则可以通过 GetReplica 去从 peer 拉取对应数据，拉取到的部分自动也变成一个种子供其它 peer 拉取。
+
+P2P Store 完全不保证可靠性，如果 peer 都丢了那数据就是丢了。同时也是 client-only 架构，没有统一的 master，只有一个 etcd 负责全局元数据的同步。
+
+## 编译与使用
 
 1. 通过系统源下载安装下列第三方库
    ```bash
@@ -19,7 +45,9 @@
    mkdir build; cd build; cmake ..; make -j
    ```
 
-正常情况下编译应当成功，如果编译失败请检查上述第三方库是否已经安装，以及 `make install` 是否已经执行成功。将在 `build` 目录下生成静态库文件 `build/src/transfer_engine/libtransfer_engine.a`，与测试用程序 `build/example/transfer_engine_test`。
+    正常情况下编译应当成功，如果编译失败请检查上述第三方库是否已经安装，以及 `make install` 是否已经执行成功。将在 `build` 目录下生成静态库文件 `build/src/transfer_engine/libtransfer_engine.a`，与测试用程序 `build/example/transfer_engine_test`。
+
+4. 完成核心组件的编译后，进入 p2pstore 目录执行 make 完成 P2PStore 组件及示例程序的编译。
 
 ## 静态库文件的使用
 要利用 TransferEngine 进行二次开发，可
