@@ -89,8 +89,10 @@ func (store *P2PStore) Register(ctx context.Context, name string, addrList []uin
 	payload.Name = name
 	payload.MaxShardSize = maxShardSize
 	payload.SizeList = sizeList
+	payload.Size = 0
 	for i := 0; i < len(addrList); i++ {
 		addr, size := addrList[i], sizeList[i]
+		payload.Size += size
 		err := store.memory.Add(addr, size, maxShardSize, location)
 		if err != nil {
 			store.unregisterBuffers(bufferList, maxShardSize)
@@ -372,14 +374,14 @@ func (store *P2PStore) DeleteReplica(ctx context.Context, name string) error {
 			return ErrPayloadNotFound
 		}
 
-		for _, shard := range payload.Shards {
+		for idx, shard := range payload.Shards {
 			var newReplicaList []Location
 			for _, replica := range shard.ReplicaList {
 				if replica.SegmentName != store.localSegmentName {
 					newReplicaList = append(newReplicaList, replica)
 				}
 			}
-			shard.ReplicaList = newReplicaList
+			payload.Shards[idx].ReplicaList = newReplicaList
 		}
 		success, err := store.metadata.Update(ctx, name, payload, revision)
 		if err != nil {

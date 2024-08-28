@@ -16,7 +16,8 @@ namespace mooncake
 
     RdmaEndPoint::RdmaEndPoint(RdmaContext &context)
         : context_(context),
-          status_(INITIALIZING) {}
+          status_(INITIALIZING), 
+          active_(true) {}
 
     RdmaEndPoint::~RdmaEndPoint()
     {
@@ -258,6 +259,12 @@ namespace mooncake
             wr.wr.rdma.rkey = slice->rdma.dest_rkey;
             slice->status = TransferEngine::Slice::POSTED;
             slice->rdma.qp_depth = &wr_depth_list_[qp_index];
+            // if (globalConfig().verbose)
+            // {
+            //     LOG(INFO) << "WR: local addr " << slice->source_addr
+            //               << " remote addr " << slice->rdma.dest_addr
+            //               << " rkey " << slice->rdma.dest_rkey;
+            // }
         }
         __sync_fetch_and_add(&wr_depth_list_[qp_index], wr_count);
         int rc = ibv_post_send(qp_list_[qp_index], wr_list, &bad_wr);

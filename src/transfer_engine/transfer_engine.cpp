@@ -112,6 +112,7 @@ namespace mooncake
                 return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+            assert(segment_desc);
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
             segment_desc->buffers.push_back(buffer_desc);
@@ -134,8 +135,10 @@ namespace mooncake
                 return ERR_MEMORY;
             }
             auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+            assert(segment_desc);
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
+            assert(segment_desc);
             for (auto iter = segment_desc->buffers.begin();
                  iter != segment_desc->buffers.end();
                  ++iter)
@@ -437,6 +440,7 @@ namespace mooncake
     {
         RWSpinlock::ReadGuard guard(segment_lock_);
         auto desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+        assert(desc);
         return metadata_->updateSegmentDesc(local_server_name_, *desc);
     }
 

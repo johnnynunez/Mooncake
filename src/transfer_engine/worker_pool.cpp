@@ -20,6 +20,7 @@ namespace mooncake
           numa_socket_id_(numa_socket_id),
           workers_running_(true),
           suspended_flag_(0),
+          redispatch_counter_(0),
           submitted_slice_count_(0),
           processed_slice_count_(0)
     {
@@ -122,6 +123,17 @@ namespace mooncake
             slice_queue_lock_[shard_id].unlock();
         }
 
+        // 如果 Poll 产生失败，则将未提交的 Slice 全部推进重试（rkey 或网卡等参数发生了变化）
+        thread_local int tl_redispatch_counter = 0;
+        if (tl_redispatch_counter < redispatch_counter_.load(std::memory_order_relaxed)) {
+            tl_redispatch_counter = redispatch_counter_.load(std::memory_order_relaxed);
+            auto local_slice_queue_clone = local_slice_queue;
+            local_slice_queue.clear();
+            for (auto &entry : local_slice_queue_clone)
+                redispatch(entry.second, thread_id);
+            return;
+        }
+
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map;
         uint64_t current_ts = getCurrentTimeInNano();
@@ -156,9 +168,13 @@ namespace mooncake
             processed_slice_count_.fetch_add(entry.second.size());
             entry.second.clear();
 #else
+#ifdef USE_ENDPOINT_CACHING
             auto &endpoint = endpoint_map[entry.first];
-            if (endpoint == nullptr)
+            if (endpoint == nullptr || !endpoint->active())
                 endpoint = context_.endpoint(entry.first);
+#else
+            auto endpoint = context_.endpoint(entry.first);
+#endif
             if (!endpoint)
             {
                 LOG(ERROR) << "Worker: Cannot allocate endpoint: " << entry.first;
@@ -178,8 +194,13 @@ namespace mooncake
             endpoint->submitPostSend(entry.second, failed_slice_list);
 #endif
         }
-        for (auto &slice : failed_slice_list)
-            processFailedSlice(slice, thread_id);
+
+        if (!failed_slice_list.empty())
+        {
+            for (auto &slice: failed_slice_list)
+                slice->rdma.retry_cnt++;
+            redispatch(failed_slice_list, thread_id);
+        }
     }
 
     void WorkerPool::performPollCq(int thread_id)
@@ -216,7 +237,9 @@ namespace mooncake
                                << ", peer nic: " << slice->peer_nic_path
                                << "): " << ibv_wc_status_str(wc[i].status);
                     context_.deleteEndpoint(slice->peer_nic_path);
-                    processFailedSlice(slice, thread_id);
+                    slice->rdma.retry_cnt++;
+                    collective_slice_queue_[thread_id][slice->peer_nic_path].push_back(slice);
+                    redispatch_counter_++;
                 }
                 else
                 {
@@ -233,31 +256,38 @@ namespace mooncake
             processed_slice_count_.fetch_add(processed_slice_count);
     }
 
-    void WorkerPool::processFailedSlice(TransferEngine::Slice *slice, int thread_id)
+    void WorkerPool::redispatch(std::vector<TransferEngine::Slice *> &slice_list, int thread_id)
     {
-        if (slice->rdma.retry_cnt == slice->rdma.max_retry_cnt)
+        std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
+        for (auto &slice : slice_list)
         {
-            slice->markFailed();
-            processed_slice_count_++;
+            auto target_id = slice->target_id;
+            if (!segment_desc_map.count(target_id))
+                segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id, true);
         }
-        else
+
+        for (auto &slice : slice_list)
         {
-            slice->rdma.retry_cnt++;
-            auto peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
-            int buffer_id, device_id;
-            if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
+            if (slice->rdma.retry_cnt == slice->rdma.max_retry_cnt)
             {
                 slice->markFailed();
                 processed_slice_count_++;
-                return;
             }
-            slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
-            auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
-            slice->peer_nic_path = peer_nic_path;
-            collective_slice_queue_[thread_id][peer_nic_path].push_back(slice);
-
-            if (globalConfig().verbose)
-                LOG(INFO) << "Retry transmission to " << peer_nic_path << " for " << slice->rdma.retry_cnt << "-th attempt";
+            else
+            {
+                auto &peer_segment_desc = segment_desc_map[slice->target_id];
+                int buffer_id, device_id;
+                if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
+                {
+                    slice->markFailed();
+                    processed_slice_count_++;
+                    continue;
+                }
+                slice->rdma.dest_rkey = peer_segment_desc->buffers[buffer_id].rkey[device_id];
+                auto peer_nic_path = MakeNicPath(peer_segment_desc->name, peer_segment_desc->devices[device_id].name);
+                slice->peer_nic_path = peer_nic_path;
+                collective_slice_queue_[thread_id][peer_nic_path].push_back(slice);
+            }
         }
     }
 
