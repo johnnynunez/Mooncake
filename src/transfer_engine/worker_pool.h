@@ -26,7 +26,7 @@ namespace mooncake
 
         void performPollCq(int thread_id);
 
-        void redispatch(std::vector<TransferEngine::Slice *> &slice_list, int thread_id);
+        void redispatch(std::vector<Transport::Slice *> &slice_list, int thread_id);
 
         void transferWorker(int thread_id);
 

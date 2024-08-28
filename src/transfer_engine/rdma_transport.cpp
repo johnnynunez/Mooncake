@@ -34,19 +34,22 @@ namespace mooncake
     }
 
     int RdmaTransport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args) {
-        const std::string &nic_priority_matrix = *static_cast<std::string *>(args[0]);
-        bool dry_run = *static_cast<bool *>(args[1]);
+        const std::string nic_priority_matrix = static_cast<char *>(args[0]);
+        bool dry_run = args[1] ? *static_cast<bool *>(args[1]) : false;
         TransferMetadata::PriorityMatrix local_priority_matrix;
 
         if (dry_run)
             return 0;
 
+        metadata_ = meta;
+        local_server_name_ = local_server_name;
+        
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
         if (ret)
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot parse NIC priority matrix";
             LOG(ERROR) << "*** nic_priority_matrix " << nic_priority_matrix;
-            exit(EXIT_FAILURE);
+            return -1;
         }
 
         int device_index = 0;
@@ -57,14 +60,14 @@ namespace mooncake
         if (ret)
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot initialize RDMA resources";
-            exit(EXIT_FAILURE);
+            return -1;
         }
 
         ret = allocateLocalSegmentID(local_priority_matrix);
         if (ret)
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot allocate local segment";
-            exit(EXIT_FAILURE);
+            return -1;
         }
 
         ret = startHandshakeDaemon();
@@ -72,7 +75,7 @@ namespace mooncake
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot start handshake daemon";
             LOG(ERROR) << "*** Try to set environment variable MC_HANDSHAKE_PORT to another value";
-            exit(EXIT_FAILURE);
+            return -1;
         }
 
         ret = updateLocalSegmentDesc();
@@ -80,11 +83,18 @@ namespace mooncake
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot publish segments";
             LOG(ERROR) << "*** Check the connectivity between this server and metadata server (etcd/memcached)";
-            exit(EXIT_FAILURE);
+            return -1;
         }
+
+        return 0;
     }
 
-    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool update_metadata)
+    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible)
+    {
+        return registerLocalMemory(addr, length, location, remote_accessible, true);
+    }
+
+    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool remote_accessible, bool update_metadata)
     {
         BufferDesc buffer_desc;
         buffer_desc.name = name;
@@ -113,6 +123,7 @@ namespace mooncake
             *new_segment_desc = *segment_desc;
             segment_desc = new_segment_desc;
             segment_desc->buffers.push_back(buffer_desc);
+            LOG(INFO) << "xxx" << update_metadata;
         }
 
         if (update_metadata)
@@ -273,6 +284,7 @@ namespace mooncake
                     status[task_id].s = TransferStatusEnum::FAILED;
                 else
                     status[task_id].s = TransferStatusEnum::COMPLETED;
+                task.is_finished = true;
             }
             else
             {
@@ -300,6 +312,7 @@ namespace mooncake
                 status.s = TransferStatusEnum::FAILED;
             else
                 status.s = TransferStatusEnum::COMPLETED;
+            task.is_finished = true;
         }
         else
         {
@@ -335,6 +348,7 @@ namespace mooncake
         if (!desc)
             return ERR_MEMORY;
         desc->name = local_server_name_;
+        desc->protocol = "rdma";
         for (auto &entry : context_list_)
         {
             TransferMetadata::DeviceDesc device_desc;
@@ -400,6 +414,7 @@ namespace mooncake
     {
         RWSpinlock::ReadGuard guard(segment_lock_);
         auto desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+        LOG(INFO) << desc->buffers.size();
         return metadata_->updateSegmentDesc(local_server_name_, *desc);
     }
 

@@ -168,6 +168,7 @@ int initiatorWorker(RdmaTransport *engine, SegmentID segment_id, int thread_id, 
                 else if (status.s == TransferStatusEnum::FAILED)
                     completed = true;
             }
+            LOG(INFO) << "completed";
         }
         
         ret = engine->freeBatchID(batch_id);

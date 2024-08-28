@@ -256,9 +256,9 @@ namespace mooncake
             processed_slice_count_.fetch_add(processed_slice_count);
     }
 
-    void WorkerPool::redispatch(std::vector<TransferEngine::Slice *> &slice_list, int thread_id)
+    void WorkerPool::redispatch(std::vector<Transport::Slice *> &slice_list, int thread_id)
     {
-        std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
+        std::unordered_map<SegmentID, std::shared_ptr<Transport::SegmentDesc>> segment_desc_map;
         for (auto &slice : slice_list)
         {
             auto target_id = slice->target_id;
@@ -277,7 +277,7 @@ namespace mooncake
             {
                 auto &peer_segment_desc = segment_desc_map[slice->target_id];
                 int buffer_id, device_id;
-                if (TransferEngine::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
+                if (RdmaTransport::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id, slice->rdma.retry_cnt))
                 {
                     slice->markFailed();
                     processed_slice_count_++;

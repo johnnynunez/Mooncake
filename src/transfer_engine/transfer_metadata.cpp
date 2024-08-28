@@ -182,7 +182,7 @@ namespace mooncake
     std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(const std::string &server_name)
     {
         Json::Value serverJSON;
-        if (!impl_->get(server_name, serverJSON))
+        if (!impl_->get(ServerDescPrefix + server_name, serverJSON))
         {
             LOG(ERROR) << "Failed to get description of " << server_name;
             return nullptr;
@@ -276,14 +276,14 @@ namespace mooncake
                 desc->nvmeof_buffers.push_back(buffer);
             }
         }
-        LOG(INFO) << "name " << desc->name << " protocol " << desc->protocol;
+        // LOG(INFO) << "name " << desc->name << " protocol " << desc->protocol;
         // LOG(INFO) << "devices " << desc->devices.size() << " buffers " << desc->buffers.size();
-        for (const auto& nvmebuf : desc->nvmeof_buffers) {
-            LOG(INFO) << "file_path " << nvmebuf.file_path << " length " << nvmebuf.length;
-            for (const auto& entry : nvmebuf.local_path_map) {
-                LOG(INFO) << "local_path_map " << entry.first << " " << entry.second;
-            }
-        }
+        // for (const auto& nvmebuf : desc->nvmeof_buffers) {
+        //     LOG(INFO) << "file_path " << nvmebuf.file_path << " length " << nvmebuf.length;
+        //     for (const auto& entry : nvmebuf.local_path_map) {
+        //         LOG(INFO) << "local_path_map " << entry.first << " " << entry.second;
+        //     }
+        // }
         return desc;
     }
 
