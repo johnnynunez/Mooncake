@@ -11,7 +11,6 @@
 #include <cassert>
 #include <jsoncpp/json/value.h>
 #include <netdb.h>
-#include <sys/socket.h>
 #include <set>
 #include <sys/socket.h>
 
@@ -109,7 +108,8 @@ namespace mooncake
         serverJSON["name"] = desc.name;
         serverJSON["protocol"] = desc.protocol;
 
-        if (serverJSON["protocol"] == "rdma") {
+        if (serverJSON["protocol"] == "rdma")
+        {
             Json::Value devicesJSON(Json::arrayValue);
             for (const auto &device : desc.devices)
             {
@@ -155,7 +155,9 @@ namespace mooncake
                 priorityMatrixJSON[entry.first] = priorityItemJSON;
             }
             serverJSON["priority_matrix"] = priorityMatrixJSON;
-        } else {
+        }
+        else
+        {
             // For NVMeoF, the transfer engine should not modify the metadata.
             assert(false);
         }
@@ -197,7 +199,8 @@ namespace mooncake
         desc->name = serverJSON["name"].asString();
         desc->protocol = serverJSON["protocol"].asString();
 
-        if (desc->protocol == "rdma") {
+        if (desc->protocol == "rdma")
+        {
             for (const auto &deviceJSON : serverJSON["devices"])
             {
                 DeviceDesc device;
@@ -262,13 +265,15 @@ namespace mooncake
                     desc->priority_matrix[key] = item;
                 }
             }
-        } else {
+        }
+        else
+        {
             for (const auto &bufferJSON : serverJSON["buffers"])
             {
                 NVMeoFBufferDesc buffer;
                 buffer.file_path = bufferJSON["file_path"].asString();
                 buffer.length = bufferJSON["length"].asUInt64();
-                const Json::Value& local_path_map = bufferJSON["local_path_map"];
+                const Json::Value &local_path_map = bufferJSON["local_path_map"];
                 for (const auto &key : local_path_map.getMemberNames())
                 {
                     buffer.local_path_map[key] = local_path_map[key].asString();
@@ -314,7 +319,6 @@ namespace mooncake
 
     std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDescByID(SegmentID segment_id, bool force_update)
     {
-        LOG(INFO) << "get " << segment_id;
         if (force_update)
         {
             RWSpinlock::WriteGuard guard(segment_lock_);
@@ -361,6 +365,69 @@ namespace mooncake
         RWSpinlock::ReadGuard guard(segment_lock_);
         auto desc = segment_id_to_desc_map_[segment_id];
         return this->updateSegmentDesc(desc->name, *desc);
+    }
+
+    int TransferMetadata::addLocalSegment(SegmentID segment_id, const string &server_name, std::shared_ptr<SegmentDesc> &&desc)
+    {
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        segment_id_to_desc_map_[segment_id] = desc;
+        segment_name_to_id_map_[server_name] = segment_id;
+        return 0;
+    }
+
+    int TransferMetadata::addLocalMemoryBuffer(const BufferDesc &buffer_desc, bool update_metadata)
+    {
+        {
+            RWSpinlock::WriteGuard guard(segment_lock_);
+            auto new_segment_desc = std::make_shared<SegmentDesc>();
+            if (!new_segment_desc)
+            {
+                LOG(ERROR) << "Failed to allocate segment description";
+                return ERR_MEMORY;
+            }
+            auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+            *new_segment_desc = *segment_desc;
+            segment_desc = new_segment_desc;
+            segment_desc->buffers.push_back(buffer_desc);
+        }
+        if (update_metadata)
+            return updateLocalSegmentDesc();
+        return 0;
+    }
+
+    int TransferMetadata::removeLocalMemoryBuffer(void *addr, bool update_metadata)
+    {
+        bool addr_exist = false;
+        {
+            RWSpinlock::WriteGuard guard(segment_lock_);
+            auto new_segment_desc = std::make_shared<SegmentDesc>();
+            if (!new_segment_desc)
+            {
+                LOG(ERROR) << "Failed to allocate segment description";
+                return ERR_MEMORY;
+            }
+            auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
+            *new_segment_desc = *segment_desc;
+            segment_desc = new_segment_desc;
+            for (auto iter = segment_desc->buffers.begin();
+                 iter != segment_desc->buffers.end();
+                 ++iter)
+            {
+                if (iter->addr == (uint64_t)addr)
+                {
+                    segment_desc->buffers.erase(iter);
+                    addr_exist = true;
+                    break;
+                }
+            }
+        }
+        if (addr_exist)
+        {
+            if (update_metadata)
+                return updateLocalSegmentDesc();
+            return 0;
+        }
+        return ERR_ADDRESS_NOT_REGISTERED;
     }
 
     std::string TransferMetadata::encode(const HandShakeDesc &desc)
@@ -467,8 +534,7 @@ namespace mooncake
 
         listener_running_ = true;
         listener_ = std::thread(
-            [this, listen_fd, on_receive_handshake]()
-            {
+            [this, listen_fd, on_receive_handshake]() {
                 while (listener_running_)
                 {
                     sockaddr_in addr;
@@ -715,6 +781,5 @@ namespace mooncake
 
         return 0;
     }
-
 
 }

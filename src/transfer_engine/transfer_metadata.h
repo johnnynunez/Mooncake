@@ -101,7 +101,7 @@ namespace mooncake
         using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;
         using SegmentID = uint64_t;
 
-        const static SegmentID LOCAL_SEGMENT_ID = 0;  // TO modify
+        // const static SegmentID LOCAL_SEGMENT_ID = 0;  // TO modify
         struct SegmentDesc
         {
             std::string name;
@@ -128,6 +128,7 @@ namespace mooncake
 
         ~TransferMetadata();
 
+        // TODO: rename functions
         std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
 
         std::shared_ptr<SegmentDesc> getSegmentDescByID(SegmentID segment_id, bool force_update = false);
@@ -141,6 +142,12 @@ namespace mooncake
         SegmentID getSegmentID(const std::string &server_name);
 
         int removeSegmentDesc(const std::string &server_name);
+
+        int addLocalMemoryBuffer(const BufferDesc& buffer_desc, bool update_metadata);
+
+        int removeLocalMemoryBuffer(void *addr, bool update_metadata);
+
+        int addLocalSegment(SegmentID segment_id, const string& server_name, std::shared_ptr<SegmentDesc>&& desc);
 
         using OnReceiveHandShake = std::function<int(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)>;
         int startHandshakeDaemon(OnReceiveHandShake on_receive_handshake,

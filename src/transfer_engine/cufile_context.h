@@ -12,9 +12,9 @@
 
 static inline const char *GetCuErrorString(CUresult curesult)
 {
-    const char *descp;
-    // if (cuGetErrorName(curesult, &descp) != CUDA_SUCCESS)
-    //     descp = "unknown cuda error";
+    const char *descp = "";
+    if (cuGetErrorName(curesult, &descp) != CUDA_SUCCESS)
+        descp = "unknown cuda error";
     return descp;
 }
 

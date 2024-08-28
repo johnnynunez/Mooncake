@@ -98,7 +98,7 @@ extern "C"
 
     void destroyTransferEngine(transfer_engine_t engine);
 
-    int registerLocalMemory(transfer_engine_t engine, void *addr, size_t length, const char *location, int remote_accessible);
+    int registerLocalMemory(transfer_engine_t engine, void *addr, size_t length, const char *location, int update_metadata);
 
     int unregisterLocalMemory(transfer_engine_t engine, void *addr);
 

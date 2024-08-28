@@ -7,7 +7,7 @@
 
 namespace mooncake {
     CUFileDescPool::CUFileDescPool() {
-        for (int i = 0; i < MAX_NR_CUFILE_DESC; ++i) {
+        for (size_t i = 0; i < MAX_NR_CUFILE_DESC; ++i) {
             LOG(INFO) << "Creating CUFile Batch IO Handle " << i;
             handle_[i] = NULL;
             io_params_[i].reserve(MAX_CUFILE_BATCH_SIZE);
@@ -19,14 +19,14 @@ namespace mooncake {
     }
 
     CUFileDescPool::~CUFileDescPool() {
-        for (int i = 0; i < MAX_NR_CUFILE_DESC; ++i) {
+        for (size_t i = 0; i < MAX_NR_CUFILE_DESC; ++i) {
            cuFileBatchIODestroy(handle_[i]);
         } 
     }
 
     int CUFileDescPool::allocCUfileDesc(size_t batch_size) {
         std::lock_guard<std::mutex> lock(mutex_);
-        int idx = available_._Find_first();
+        size_t idx = available_._Find_first();
         if (idx == available_.size()) {
             // No Batch Desc Available
             return -1;

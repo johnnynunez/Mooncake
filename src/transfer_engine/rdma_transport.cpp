@@ -2,6 +2,7 @@
 // Copyright (C) 2024 Feng Ren
 
 #include "transfer_engine/rdma_transport.h"
+#include "transfer_engine/common.h"
 #include "transfer_engine/config.h"
 #include "transfer_engine/rdma_context.h"
 #include "transfer_engine/rdma_endpoint.h"
@@ -26,9 +27,7 @@ namespace mooncake
             delete entry.second;
         batch_desc_set_.clear();
 #endif
-        removeLocalSegmentDesc();
-        segment_id_to_desc_map_.clear();
-        segment_name_to_id_map_.clear();
+        metadata_->removeSegmentDesc(local_server_name_);
         batch_desc_set_.clear();
         context_list_.clear();
     }
@@ -78,7 +77,7 @@ namespace mooncake
             return -1;
         }
 
-        ret = updateLocalSegmentDesc();
+        ret = metadata_->updateLocalSegmentDesc();
         if (ret)
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot publish segments";
@@ -89,12 +88,7 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible)
-    {
-        return registerLocalMemory(addr, length, location, remote_accessible, true);
-    }
-
-    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool remote_accessible, bool update_metadata)
+    int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool update_metadata)
     {
         BufferDesc buffer_desc;
         buffer_desc.name = name;
@@ -111,58 +105,44 @@ namespace mooncake
             buffer_desc.lkey.push_back(context->lkey(addr));
             buffer_desc.rkey.push_back(context->rkey(addr));
         }
-        {
-            RWSpinlock::WriteGuard guard(segment_lock_);
-            auto new_segment_desc = std::make_shared<SegmentDesc>();
-            if (!new_segment_desc)
-            {
-                LOG(ERROR) << "Failed to allocate segment description";
-                return ERR_MEMORY;
-            }
-            auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
-            *new_segment_desc = *segment_desc;
-            segment_desc = new_segment_desc;
-            segment_desc->buffers.push_back(buffer_desc);
-            LOG(INFO) << "xxx" << update_metadata;
-        }
+        int rc = metadata_->addLocalMemoryBuffer(buffer_desc, update_metadata);
 
-        if (update_metadata)
-            return updateLocalSegmentDesc();
-        else
-            return 0;
+        if (rc)
+            return rc;
+
+        return 0;
     }
 
     int RdmaTransport::unregisterLocalMemory(void *addr, bool update_metadata)
     {
-        {
-            RWSpinlock::WriteGuard guard(segment_lock_);
-            auto new_segment_desc = std::make_shared<SegmentDesc>();
-            if (!new_segment_desc)
-            {
-                LOG(ERROR) << "Failed to allocate segment description";
-                return ERR_MEMORY;
-            }
-            auto &segment_desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
-            *new_segment_desc = *segment_desc;
-            segment_desc = new_segment_desc;
-            for (auto iter = segment_desc->buffers.begin();
-                 iter != segment_desc->buffers.end();
-                 ++iter)
-            {
-                if (iter->addr == (uint64_t)addr)
-                {
-                    for (auto &entry : context_list_)
-                        entry->unregisterMemoryRegion(addr);
-                    segment_desc->buffers.erase(iter);
-                    break;
-                }
-            }
-        }
+        int rc = metadata_->removeLocalMemoryBuffer(addr, update_metadata);
+        if (rc)
+            return rc;
 
-        if (update_metadata)
-            return updateLocalSegmentDesc();
-        else
-            return 0;
+        for (auto &context : context_list_)
+            context->unregisterMemoryRegion(addr);
+
+        return 0;
+    }
+
+    int RdmaTransport::allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix)
+    {
+        auto desc = std::make_shared<SegmentDesc>();
+        if (!desc)
+            return ERR_MEMORY;
+        desc->name = local_server_name_;
+        desc->protocol = "rdma";
+        for (auto &entry : context_list_)
+        {
+            TransferMetadata::DeviceDesc device_desc;
+            device_desc.name = entry->deviceName();
+            device_desc.lid = entry->lid();
+            device_desc.gid = entry->gid();
+            desc->devices.push_back(device_desc);
+        }
+        desc->priority_matrix = priority_matrix;
+        metadata_->addLocalSegment(LOCAL_SEGMENT_ID, local_server_name_, std::move(desc));
+        return 0;
     }
 
     int RdmaTransport::registerLocalMemoryBatch(const std::vector<RdmaTransport::BufferEntry> &buffer_list,
@@ -184,7 +164,7 @@ namespace mooncake
             }
         }
 
-        return updateLocalSegmentDesc();
+        return metadata_->updateLocalSegmentDesc();
     }
 
     int RdmaTransport::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
@@ -202,7 +182,7 @@ namespace mooncake
                 LOG(WARNING) << "Failed to unregister memory: addr " << addr_list[i];
         }
 
-        return updateLocalSegmentDesc();
+        return metadata_->updateLocalSegmentDesc();
     }
 
     int RdmaTransport::submitTransfer(
@@ -218,7 +198,7 @@ namespace mooncake
         std::unordered_map<std::shared_ptr<RdmaContext>, std::vector<Slice *>> slices_to_post;
         size_t task_id = batch_desc.task_list.size();
         batch_desc.task_list.resize(task_id + entries.size());
-        auto local_segment_desc = getSegmentDescByID(LOCAL_SEGMENT_ID);
+        auto local_segment_desc = metadata_->getSegmentDescByID(LOCAL_SEGMENT_ID);
         const size_t kBlockSize = globalConfig().slice_size;
         const int kMaxRetryCount = globalConfig().retry_cnt;
 
@@ -323,104 +303,7 @@ namespace mooncake
 
     RdmaTransport::SegmentID RdmaTransport::getSegmentID(const std::string &segment_name)
     {
-        {
-            RWSpinlock::ReadGuard guard(segment_lock_);
-            if (segment_name_to_id_map_.count(segment_name))
-                return segment_name_to_id_map_[segment_name];
-        }
-
-        RWSpinlock::WriteGuard guard(segment_lock_);
-        if (segment_name_to_id_map_.count(segment_name))
-            return segment_name_to_id_map_[segment_name];
-        auto server_desc = metadata_->getSegmentDesc(segment_name);
-        if (!server_desc)
-            return ERR_METADATA;
-        SegmentID id = next_segment_id_.fetch_add(1);
-        segment_id_to_desc_map_[id] = server_desc;
-        segment_name_to_id_map_[segment_name] = id;
-        return id;
-    }
-
-    int RdmaTransport::allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix)
-    {
-        RWSpinlock::WriteGuard guard(segment_lock_);
-        auto desc = std::make_shared<SegmentDesc>();
-        if (!desc)
-            return ERR_MEMORY;
-        desc->name = local_server_name_;
-        desc->protocol = "rdma";
-        for (auto &entry : context_list_)
-        {
-            TransferMetadata::DeviceDesc device_desc;
-            device_desc.name = entry->deviceName();
-            device_desc.lid = entry->lid();
-            device_desc.gid = entry->gid();
-            desc->devices.push_back(device_desc);
-        }
-        desc->priority_matrix = priority_matrix;
-        segment_id_to_desc_map_[LOCAL_SEGMENT_ID] = desc;
-        segment_name_to_id_map_[local_server_name_] = LOCAL_SEGMENT_ID;
-        return 0;
-    }
-
-    std::shared_ptr<RdmaTransport::SegmentDesc> RdmaTransport::getSegmentDescByName(const std::string &segment_name, bool force_update)
-    {
-        if (!force_update)
-        {
-            RWSpinlock::ReadGuard guard(segment_lock_);
-            auto iter = segment_name_to_id_map_.find(segment_name);
-            if (iter != segment_name_to_id_map_.end())
-                return segment_id_to_desc_map_[iter->second];
-        }
-
-        RWSpinlock::WriteGuard guard(segment_lock_);
-        auto iter = segment_name_to_id_map_.find(segment_name);
-        SegmentID segment_id;
-        if (iter != segment_name_to_id_map_.end())
-            segment_id = iter->second;
-        else
-            segment_id = next_segment_id_.fetch_add(1);
-        auto server_desc = metadata_->getSegmentDesc(segment_name);
-        if (!server_desc)
-            return nullptr;
-        segment_id_to_desc_map_[segment_id] = server_desc;
-        segment_name_to_id_map_[segment_name] = segment_id; 
-        return server_desc;
-    }
-
-    std::shared_ptr<RdmaTransport::SegmentDesc> RdmaTransport::getSegmentDescByID(SegmentID segment_id, bool force_update)
-    {
-        if (force_update)
-        {
-            RWSpinlock::WriteGuard guard(segment_lock_);
-            if (!segment_id_to_desc_map_.count(segment_id))
-                return nullptr;
-            auto server_desc = metadata_->getSegmentDesc(segment_id_to_desc_map_[segment_id]->name);
-            if (!server_desc)
-                return nullptr;
-            segment_id_to_desc_map_[segment_id] = server_desc;
-            return segment_id_to_desc_map_[segment_id];
-        }
-        else
-        {
-            RWSpinlock::ReadGuard guard(segment_lock_);
-            if (!segment_id_to_desc_map_.count(segment_id))
-                return nullptr;
-            return segment_id_to_desc_map_[segment_id];
-        }
-    }
-
-    int RdmaTransport::updateLocalSegmentDesc()
-    {
-        RWSpinlock::ReadGuard guard(segment_lock_);
-        auto desc = segment_id_to_desc_map_[LOCAL_SEGMENT_ID];
-        LOG(INFO) << desc->buffers.size();
-        return metadata_->updateSegmentDesc(local_server_name_, *desc);
-    }
-
-    int RdmaTransport::removeLocalSegmentDesc()
-    {
-        return metadata_->removeSegmentDesc(local_server_name_);
+        return metadata_->getSegmentID(segment_name);
     }
 
     int RdmaTransport::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)

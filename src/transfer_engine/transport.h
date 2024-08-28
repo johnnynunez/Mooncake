@@ -171,24 +171,25 @@ namespace mooncake
         /// @return Return 1 on completed (either success or failure); 0 if still in progress.
         virtual int getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status) = 0;
 
-    protected:
-        virtual int install(std::string& local_server_name, std::shared_ptr<TransferMetadata> meta,  void **args);
+        std::shared_ptr<TransferMetadata>& meta() { return metadata_; }
 
-        // virtual int freeBatchContext(BatchID batch_id) = 0;
-
-        std::string local_server_name_;
-        std::shared_ptr<TransferMetadata> metadata_;
-
-        RWSpinlock batch_desc_lock_;
-        std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
         struct BufferEntry
         {
             void *addr;
             size_t length;
         };
 
+    protected:
+        virtual int install(std::string& local_server_name, std::shared_ptr<TransferMetadata> meta,  void **args);
+
+        std::string local_server_name_;
+        std::shared_ptr<TransferMetadata> metadata_;
+
+        RWSpinlock batch_desc_lock_;
+        std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
+
     private:
-        virtual int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) = 0;
+        virtual int registerLocalMemory(void *addr, size_t length, const string &location, bool update_metadata = true) = 0;
 
         virtual int unregisterLocalMemory(void *addr, bool update_metadata = true) = 0;
 

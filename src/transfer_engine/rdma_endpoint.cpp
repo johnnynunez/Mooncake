@@ -135,7 +135,7 @@ namespace mooncake
             return ERR_REJECT_HANDSHAKE;
         }
 
-        auto segment_desc = context_.engine().getSegmentDescByName(peer_server_name);
+        auto segment_desc = context_.engine().meta()->getSegmentDescByName(peer_server_name);
         if (segment_desc)
         {
             for (auto &nic : segment_desc->devices)
@@ -176,7 +176,7 @@ namespace mooncake
         local_desc.peer_nic_path = peer_nic_path_;
         local_desc.qp_num = qpNum();
 
-        auto segment_desc = context_.engine().getSegmentDescByName(peer_server_name);
+        auto segment_desc = context_.engine().meta()->getSegmentDescByName(peer_server_name);
         if (segment_desc)
         {
             for (auto &nic : segment_desc->devices)

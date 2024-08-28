@@ -15,7 +15,8 @@
 
 namespace mooncake
 {
-    NVMeoFTransport::NVMeoFTransport() {
+    NVMeoFTransport::NVMeoFTransport()
+    {
         LOG(INFO) << "register one handle";
         // CUFILE_CHECK(cuFileBatchIOSetUp(&handle, 8));
         LOG(INFO) << "make desc pool";
@@ -50,8 +51,6 @@ namespace mooncake
 
     NVMeoFTransport::BatchID NVMeoFTransport::allocateBatchID(size_t batch_size)
     {
-        LOG(INFO) << "register one handle 2";
-        LOG(INFO) << "register one handle 3";
         auto nvmeof_desc = new NVMeoFBatchDesc();
         auto batch_id = Transport::allocateBatchID(batch_size);
         auto &batch_desc = *((BatchDesc *)(batch_id));
@@ -70,10 +69,10 @@ namespace mooncake
         // LOG(DEBUG) << "get t n " << nr;
         // 1. get task -> id map
         auto [slice_id, slice_num] = nvmeof_desc.task_to_slices[task_id];
-        #ifdef USE_LOCAL_DESC
+#ifdef USE_LOCAL_DESC
         assert(slice_id == task_id);
         assert(slice_num == 1);
-        #endif
+#endif
 
         // LOG(INFO) << "cufile events buf nr " << nvmeof_desc.cufile_events_buf.size();
         // for (int i = 0; i < nvmeof_desc.cufile_events_buf.size(); ++i) {
@@ -90,11 +89,14 @@ namespace mooncake
             if (transfer_status.s == COMPLETED)
             {
                 transfer_status.transferred_bytes += event.ret;
-            } else {
+            }
+            else
+            {
                 break;
             }
         }
-        if (transfer_status.s == COMPLETED) {
+        if (transfer_status.s == COMPLETED)
+        {
             task.is_finished = true;
         }
         status = transfer_status;
@@ -120,7 +122,7 @@ namespace mooncake
             auto target_id = request.target_id;
             if (!segment_desc_map.count(target_id))
             {
-                #ifndef USE_LOCAL_DESC
+#ifndef USE_LOCAL_DESC
                 segment_desc_map[target_id] = metadata_->getSegmentDescByID(target_id);
                 assert(segment_desc_map[target_id] != nullptr);
 #else
@@ -135,7 +137,7 @@ namespace mooncake
                 local_seg_desc->nvmeof_buffers.push_back(local_buffer);
                 LOG_ASSERT(local_seg_desc->nvmeof_buffers.size() == 1);
                 segment_desc_map[target_id] = std::move(local_seg_desc);
-                #endif
+#endif
             }
 
             auto &desc = segment_desc_map.at(target_id);
@@ -162,13 +164,13 @@ namespace mooncake
                     uint64_t slice_start = std::max(buffer_start, current_offset);
                     // 2. slice_end
                     uint64_t slice_end = std::min(buffer_end, current_offset + buffer_desc.length);
-                    // 3. init slice and put into TransferTask
-                    #ifndef USE_LOCAL_DESC
+// 3. init slice and put into TransferTask
+#ifndef USE_LOCAL_DESC
                     const char *file_path = buffer_desc.local_path_map[local_server_name_].c_str();
                     LOG(INFO) << "local name " << local_server_name_ << " file path " << file_path;
-                    #else
-                    const char* file_path = "/mnt/nvme0n1/dsf/mooncake.img";
-                    #endif
+#else
+                    const char *file_path = "/mnt/nvme0n1/dsf/mooncake.img";
+#endif
                     Slice *slice = new Slice();
                     slice->source_addr = (char *)request.source + slice_start - buffer_start;
                     slice->length = slice_end - slice_start;
@@ -198,7 +200,6 @@ namespace mooncake
                     // LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
 
                     desc_pool_->pushParams(nvmeof_desc.desc_idx_, params);
-                    
                 }
                 current_offset += buffer_desc.length;
             }
@@ -207,24 +208,26 @@ namespace mooncake
             nvmeof_desc.task_to_slices.push_back({slice_id, task.slices.size()});
             ++task_id;
             slice_id += task.slices.size();
-            #ifdef USE_LOCAL_DESC
+#ifdef USE_LOCAL_DESC
             LOG_ASSERT(task.slices.size() == 1);
             LOG_ASSERT(slice_id == task_id);
-            #endif
+#endif
         }
 
-        desc_pool_->submitBatch(nvmeof_desc.desc_idx_);        
+        desc_pool_->submitBatch(nvmeof_desc.desc_idx_);
         // LOG(INFO) << "submit nr " << slice_id << " start " << start_slice_id;
         // LOG(INFO) << "After submit";
         return 0;
     }
 
-    int NVMeoFTransport::freeBatchID(BatchID batch_id) {
+    int NVMeoFTransport::freeBatchID(BatchID batch_id)
+    {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         auto &nvmeof_desc = *((NVMeoFBatchDesc *)(batch_desc.context));
         int desc_idx = nvmeof_desc.desc_idx_;
         int rc = Transport::freeBatchID(batch_id);
-        if (rc < 0) {
+        if (rc < 0)
+        {
             return -1;
         }
         desc_pool_->freeCUfileDesc(desc_idx);
@@ -233,15 +236,15 @@ namespace mooncake
 
     int NVMeoFTransport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args)
     {
-        #ifdef USE_LOCAL_DESC
+#ifdef USE_LOCAL_DESC
         assert(args != NULL);
-        const char* file_path = (char*)args[0];
+        const char *file_path = (char *)args[0];
         this->segment_to_context_[{LOCAL_SEGMENT_ID, 0}] = std::make_shared<CuFileContext>(file_path);
-        #endif
+#endif
         return Transport::install(local_server_name, meta, args);
     }
 
-    int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible)
+    int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location, bool update_metadata)
     {
         CUFILE_CHECK(cuFileBufRegister(addr, length, 0));
         return 0;

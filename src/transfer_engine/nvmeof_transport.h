@@ -51,7 +51,7 @@ namespace mooncake
 
         int install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args) override;
 
-        int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible) override;
+        int registerLocalMemory(void *addr, size_t length, const string &location, bool update_metadata) override;
 
         int unregisterLocalMemory(void *addr, bool update_metadata = false) override;
 

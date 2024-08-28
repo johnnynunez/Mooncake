@@ -127,13 +127,14 @@ int initiatorWorker(RdmaTransport *engine, SegmentID segment_id, int thread_id, 
         exit(EXIT_FAILURE);
     }
 
-    auto segment_desc = engine->getSegmentDescByID(segment_id);
+    auto segment_desc = engine->meta()->getSegmentDescByID(segment_id);
     uint64_t remote_base = (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
 
     size_t batch_count = 0;
     while (running)
     {
-        segment_desc = engine->getSegmentDescByID(segment_id, true);
+        segment_desc = engine->meta()->getSegmentDescByID(segment_id, true);
+
         if (segment_desc == nullptr || segment_desc->buffers.size() < 2)
             continue;
         remote_base = (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
@@ -168,7 +169,6 @@ int initiatorWorker(RdmaTransport *engine, SegmentID segment_id, int thread_id, 
                 else if (status.s == TransferStatusEnum::FAILED)
                     completed = true;
             }
-            LOG(INFO) << "completed";
         }
         
         ret = engine->freeBatchID(batch_id);

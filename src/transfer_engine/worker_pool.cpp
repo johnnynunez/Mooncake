@@ -59,7 +59,7 @@ namespace mooncake
         {
             auto target_id = slice->target_id;
             if (!segment_desc_map.count(target_id))
-                segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id);
+                segment_desc_map[target_id] = context_.engine().meta()->getSegmentDescByID(target_id);
         }
 
         SliceList slice_list_map[kShardCount];
@@ -70,7 +70,7 @@ namespace mooncake
             int buffer_id, device_id;
             if (RdmaTransport::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
             {
-                peer_segment_desc = context_.engine().getSegmentDescByID(slice->target_id, true);
+                peer_segment_desc = context_.engine().meta()->getSegmentDescByID(slice->target_id, true);
                 if (RdmaTransport::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Failed to select remote NIC for address " << (void *)slice->rdma.dest_addr;
@@ -263,7 +263,7 @@ namespace mooncake
         {
             auto target_id = slice->target_id;
             if (!segment_desc_map.count(target_id))
-                segment_desc_map[target_id] = context_.engine().getSegmentDescByID(target_id, true);
+                segment_desc_map[target_id] = context_.engine().meta()->getSegmentDescByID(target_id, true);
         }
 
         for (auto &slice : slice_list)

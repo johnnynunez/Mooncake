@@ -1,6 +1,6 @@
 #include "transfer_engine/transfer_engine.h"
-#include "transfer_engine/transport.h"
 #include "rdma_transport.h"
+#include "transfer_engine/transport.h"
 #ifdef USE_CUDA
 #include "nvmeof_transport.h"
 #endif
@@ -8,13 +8,15 @@
 namespace mooncake
 {
 
-    int TransferEngine::init(const char *server_name, const char * connectable_name, uint64_t rpc_port) {
+    int TransferEngine::init(const char *server_name, const char *connectable_name, uint64_t rpc_port)
+    {
         local_server_name_ = server_name;
         // TODO: write to meta server
         return 0;
     }
 
-    int TransferEngine::freeEngine() {
+    int TransferEngine::freeEngine()
+    {
         while (!installed_transports_.empty())
         {
             if (uninstallTransport(installed_transports_.back()->getName()) < 0)
@@ -25,7 +27,7 @@ namespace mooncake
         return 0;
     }
 
-    Transport *TransferEngine::installOrGetTransport(const char* proto, void **args)
+    Transport *TransferEngine::installOrGetTransport(const char *proto, void **args)
     {
         Transport *xport = initTransport(proto);
         if (!xport)
@@ -45,7 +47,7 @@ namespace mooncake
         return NULL;
     }
 
-    int TransferEngine::uninstallTransport(const char* proto)
+    int TransferEngine::uninstallTransport(const char *proto)
     {
         for (auto it = installed_transports_.begin(); it != installed_transports_.end(); ++it)
         {
@@ -62,12 +64,12 @@ namespace mooncake
 
     Transport::SegmentHandle TransferEngine::openSegment(const char *segment_name)
     {
-        // return metadata_->getSegmentDesc(segment_name);
-        #ifdef USE_LOCAL_DESC
+// return metadata_->getSegmentDesc(segment_name);
+#ifdef USE_LOCAL_DESC
         return 0;
-        #else
+#else
         return metadata_->getSegmentID(segment_name);
-        #endif
+#endif
     }
 
     int TransferEngine::closeSegment(Transport::SegmentHandle seg_id)
@@ -76,19 +78,47 @@ namespace mooncake
         return 0;
     }
 
-    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible) {
-        for (auto& xport: installed_transports_) {
-            if (xport->registerLocalMemory(addr, length, location, remote_accessible) < 0) {
+    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata)
+    {
+        for (auto &xport : installed_transports_)
+        {
+            if (xport->registerLocalMemory(addr, length, location, update_metadata) < 0)
+            {
                 return -1;
             }
         }
         return 0;
     }
 
-    int TransferEngine::unregisterLocalMemory(void *addr) {
+    int TransferEngine::unregisterLocalMemory(void *addr, bool update_metadata)
+    {
         for (auto &xport : installed_transports_)
         {
-            if (xport->unregisterLocalMemory(addr) < 0)
+            if (xport->unregisterLocalMemory(addr, update_metadata) < 0)
+            {
+                return -1;
+            }
+        }
+        return 0;
+    }
+
+    int TransferEngine::registerLocalMemoryBatch(const std::vector<BufferEntry> &buffer_list, const std::string &location)
+    {
+        for (auto &xport : installed_transports_)
+        {
+            if (xport->registerLocalMemoryBatch(buffer_list, location) < 0)
+            {
+                return -1;
+            }
+        }
+        return 0;
+    }
+
+    int TransferEngine::unregisterLocalMemoryBatch(const std::vector<void *> &addr_list)
+    {
+        for (auto &xport : installed_transports_)
+        {
+            if (xport->unregisterLocalMemoryBatch(addr_list) < 0)
             {
                 return -1;
             }
@@ -114,12 +144,12 @@ namespace mooncake
         {
             return new RdmaTransport();
         }
-        #ifdef USE_CUDA
+#ifdef USE_CUDA
         else if (std::string(proto) == "nvmeof")
         {
             return new NVMeoFTransport();
         }
-        #endif
+#endif
         else
         {
             LOG(ERROR) << "Unsupported Transport Protocol: " << proto;

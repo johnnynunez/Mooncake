@@ -75,9 +75,7 @@ namespace mooncake
         // - length：注册空间长度；
         // - location：这块内存所处的位置提示，如 cpu:0 等，将用于和 PriorityMatrix 匹配可用的 RNIC 列表
         // - 返回值：若成功，返回 0；否则返回负数值。
-        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible, bool update_metadata);
-
-        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible) override;
+        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata) override;
 
         // 解注册区域。
         // - addr: 注册空间起始地址；
@@ -111,13 +109,13 @@ namespace mooncake
         int allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix);
 
     public:
-        std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
+        // std::shared_ptr<SegmentDesc> getSegmentDescByName(const std::string &segment_name, bool force_update = false);
 
-        std::shared_ptr<SegmentDesc> getSegmentDescByID(SegmentID segment_id, bool force_update = false);
+        // std::shared_ptr<SegmentDesc> getSegmentDescByID(SegmentID segment_id, bool force_update = false);
 
-        int updateLocalSegmentDesc();
+        // int updateLocalSegmentDesc();
 
-        int removeLocalSegmentDesc();
+        // int removeLocalSegmentDesc();
 
         // 为实现 RDMA 通联，需要将新 Segment 所属 CLIENT 与集群内原有 CLIENT 之间建立
         // QP 配对，以建立点对点可靠连接。subscribe_segment() 调用方将发出 RPC 请求至新 Segment 所属 CLIENT
@@ -149,14 +147,14 @@ namespace mooncake
         std::vector<std::string> device_name_list_;
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
         std::unordered_map<std::string, int> device_name_to_index_map_;
-
-        RWSpinlock segment_lock_;
-        std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
-        std::unordered_map<std::string, SegmentID> segment_name_to_id_map_;
         std::atomic<SegmentID> next_segment_id_;
 
-        RWSpinlock batch_desc_lock_;
-        std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
+        // RWSpinlock segment_lock_;
+        // std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_id_to_desc_map_;
+        // std::unordered_map<std::string, SegmentID> segment_name_to_id_map_;
+
+        // RWSpinlock batch_desc_lock_;
+        // std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
     };
 
     using TransferRequest = Transport::TransferRequest;

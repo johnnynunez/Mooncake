@@ -14,7 +14,6 @@
 #include <utility>
 #include <vector>
 
-#include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transfer_metadata.h"
 #include "transport.h"
 
@@ -42,9 +41,13 @@ namespace mooncake
 
         int closeSegment(Transport::SegmentHandle seg_id);
 
-        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible = false);
+        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata = true);
 
-        int unregisterLocalMemory(void *addr);
+        int unregisterLocalMemory(void *addr, bool update_metadata = true);
+
+        int registerLocalMemoryBatch(const std::vector<Transport::BufferEntry> &buffer_list, const std::string &location);
+
+        int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list);
 
     private:
         struct MemoryRegion {
@@ -67,6 +70,7 @@ namespace mooncake
     using TransferStatusEnum = Transport::TransferStatusEnum;
     using SegmentID = Transport::SegmentID;
     using BatchID = Transport::BatchID; 
+    using BufferEntry = Transport::BufferEntry;
 }
 
 #endif

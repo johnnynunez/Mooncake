@@ -3,11 +3,11 @@ project(mooncake CXX C)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
-set(CAMEK_C_FLAGS "-O3 -g -Wall")
+set(CMAKE_C_FLAGS "-O3 -g -Wall")
 set(CMAKE_CXX_FLAGS "-O3 -g -Wall")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-option(USE_CUDA "option for using gpu" ON)
+option(USE_CUDA "option for using gpu" OFF)
 
 include_directories(src)
 include_directories(src/cachelib_memory_allocator/include)
