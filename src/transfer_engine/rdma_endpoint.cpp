@@ -74,6 +74,9 @@ namespace mooncake
     {
         for (size_t i = 0; i < qp_list_.size(); ++i)
         {
+            if (wr_depth_list_[i] != 0)
+                PLOG(WARNING) << "Outstanding work requests found, CQ will not be generated";
+
             if (ibv_destroy_qp(qp_list_[i]))
             {
                 PLOG(ERROR) << "Failed to destroy QP";
@@ -221,6 +224,8 @@ namespace mooncake
 
     bool RdmaEndPoint::hasOutstandingSlice() const
     {
+        if (active_)
+            return true;
         for (size_t i = 0; i < qp_list_.size(); i++)
             if (wr_depth_list_[i] != 0)
                 return true;

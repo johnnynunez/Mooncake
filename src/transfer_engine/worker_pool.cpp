@@ -45,7 +45,7 @@ namespace mooncake
 
     int WorkerPool::submitPostSend(const std::vector<TransferEngine::Slice *> &slice_list)
     {
-#ifdef CONFIG_CACHE_SEGMENT_DESC
+#ifndef CONFIG_CACHE_SEGMENT_DESC
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<SegmentID, std::shared_ptr<TransferEngine::SegmentDesc>> segment_desc_map;
         uint64_t current_ts = getCurrentTimeInNano();

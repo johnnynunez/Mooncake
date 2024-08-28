@@ -223,6 +223,8 @@ func (store *P2PStore) GetReplica(ctx context.Context, name string, addrList []u
 	taskID := 0
 	maxShardSize := payload.MaxShardSize
 
+	_ = store.transfer.syncSegmentCache()
+
 	for i := 0; i < len(addrList); i++ {
 		addr, size := addrList[i], sizeList[i]
 		err := store.memory.Add(addr, size, maxShardSize, "cpu:0")

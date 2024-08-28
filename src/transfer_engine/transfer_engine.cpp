@@ -368,6 +368,19 @@ namespace mooncake
         return id;
     }
 
+    int TransferEngine::syncSegmentCache()
+    {
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        for (auto &entry: segment_id_to_desc_map_)
+        {
+            if (entry.first == LOCAL_SEGMENT_ID)
+                continue;
+            auto server_desc = metadata_->getSegmentDesc(entry.second->name);
+            entry.second = server_desc;
+        }
+        return 0;
+    }
+
     int TransferEngine::allocateLocalSegmentID(TransferMetadata::PriorityMatrix &priority_matrix)
     {
         RWSpinlock::WriteGuard guard(segment_lock_);

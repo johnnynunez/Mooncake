@@ -86,6 +86,8 @@ extern "C"
 
     segment_id_t getSegmentID(transfer_engine_t engine, const char *segment_name);
 
+    int syncSegmentCache(transfer_engine_t engine);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus
