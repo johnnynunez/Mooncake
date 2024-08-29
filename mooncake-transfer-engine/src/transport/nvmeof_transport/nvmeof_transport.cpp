@@ -15,13 +15,9 @@
 
 namespace mooncake
 {
-    NVMeoFTransport::NVMeoFTransport()
-    {
-        LOG(INFO) << "register one handle";
-        // CUFILE_CHECK(cuFileBatchIOSetUp(&handle, 8));
-        LOG(INFO) << "make desc pool";
+    NVMeoFTransport::NVMeoFTransport() {
+        CUFILE_CHECK(cuFileDriverOpen());
         desc_pool_ = std::make_shared<CUFileDescPool>();
-        LOG(INFO) << "after make desc pool";
     }
 
     NVMeoFTransport::~NVMeoFTransport() {}

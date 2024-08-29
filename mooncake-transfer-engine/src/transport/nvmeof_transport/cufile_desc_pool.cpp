@@ -26,8 +26,8 @@ namespace mooncake {
     }
 
     int CUFileDescPool::allocCUfileDesc(size_t batch_size) {
-        std::lock_guard<std::mutex> lock(mutex_);
-        size_t idx = available_._Find_first();
+        // std::lock_guard<std::mutex> lock(mutex_);
+        int idx = available_._Find_first();
         if (idx == available_.size()) {
             // No Batch Desc Available
             return -1;

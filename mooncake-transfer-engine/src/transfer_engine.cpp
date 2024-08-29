@@ -7,8 +7,10 @@
 
 namespace mooncake
 {
-    class RdmaTransport;
-    class NVMeoFTransport;
+    static bool overlap(const void *a, size_t a_len, const void *b, size_t b_len)
+    {
+        return (a >= b && a < (char*)b + b_len) || (b >= a && b < (char*)a + a_len);
+    }
 
     int TransferEngine::init(const char *server_name, const char *connectable_name, uint64_t rpc_port)
     {
@@ -43,6 +45,11 @@ namespace mooncake
             goto fail;
         }
         installed_transports_.emplace_back(xport);
+        for (const auto& mem: local_memory_regions_) {
+            if (xport->registerLocalMemory(mem.addr, mem.length, mem.location, mem.remote_accessible) < 0) {
+                goto fail;
+            }
+        }
         return xport;
     fail:
         delete xport;
@@ -82,6 +89,12 @@ namespace mooncake
 
     int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata)
     {
+        for (auto& local_memory_region: local_memory_regions_) {
+            if (overlap(addr, length, local_memory_region.addr, local_memory_region.length)) {
+                LOG(ERROR) << "Memory region overlap";
+                return -1;
+            }
+        }
         for (auto &xport : installed_transports_)
         {
             if (xport->registerLocalMemory(addr, length, location, update_metadata) < 0)
@@ -89,18 +102,25 @@ namespace mooncake
                 return -1;
             }
         }
+        local_memory_regions_.push_back({addr, length, location.c_str(), update_metadata});
         return 0;
     }
 
     int TransferEngine::unregisterLocalMemory(void *addr, bool update_metadata)
     {
-        for (auto &xport : installed_transports_)
-        {
-            if (xport->unregisterLocalMemory(addr, update_metadata) < 0)
-            {
-                return -1;
-            }
-        }
+        for (auto it = local_memory_regions_.begin(); it != local_memory_regions_.end(); ++it) {
+            if (it->addr == addr) {
+                for (auto &xport : installed_transports_)
+                {
+                    if (xport->unregisterLocalMemory(addr, update_metadata) < 0)
+                    {
+                        return -1;
+                    }
+                }
+                local_memory_regions_.erase(it);
+                break;
+             }
+         }
         return 0;
     }
 
