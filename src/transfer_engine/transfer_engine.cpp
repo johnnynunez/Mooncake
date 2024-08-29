@@ -376,6 +376,8 @@ namespace mooncake
         {
             if (entry.first == LOCAL_SEGMENT_ID)
                 continue;
+            if (!entry.second)
+                continue;
             auto server_desc = metadata_->getSegmentDesc(entry.second->name);
             if (server_desc)
                 entry.second = server_desc;
@@ -470,6 +472,8 @@ namespace mooncake
         if (local_nic_name.empty())
             return ERR_INVALID_ARGUMENT;
         auto context = context_list_[device_name_to_index_map_[local_nic_name]];
+        // 预先删除已有的 EP
+        context->deleteEndpoint(peer_desc.local_nic_path);
         auto endpoint = context->endpoint(peer_desc.local_nic_path);
         if (!endpoint)
             return ERR_ENDPOINT;
