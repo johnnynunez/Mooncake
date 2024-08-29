@@ -1,11 +1,11 @@
 // transfer_engine.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/rdma_transport.h"
+#include "rdma_transport.h"
 #include "transfer_engine/common.h"
 #include "transfer_engine/config.h"
-#include "transfer_engine/rdma_context.h"
-#include "transfer_engine/rdma_endpoint.h"
+#include "rdma_context.h"
+#include "rdma_endpoint.h"
 
 #include <cassert>
 #include <cstddef>

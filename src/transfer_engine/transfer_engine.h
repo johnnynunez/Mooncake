@@ -15,7 +15,7 @@
 #include <vector>
 
 #include "transfer_engine/transfer_metadata.h"
-#include "transport.h"
+#include "transport/transport.h"
 
 namespace mooncake
 {

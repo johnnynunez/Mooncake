@@ -5,10 +5,10 @@
 #include <sys/epoll.h>
 
 #include "transfer_engine/config.h"
-#include "transfer_engine/rdma_context.h"
-#include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/rdma_transport.h"
-#include "transfer_engine/worker_pool.h"
+#include "rdma_context.h"
+#include "rdma_endpoint.h"
+#include "rdma_transport.h"
+#include "worker_pool.h"
 
 namespace mooncake
 {

@@ -4,7 +4,7 @@
 #ifndef RDMA_ENDPOINT_H
 #define RDMA_ENDPOINT_H
 
-#include "transfer_engine/rdma_context.h"
+#include "rdma_context.h"
 
 #include <queue>
 

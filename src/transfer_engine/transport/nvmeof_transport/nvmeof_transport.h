@@ -1,10 +1,10 @@
 #ifndef NVMEOF_TRANSPORT_H_
 #define NVMEOF_TRANSPORT_H_
 
-#include "transfer_engine/cufile_context.h"
-#include "transfer_engine/cufile_desc_pool.h"
+#include "cufile_context.h"
+#include "cufile_desc_pool.h"
 #include "transfer_engine/transfer_metadata.h"
-#include "transport.h"
+#include "transfer_engine/transport/transport.h"
 #include <bits/stdint-uintn.h>
 #include <cstddef>
 #include <memory>

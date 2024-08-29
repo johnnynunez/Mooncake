@@ -1,7 +1,7 @@
-#include "transfer_engine/endpoint_store.h"
+#include "endpoint_store.h"
 #include "transfer_engine/config.h"
-#include "transfer_engine/rdma_context.h"
-#include "transfer_engine/rdma_endpoint.h"
+#include "rdma_context.h"
+#include "rdma_endpoint.h"
 #include <atomic>
 #include <cassert>
 #include <cstddef>

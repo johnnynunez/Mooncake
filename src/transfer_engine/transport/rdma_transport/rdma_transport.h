@@ -16,7 +16,7 @@
 #include <vector>
 
 #include "transfer_engine/transfer_metadata.h"
-#include "transfer_engine/transport.h"
+#include "transfer_engine/transport/transport.h"
 
 // const int LOCAL_SEGMENT_ID = 0;
 

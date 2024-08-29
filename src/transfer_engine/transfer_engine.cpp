@@ -1,12 +1,14 @@
 #include "transfer_engine/transfer_engine.h"
-#include "rdma_transport.h"
-#include "transfer_engine/transport.h"
+#include "transfer_engine/transport/rdma_transport/rdma_transport.h"
+#include "transfer_engine/transport/transport.h"
 #ifdef USE_CUDA
-#include "nvmeof_transport.h"
+#include "transfer_engine/transport/nvmeof_transport/nvmeof_transport.h"
 #endif
 
 namespace mooncake
 {
+    class RdmaTransport;
+    class NVMeoFTransport;
 
     int TransferEngine::init(const char *server_name, const char *connectable_name, uint64_t rpc_port)
     {

@@ -1,6 +1,6 @@
-#include "transfer_engine/rdma_transport.h"
+#include "transfer_engine/transport/rdma_transport/rdma_transport.h"
 #include "transfer_engine/transfer_engine.h"
-#include "transfer_engine/transport.h"
+#include "transfer_engine/transport/transport.h"
 
 #include <cstdlib>
 #include <fstream>

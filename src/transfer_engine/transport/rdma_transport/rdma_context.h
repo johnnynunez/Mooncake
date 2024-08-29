@@ -18,8 +18,8 @@
 
 #include "transfer_engine/common.h"
 // #include "transfer_engine/transfer_engine.h"
-#include "transfer_engine/rdma_transport.h"
-#include "transfer_engine/transport.h"
+#include "rdma_transport.h"
+#include "transfer_engine/transport/transport.h"
 
 namespace mooncake
 {

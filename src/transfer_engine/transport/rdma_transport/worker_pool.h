@@ -7,7 +7,7 @@
 #include <queue>
 #include <unordered_set>
 
-#include "transfer_engine/rdma_context.h"
+#include "rdma_context.h"
 
 namespace mooncake
 {

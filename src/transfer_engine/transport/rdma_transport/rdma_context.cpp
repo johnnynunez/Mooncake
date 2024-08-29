@@ -1,13 +1,13 @@
 // rdma_context.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_engine/rdma_context.h"
+#include "rdma_context.h"
+#include "endpoint_store.h"
+#include "rdma_endpoint.h"
+#include "rdma_transport.h"
+#include "worker_pool.h"
 #include "transfer_engine/config.h"
-#include "transfer_engine/endpoint_store.h"
-#include "transfer_engine/rdma_endpoint.h"
-#include "transfer_engine/rdma_transport.h"
-#include "transfer_engine/transport.h"
-#include "transfer_engine/worker_pool.h"
+#include "transfer_engine/transport/transport.h"
 
 #include <atomic>
 #include <cassert>

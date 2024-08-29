@@ -1,9 +1,9 @@
 #include "nvmeof_transport.h"
-#include "transfer_engine/cufile_context.h"
-#include "transfer_engine/cufile_desc_pool.h"
+#include "cufile_context.h"
+#include "cufile_desc_pool.h"
 #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine/transfer_metadata.h"
-#include "transfer_engine/transport.h"
+#include "transfer_engine/transport/transport.h"
 #include <algorithm>
 #include <bits/stdint-uintn.h>
 #include <cassert>

@@ -1,6 +1,6 @@
 #include "cufile_desc_pool.h"
 #include "cufile.h"
-#include "transfer_engine/cufile_context.h"
+#include "cufile_context.h"
 #include "transfer_engine/transfer_engine.h"
 #include <cstddef>
 #include <mutex>
