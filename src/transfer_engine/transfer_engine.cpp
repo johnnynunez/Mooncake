@@ -360,11 +360,8 @@ namespace mooncake
         RWSpinlock::WriteGuard guard(segment_lock_);
         if (segment_name_to_id_map_.count(segment_name))
             return segment_name_to_id_map_[segment_name];
-        auto server_desc = metadata_->getSegmentDesc(segment_name);
-        if (!server_desc)
-            return ERR_METADATA;
         SegmentID id = next_segment_id_.fetch_add(1);
-        segment_id_to_desc_map_[id] = server_desc;
+        segment_id_to_desc_map_[id] = metadata_->getSegmentDesc(segment_name);
         segment_name_to_id_map_[segment_name] = id;
         return id;
     }
@@ -372,15 +369,13 @@ namespace mooncake
     int TransferEngine::syncSegmentCache()
     {
         RWSpinlock::WriteGuard guard(segment_lock_);
-        for (auto &entry: segment_id_to_desc_map_)
+        for (auto &entry: segment_name_to_id_map_)
         {
-            if (entry.first == LOCAL_SEGMENT_ID)
+            auto segment_name = entry.first;
+            auto id = entry.second;
+            if (id == LOCAL_SEGMENT_ID)
                 continue;
-            if (!entry.second)
-                continue;
-            auto server_desc = metadata_->getSegmentDesc(entry.second->name);
-            if (server_desc)
-                entry.second = server_desc;
+            segment_id_to_desc_map_[id] = metadata_->getSegmentDesc(segment_name);
         }
         return 0;
     }
@@ -413,7 +408,11 @@ namespace mooncake
             RWSpinlock::ReadGuard guard(segment_lock_);
             auto iter = segment_name_to_id_map_.find(segment_name);
             if (iter != segment_name_to_id_map_.end())
-                return segment_id_to_desc_map_[iter->second];
+            {
+                auto desc = segment_id_to_desc_map_[iter->second];
+                if (desc)
+                    return desc;
+            }
         }
 
         RWSpinlock::WriteGuard guard(segment_lock_);
@@ -423,9 +422,11 @@ namespace mooncake
             segment_id = iter->second;
         else
             segment_id = next_segment_id_.fetch_add(1);
+
+        if (segment_id == LOCAL_SEGMENT_ID)
+            return segment_id_to_desc_map_[segment_id];
+
         auto server_desc = metadata_->getSegmentDesc(segment_name);
-        if (!server_desc)
-            return nullptr;
         segment_id_to_desc_map_[segment_id] = server_desc;
         segment_name_to_id_map_[segment_name] = segment_id;
         return server_desc;
@@ -433,24 +434,29 @@ namespace mooncake
 
     std::shared_ptr<TransferEngine::SegmentDesc> TransferEngine::getSegmentDescByID(SegmentID segment_id, bool force_update)
     {
-        if (force_update)
-        {
-            RWSpinlock::WriteGuard guard(segment_lock_);
-            if (!segment_id_to_desc_map_.count(segment_id))
-                return nullptr;
-            auto server_desc = metadata_->getSegmentDesc(segment_id_to_desc_map_[segment_id]->name);
-            if (!server_desc)
-                return nullptr;
-            segment_id_to_desc_map_[segment_id] = server_desc;
-            return segment_id_to_desc_map_[segment_id];
-        }
-        else
+        if (!force_update)
         {
             RWSpinlock::ReadGuard guard(segment_lock_);
-            if (!segment_id_to_desc_map_.count(segment_id))
-                return nullptr;
-            return segment_id_to_desc_map_[segment_id];
+            auto iter = segment_id_to_desc_map_.find(segment_id);
+            if (iter != segment_id_to_desc_map_.end() && iter->second)
+                return iter->second;
         }
+
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        if (segment_id == LOCAL_SEGMENT_ID)
+            return segment_id_to_desc_map_[segment_id];
+
+        std::string segment_name;
+        for (auto &entry: segment_name_to_id_map_)
+            if (entry.second == segment_id)
+                segment_name = entry.first;
+
+        if (segment_name.empty())
+            return nullptr;
+ 
+        auto server_desc = metadata_->getSegmentDesc(segment_name);
+        segment_id_to_desc_map_[segment_id] = server_desc;
+        return server_desc;
     }
 
     int TransferEngine::updateLocalSegmentDesc()
@@ -472,7 +478,7 @@ namespace mooncake
         if (local_nic_name.empty())
             return ERR_INVALID_ARGUMENT;
         auto context = context_list_[device_name_to_index_map_[local_nic_name]];
-        // 预先删除已有的 EP
+        // 预先删除已有的 EP（如果已有的话）
         context->deleteEndpoint(peer_desc.local_nic_path);
         auto endpoint = context->endpoint(peer_desc.local_nic_path);
         if (!endpoint)
