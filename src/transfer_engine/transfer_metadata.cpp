@@ -90,7 +90,7 @@ namespace mooncake
             LOG(ERROR) << "Cannot allocate TransferMetadataImpl objects";
             exit(EXIT_FAILURE);
         }
-        next_segment_id_.store(0);
+        next_segment_id_.store(1);
     }
 
     TransferMetadata::~TransferMetadata()
