@@ -10,6 +10,11 @@
 #include "rdma_transport.h"
 #include "worker_pool.h"
 
+// 为了进一步刷性能可开启下面两个选项实现 Per-thread 的 SegmentDesc 和 EndPoint 缓存
+// 
+// #define CONFIG_CACHE_SEGMENT_DESC
+// #define CONFIG_CACHE_ENDPOINT
+
 namespace mooncake
 {
 
@@ -45,8 +50,9 @@ namespace mooncake
 
     int WorkerPool::submitPostSend(const std::vector<Transport::Slice *> &slice_list)
     {
+#ifdef CONFIG_CACHE_SEGMENT_DESC
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
-        thread_local std::unordered_map<SegmentID, std::shared_ptr<Transport::SegmentDesc>> segment_desc_map;
+        thread_local std::unordered_map<SegmentID, std::shared_ptr<RdmaTransport::SegmentDesc>> segment_desc_map;
         uint64_t current_ts = getCurrentTimeInNano();
 
         if (current_ts - tl_last_cache_ts > 1000000000)
@@ -59,8 +65,26 @@ namespace mooncake
         {
             auto target_id = slice->target_id;
             if (!segment_desc_map.count(target_id))
+            {
                 segment_desc_map[target_id] = context_.engine().meta()->getSegmentDescByID(target_id);
+                if (!segment_desc_map[target_id]) {
+                    segment_desc_map.clear();
+                    return ERR_INVALID_ARGUMENT;
+                }
+            }
         }
+#else 
+        std::unordered_map<SegmentID, std::shared_ptr<RdmaTransport::SegmentDesc>> segment_desc_map;
+        for (auto &slice : slice_list)
+        {
+            assert(slice);
+            auto target_id = slice->target_id;
+            if (!segment_desc_map.count(target_id))
+                segment_desc_map[target_id] = context_.engine().meta()->getSegmentDescByID(target_id);
+            if (!segment_desc_map[target_id])
+                return ERR_INVALID_ARGUMENT;
+        }
+#endif // CONFIG_CACHE_SEGMENT_DESC
 
         SliceList slice_list_map[kShardCount];
         uint64_t submitted_slice_count = 0;
@@ -71,6 +95,12 @@ namespace mooncake
             if (RdmaTransport::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
             {
                 peer_segment_desc = context_.engine().meta()->getSegmentDescByID(slice->target_id, true);
+                if (!peer_segment_desc)
+                {
+                    LOG(ERROR) << "Cannot get segment description for slice: " << (void *)slice;
+                    slice->markFailed();
+                    continue;
+                }
                 if (RdmaTransport::selectDevice(peer_segment_desc.get(), slice->rdma.dest_addr, slice->length, buffer_id, device_id))
                 {
                     LOG(ERROR) << "Failed to select remote NIC for address " << (void *)slice->rdma.dest_addr;
@@ -123,7 +153,7 @@ namespace mooncake
             slice_queue_lock_[shard_id].unlock();
         }
 
-        // 如果 Poll 产生失败，则将未提交的 Slice 全部推进重试（rkey 或网卡等参数发生了变化）
+        // 检测到错误时，重新分发 Slice 到不同 EndPoint 并赋予新的 rkey，从而应对暂态连接错误
         thread_local int tl_redispatch_counter = 0;
         if (tl_redispatch_counter < redispatch_counter_.load(std::memory_order_relaxed)) {
             tl_redispatch_counter = redispatch_counter_.load(std::memory_order_relaxed);
@@ -134,6 +164,7 @@ namespace mooncake
             return;
         }
 
+#ifdef CONFIG_CACHE_ENDPOINT
         thread_local uint64_t tl_last_cache_ts = getCurrentTimeInNano();
         thread_local std::unordered_map<std::string, std::shared_ptr<RdmaEndPoint>> endpoint_map;
         uint64_t current_ts = getCurrentTimeInNano();
@@ -142,6 +173,7 @@ namespace mooncake
             endpoint_map.clear();
             tl_last_cache_ts = current_ts;
         }
+#endif
 
         SliceList failed_slice_list;
         for (auto &entry : local_slice_queue)
@@ -168,7 +200,7 @@ namespace mooncake
             processed_slice_count_.fetch_add(entry.second.size());
             entry.second.clear();
 #else
-#ifdef USE_ENDPOINT_CACHING
+#ifdef CONFIG_CACHE_ENDPOINT
             auto &endpoint = endpoint_map[entry.first];
             if (endpoint == nullptr || !endpoint->active())
                 endpoint = context_.endpoint(entry.first);
@@ -233,13 +265,25 @@ namespace mooncake
                                << ", source_addr: " << slice->source_addr
                                << ", length: " << slice->length
                                << ", dest_addr: " << slice->rdma.dest_addr
-                               << ", local nic: " << context_.deviceName()
-                               << ", peer nic: " << slice->peer_nic_path
+                               << ", local_nic: " << context_.deviceName()
+                               << ", peer_nic: " << slice->peer_nic_path
+                               << ", dest_rkey: " << slice->rdma.dest_rkey
+                               << ", retry_cnt: " << slice->rdma.retry_cnt
                                << "): " << ibv_wc_status_str(wc[i].status);
                     context_.deleteEndpoint(slice->peer_nic_path);
                     slice->rdma.retry_cnt++;
-                    collective_slice_queue_[thread_id][slice->peer_nic_path].push_back(slice);
-                    redispatch_counter_++;
+                    if (slice->rdma.retry_cnt >= slice->rdma.max_retry_cnt)
+                    {
+                        slice->markFailed();
+                        processed_slice_count_++;
+                    } 
+                    else 
+                    {
+                        collective_slice_queue_[thread_id][slice->peer_nic_path].push_back(slice);
+                        redispatch_counter_++;
+                        // std::vector<RdmaTransport::Slice *> slice_list { slice };
+                        // redispatch(slice_list, thread_id);
+                    }
                 }
                 else
                 {
@@ -330,6 +374,7 @@ namespace mooncake
         // IBV_EVENT_DEVICE_FATAL 事件下，本次运行将永久停止该 context 的使用
         // 而在 IBV_EVENT_PORT_ERR 事件下只是暂停，后续收到 IBV_EVENT_PORT_ACTIVE 就可恢复
         if (event.event_type == IBV_EVENT_DEVICE_FATAL 
+            || event.event_type == IBV_EVENT_WQ_FATAL
             || event.event_type == IBV_EVENT_PORT_ERR
             || event.event_type == IBV_EVENT_LID_CHANGE)
         {
