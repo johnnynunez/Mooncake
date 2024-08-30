@@ -277,7 +277,7 @@ func (store *P2PStore) performTransfer(source uintptr, shard Shard) error {
 			break
 		}
 
-		targetID, err := store.transfer.getSegmentID(location.SegmentName)
+		targetID, err := store.transfer.openSegment(location.SegmentName)
 		if err != nil {
 			return err
 		}
