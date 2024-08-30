@@ -53,7 +53,7 @@ namespace mooncake
     {
         for (auto it = installed_transports_.begin(); it != installed_transports_.end(); ++it)
         {
-            if ((*it)->getName() == proto)
+            if (strcmp((*it)->getName(), proto) == 0)
             {
                 delete *it;
                 installed_transports_.erase(it);
