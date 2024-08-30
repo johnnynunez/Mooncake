@@ -115,3 +115,11 @@ func (engine *TransferEngine) getSegmentID(name string) (int64, error) {
 	}
 	return int64(ret), nil
 }
+
+func (engine *TransferEngine) syncSegmentCache() error {
+	ret := C.syncSegmentCache(engine.engine)
+	if ret < 0 {
+		return ErrTransferEngine
+	}
+	return nil
+}

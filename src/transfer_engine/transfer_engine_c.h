@@ -120,6 +120,8 @@ extern "C"
 
     int freeBatchID(transport_t xport, batch_id_t batch_id);
 
+    int syncSegmentCache(transfer_engine_t engine);
+
 #ifdef __cplusplus
 }
 #endif // __cplusplus

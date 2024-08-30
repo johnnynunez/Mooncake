@@ -617,7 +617,7 @@ namespace mooncake
                 PLOG(WARNING) << "Illegal port number in " << peer_server_name
                               << ". Use default port " << port << " instead";
             else
-                port = (uint16_t)port;
+                port = (uint16_t)val;
         }
 
         char service[16];
