@@ -292,6 +292,20 @@ namespace mooncake
         return desc;
     }
 
+    int TransferMetadata::syncSegmentCache()
+    {
+        RWSpinlock::WriteGuard guard(segment_lock_);
+        for (auto &entry: segment_id_to_desc_map_)
+        {
+            if (entry.first == LOCAL_SEGMENT_ID)
+                continue;
+            auto server_desc = getSegmentDesc(entry.second->name);
+            if (server_desc)
+                entry.second = server_desc;
+        }
+        return 0;
+    }
+
     std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDescByName(const std::string &segment_name, bool force_update)
     {
         if (!force_update)

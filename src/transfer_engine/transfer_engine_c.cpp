@@ -135,12 +135,6 @@ int freeBatchID(transport_t xport, batch_id_t batch_id)
     return native->freeBatchID(batch_id);
 }
 
-segment_id_t getSegmentID(transfer_engine_t engine, const char *segment_name)
-{
-    TransferEngine *native = (TransferEngine *)engine;
-    return (segment_id_t)native->getSegmentID(segment_name);
-}
-
 int syncSegmentCache(transfer_engine_t engine)
 {
     TransferEngine *native = (TransferEngine *)engine;

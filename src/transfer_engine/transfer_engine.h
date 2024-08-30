@@ -49,6 +49,11 @@ namespace mooncake
 
         int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list);
 
+        int syncSegmentCache() 
+        { 
+            return metadata_->syncSegmentCache(); 
+        }
+
     private:
         struct MemoryRegion {
             uint64_t start;

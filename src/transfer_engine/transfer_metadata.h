@@ -141,6 +141,8 @@ namespace mooncake
 
         SegmentID getSegmentID(const std::string &server_name);
 
+        int syncSegmentCache();
+
         int removeSegmentDesc(const std::string &server_name);
 
         int addLocalMemoryBuffer(const BufferDesc& buffer_desc, bool update_metadata);

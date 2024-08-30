@@ -133,11 +133,11 @@ int initiatorWorker(RdmaTransport *engine, SegmentID segment_id, int thread_id, 
     size_t batch_count = 0;
     while (running)
     {
-        segment_desc = engine->meta()->getSegmentDescByID(segment_id, true);
+        // segment_desc = engine->meta()->getSegmentDescByID(segment_id, true);
 
-        if (segment_desc == nullptr || segment_desc->buffers.size() < 2)
-            continue;
-        remote_base = (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
+        // if (segment_desc == nullptr || segment_desc->buffers.size() < 2)
+        //     continue;
+        // remote_base = (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
 
         auto batch_id = engine->allocateBatchID(FLAGS_batch_size);
         LOG_ASSERT(batch_id >= 0);
