@@ -16,6 +16,7 @@ namespace mooncake {
 
         CUFileDescPool(const CUFileDescPool &) = delete;
         CUFileDescPool &operator=(const CUFileDescPool &) = delete;
+        CUFileDescPool(CUFileDescPool &&) = delete;
 
         int allocCUfileDesc(size_t batch_size); // ret: (desc_idx, start_idx)
         int pushParams(int idx, CUfileIOParams_t &io_params);
@@ -25,7 +26,7 @@ namespace mooncake {
         int freeCUfileDesc(int idx);
 
     private:
-        static const size_t MAX_NR_CUFILE_DESC = 8;
+        static const size_t MAX_NR_CUFILE_DESC = 16;
         static const size_t MAX_CUFILE_BATCH_SIZE = 128;
         // 1. bitmap, indicates whether a file descriptor is available
         std::bitset<MAX_NR_CUFILE_DESC> available_;
@@ -38,7 +39,7 @@ namespace mooncake {
         std::vector<CUfileIOParams_t> io_params_[MAX_NR_CUFILE_DESC];
         std::vector<CUfileIOEvents_t> io_events_[MAX_NR_CUFILE_DESC];
 
-        std::mutex mutex_;
+        RWSpinlock mutex_;
     };
 
 }

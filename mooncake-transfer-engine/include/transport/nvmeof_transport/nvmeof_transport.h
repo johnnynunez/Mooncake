@@ -63,11 +63,9 @@ namespace mooncake
 
         std::unordered_map<std::pair<SegmentHandle, uint64_t>, std::shared_ptr<CuFileContext>, pair_hash> segment_to_context_;
         std::vector<std::thread> workers_;
-        std::shared_ptr<CUFileDescPool> desc_pool_;
 
-        std::unordered_map<BatchID, BatchDesc> batch_map_;
-        unsigned nr_completed = 0;
-        CUfileBatchHandle_t handle = NULL;
+        std::shared_ptr<CUFileDescPool> desc_pool_;
+        RWSpinlock context_lock_;
     };
 }
 
