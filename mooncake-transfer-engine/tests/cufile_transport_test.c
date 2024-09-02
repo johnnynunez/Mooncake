@@ -16,13 +16,14 @@
 
 #define WRITE 1
 #define READ 0
+#define GB(x) ((x) * 1024 * 1024 * 1024)
 
 // const int block_size = 4096;
 const int ITERS = 10000;
-int batch_size = 128;
+int batch_size = 32;
 int block_size = 4096;
 int duration = 10;
-const int NR_THREADS = 2;
+const int NR_THREADS = 4;
 const char* META_SERVER = "192.168.3.72:2379";
 
 volatile bool running = true;
@@ -41,7 +42,9 @@ void* worker(void* args_) {
     transport_t xport = args->xport;
     segment_handle_t seg = args->seg;
     int thread_id = args->thread_id;
-    void* addr = args->addr;
+    void* addr = args->addr; // Per Thread Buffer, should be registered
+    // uint64_t start_offset = thread_id * block_size * batch_size;
+    // void* start_addr = addr + start_offset;
     uint64_t local_batch_count = 0;
     while (running) {
         struct transfer_request nvmeof_transfers[batch_size];
@@ -50,9 +53,9 @@ void* worker(void* args_) {
         {
             nvmeof_transfers[i] = (struct transfer_request){
                 .opcode = WRITE,
-                .source = addr + (i * NR_THREADS + thread_id) * block_size,
+                .source = addr + i * block_size,
                 .target_id = seg,
-                .target_offset =  (i * NR_THREADS + thread_id) * block_size,
+                .target_offset = i * block_size,
                 .length = block_size,
             };
         }
@@ -64,6 +67,10 @@ void* worker(void* args_) {
                 getTransferStatus(xport, nvmeof_batch, i, &status);
                 // printf("task %d s %d\n", -1, status.status);
                 // LOG(INFO) << i <<  " status " << status.status;
+                if (status.status == STATUS_FAILED) {
+                    printf("transfer %d: bytes transferred, status = failed!", i);
+                    break;
+                }
                 if (status.status == STATUS_FAILED || status.status == STATUS_COMPLETED) {
                     // printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
                     break;
@@ -104,24 +111,30 @@ int main(int argc, char **argv)
     transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", args);
     
     segment_handle_t nvmeof_seg = openSegment(engine, "/mooncake/nvmeof/optane14");
-    int length = batch_size * block_size;
-    void *buf;
-    cudaMalloc(&buf, length);
-    cudaMemset(buf, 0xab, length);
+    // int length = batch_size * block_size * NR_THREADS;
+    // long long length = 16ULL * 1024 * 1024 * 1024;
+    long long length = GB(1);
+    void* start[NR_THREADS];
+    for (int i = 0; i < NR_THREADS; ++i) {
+        void *buf;
+        cudaMalloc(&buf, length);
+        cudaMemset(buf, 0xab, length);
+        registerLocalMemory(engine, buf, length, "", 0);
+        start[i] = buf;
+    }
 
-    registerLocalMemory(engine, buf, length, "", 0);
 
     struct timeval start_tv, stop_tv;
 
     gettimeofday(&start_tv, NULL);
 
-    pthread_t threads[8];
+    pthread_t threads[NR_THREADS];
     for (int i = 0; i < NR_THREADS; i++) {
         worker_args_t *args = (worker_args_t *)malloc(sizeof(worker_args_t));
         args->xport = nvmeof_xport;
         args->seg = nvmeof_seg;
         args->thread_id = i;
-        args->addr = buf;
+        args->addr = start[i];
         pthread_create(&threads[i], NULL, worker, args);
     }
 
@@ -139,7 +152,10 @@ int main(int argc, char **argv)
     double throughput = ((double)batch_count * batch_size * block_size) / duration / 1024 / 1024 / 1024;
 
     printf("throughput %.2lf GB/s duration %.2lf s\n", throughput, duration);
-    unregisterLocalMemory(engine, buf);
+    for (int i = 0; i < NR_THREADS; ++i) {
+        unregisterLocalMemory(engine, start[i]);
+        cudaFree(start[i]);
+    }
 
     closeSegment(nvmeof_xport, nvmeof_seg);
     printf("before free batch\n");
