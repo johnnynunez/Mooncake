@@ -374,6 +374,7 @@ namespace mooncake
         // IBV_EVENT_DEVICE_FATAL 事件下，本次运行将永久停止该 context 的使用
         // 而在 IBV_EVENT_PORT_ERR 事件下只是暂停，后续收到 IBV_EVENT_PORT_ACTIVE 就可恢复
         if (event.event_type == IBV_EVENT_DEVICE_FATAL 
+            || event.event_type == IBV_EVENT_CQ_ERR
             || event.event_type == IBV_EVENT_WQ_FATAL
             || event.event_type == IBV_EVENT_PORT_ERR
             || event.event_type == IBV_EVENT_LID_CHANGE)
