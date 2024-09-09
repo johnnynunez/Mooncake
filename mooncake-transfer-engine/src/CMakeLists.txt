@@ -4,7 +4,12 @@ add_subdirectory(transport)
 add_library(transfer_engine ${ENGINE_SOURCES} $<TARGET_OBJECTS:transport>)
 
 add_compile_definitions(transfer_engine PUBLIC MOONCAKE_USE_ETCD)
-target_link_libraries(transfer_engine PUBLIC transport rdma_transport ibverbs glog gflags pthread jsoncpp numa etcd-cpp-api-core protobuf grpc++ grpc)
+if (USE_STATIC_ETCD_CPP_API)
+  target_link_libraries(transfer_engine PUBLIC etcd-cpp-api-core protobuf grpc++ grpc)
+else()
+  target_link_libraries(transfer_engine PUBLIC etcd-cpp-api)
+endif()
+target_link_libraries(transfer_engine PUBLIC transport rdma_transport ibverbs glog gflags pthread jsoncpp numa)
 
 if (USE_CUDA)  
   add_compile_definitions(transfer_engine PUBLIC USE_CUDA)
