@@ -52,7 +52,7 @@ void* worker(void* args_) {
         for (int i = 0; i < batch_size; i++)
         {
             nvmeof_transfers[i] = (struct transfer_request){
-                .opcode = WRITE,
+                .opcode = READ,
                 .source = addr + i * block_size,
                 .target_id = seg,
                 .target_offset = i * block_size,
