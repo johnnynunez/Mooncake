@@ -59,6 +59,10 @@ namespace mooncake
 
         int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list) override { return 0; }
 
+        void addSliceToTask(void* source_addr, uint64_t slice_len, uint64_t target_start, TransferRequest::OpCode op, TransferTask& task, const char* file_path);
+
+        void addSliceToCUFileBatch(void* source_addr, uint64_t file_offset, uint64_t slice_len, uint64_t desc_id, TransferRequest::OpCode op, CUfileHandle_t fh);
+
         const char *getName() const override { return "nvmeof"; }
 
         std::unordered_map<std::pair<SegmentHandle, uint64_t>, std::shared_ptr<CuFileContext>, pair_hash> segment_to_context_;

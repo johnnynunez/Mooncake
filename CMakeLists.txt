@@ -15,7 +15,7 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0")
 set(CMAKE_BUILD_TYPE "Release")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-option(USE_CUDA "option for using gpu" ON)
+option(USE_CUDA "option for using gpu" OFF)
 
 include_directories(thirdparties/include)
 link_directories(thirdparties/lib)

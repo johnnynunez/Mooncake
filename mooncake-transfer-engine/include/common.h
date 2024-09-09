@@ -169,6 +169,11 @@ namespace mooncake
         return server_name + NIC_PATH_DELIM + nic_name;
     }
 
+    static inline bool overlap(const void *a, size_t a_len, const void *b, size_t b_len)
+    {
+        return (a >= b && a < (char*)b + b_len) || (b >= a && b < (char*)a + a_len);
+    }
+
     class RWSpinlock
     {
         union RWTicket

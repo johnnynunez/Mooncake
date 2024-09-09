@@ -1,8 +1,9 @@
 #include "transport/nvmeof_transport/nvmeof_transport.h"
-#include "transport/nvmeof_transport/cufile_context.h"
-#include "transport/nvmeof_transport/cufile_desc_pool.h"
+#include "common.h"
 #include "transfer_engine.h"
 #include "transfer_metadata.h"
+#include "transport/nvmeof_transport/cufile_context.h"
+#include "transport/nvmeof_transport/cufile_desc_pool.h"
 #include "transport/transport.h"
 #include <algorithm>
 #include <bits/stdint-uintn.h>
@@ -15,7 +16,8 @@
 
 namespace mooncake
 {
-    NVMeoFTransport::NVMeoFTransport() {
+    NVMeoFTransport::NVMeoFTransport()
+    {
         CUFILE_CHECK(cuFileDriverOpen());
         desc_pool_ = std::make_shared<CUFileDescPool>();
     }
@@ -67,7 +69,7 @@ namespace mooncake
         TransferStatus transfer_status = {.s = Transport::PENDING, .transferred_bytes = 0};
 #ifdef USE_LOCAL_DESC
         auto [slice_id, slice_num] = nvmeof_desc.task_to_slices[task_id];
-        
+
         assert(slice_id == task_id);
         assert(slice_num == 1);
 #endif
@@ -139,12 +141,11 @@ namespace mooncake
             auto &desc = segment_desc_map.at(target_id);
             // LOG(INFO) << "desc " << desc->name << " " << desc->protocol;
             assert(desc->protocol == "NVMeoF" || desc->protocol == "nvmeof");
-            // TODO: add mutex
             // TODO: solving iterator invalidation due to vector resize
             // Handle File Offset
             uint32_t buffer_id = 0;
-            uint64_t buffer_start = request.target_offset;
-            uint64_t buffer_end = request.target_offset + request.length;
+            uint64_t segment_start = request.target_offset;
+            uint64_t segment_end = request.target_offset + request.length;
             uint64_t current_offset = 0;
             for (auto &buffer_desc : desc->nvmeof_buffers)
             {
@@ -153,55 +154,40 @@ namespace mooncake
                 // {
                 //     LOG(INFO) << "local path " << local_path.first << " " << local_path.second;
                 // }
-                bool overlap = buffer_start < current_offset + buffer_desc.length && buffer_end > current_offset; // this buffer intersects with user's target
-                if (overlap)
+                bool is_overlap = overlap((void *)segment_start, request.length, (void *)current_offset, buffer_desc.length); // this buffer intersects with user's target
+                if (is_overlap)
                 {
                     // 1. get_slice_start
-                    uint64_t slice_start = std::max(buffer_start, current_offset);
+                    uint64_t slice_start = std::max(segment_start, current_offset);
                     // 2. slice_end
-                    uint64_t slice_end = std::min(buffer_end, current_offset + buffer_desc.length);
-// 3. init slice and put into TransferTask
+                    uint64_t slice_end = std::min(segment_end, current_offset + buffer_desc.length);
+                    // 3. init slice and put into TransferTask
 #ifndef USE_LOCAL_DESC
                     const char *file_path = buffer_desc.local_path_map[local_server_name_].c_str();
                     LOG(INFO) << "local name " << local_server_name_ << " file path " << file_path;
 #else
                     const char *file_path = "/mnt/data/dsf/mooncake-test.img";
 #endif
-                    Slice *slice = new Slice();
-                    slice->source_addr = (char *)request.source + slice_start - buffer_start;
-                    slice->length = slice_end - slice_start;
-                    slice->opcode = request.opcode;
-                    slice->nvmeof.file_path = file_path;
-                    slice->nvmeof.start = slice_start;
-                    slice->task = &task;
-                    slice->status = Slice::PENDING;
-                    task.total_bytes += slice->length;
-                    task.slices.push_back(slice);
+                    void *source_addr = (char *)request.source + slice_start - segment_start;
+                    uint64_t file_offset = slice_start - current_offset;
+                    uint64_t slice_len = slice_end - slice_start;
+                    addSliceToTask(source_addr, slice_len, file_offset, request.opcode, task, file_path);
                     // 4. get cufile handle
                     auto buf_key = std::make_pair(target_id, buffer_id);
-                    CUfileIOParams_t params;
-                    params.mode = CUFILE_BATCH;
-                                        params.opcode = request.opcode == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
-                    params.cookie = (void *)task_id;
-                    params.u.batch.devPtr_base = slice->source_addr;
-                    params.u.batch.devPtr_offset = 0;
-                    params.u.batch.file_offset = slice_start;
-                    params.u.batch.size = slice_end - slice_start;
-
+                    CUfileHandle_t fh;
                     {
-                    // TODO: upgrade
+                        // TODO: upgrade
                         RWSpinlock::WriteGuard guard(context_lock_);
                         if (!segment_to_context_.count(buf_key))
                         {
                             segment_to_context_[buf_key] = std::make_shared<CuFileContext>(file_path);
                         }
-                        // 5. add cufile request
-                        params.fh = segment_to_context_.at(buf_key)->getHandle();
+                        fh = segment_to_context_.at(buf_key)->getHandle();
                     }
-                    // LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
-
-                    desc_pool_->pushParams(nvmeof_desc.desc_idx_, params);
+                    // 5. add cufile request
+                    addSliceToCUFileBatch(source_addr, file_offset, slice_len, nvmeof_desc.desc_idx_, request.opcode, fh);
                 }
+                ++buffer_id;
                 current_offset += buffer_desc.length;
             }
 
@@ -255,5 +241,35 @@ namespace mooncake
     {
         CUFILE_CHECK(cuFileBufDeregister(addr));
         return 0;
+    }
+
+    void NVMeoFTransport::addSliceToTask(void *source_addr, uint64_t slice_len, uint64_t target_start, TransferRequest::OpCode op, TransferTask &task, const char *file_path)
+    {
+        Slice *slice = new Slice();
+        slice->source_addr = (char *)source_addr;
+        slice->length = slice_len;
+        slice->opcode = op;
+        slice->nvmeof.file_path = file_path;
+        slice->nvmeof.start = target_start;
+        slice->task = &task;
+        slice->status = Slice::PENDING;
+        task.total_bytes += slice->length;
+        task.slices.push_back(slice);
+    }
+
+    void NVMeoFTransport::addSliceToCUFileBatch(void *source_addr, uint64_t file_offset, uint64_t slice_len, uint64_t desc_id, TransferRequest::OpCode op, CUfileHandle_t fh)
+    {
+        CUfileIOParams_t params;
+        params.mode = CUFILE_BATCH;
+        params.opcode = op == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
+        // params.cookie = (void *)task_id;
+        params.cookie = (void *)0;
+        params.u.batch.devPtr_base = source_addr;
+        params.u.batch.devPtr_offset = 0;
+        params.u.batch.file_offset = file_offset;
+        params.u.batch.size = slice_len;
+        params.fh = fh;
+        // LOG(INFO) << "params " << "base " << request.source << " offset " << request.target_offset << " length " << request.length;
+        desc_pool_->pushParams(desc_id, params);
     }
 }

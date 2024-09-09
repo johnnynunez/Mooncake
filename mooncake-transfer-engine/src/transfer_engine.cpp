@@ -7,10 +7,6 @@
 
 namespace mooncake
 {
-    static bool overlap(const void *a, size_t a_len, const void *b, size_t b_len)
-    {
-        return (a >= b && a < (char*)b + b_len) || (b >= a && b < (char*)a + a_len);
-    }
 
     int TransferEngine::init(const char *server_name, const char *connectable_name, uint64_t rpc_port)
     {
