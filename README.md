@@ -1,21 +1,21 @@
 # Mooncake Store
 
-Mooncake Store 是在一个慢速的对象存储之上基于高速互联的 DRAM/SSD 资源构建的一个池化的多级缓存。和传统缓存比，Mooncake Store 的最大特点是能够基于 (GPUDirect) RDMA 技术尽可能零拷贝的从发起端的 DRAM/VRAM 拷贝至接受端的 DRAM/SSD，且尽可能最大化利用单机多网卡的资源。[整体介绍](doc/overview.md)
+Mooncake Store 是在一个慢速的对象存储之上基于高速互联的 DRAM/SSD 资源构建的一个池化的多级缓存。和传统缓存比，Mooncake Store 的最大特点是能够基于 (GPUDirect) RDMA 技术尽可能零拷贝的从发起端的 DRAM/VRAM 拷贝至接受端的 DRAM/SSD，且尽可能最大化利用单机多网卡的资源。[整体介绍](docs/overview.md)
 
-![mooncake](doc/fig/mooncake.png)
+![mooncake](docs/fig/mooncake.png)
 
 ## Mooncake Store 的关键组件
 
 ### Mooncake Transfer Engine
 Mooncake Transfer Engine 是一个围绕  Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。其中 Segment 代表一段可被远程读写的连续地址空间，实际后端可以是 DRAM 或 VRAM 提供的非持久化存储 RAM Segment，也可以是 NVMeof 提供的持久化存储 NVMeof Segment。BatchTransfer 则负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
 
-![transfer_engine](doc/fig/transfer_engine.png)
+![transfer_engine](docs/fig/transfer_engine.png)
 
-[Mooncake Transfer Engine 的详细介绍](doc/transfer_engine.md)
+[Mooncake Transfer Engine 的详细介绍](docs/transfer_engine.md)
 
 ### Mooncake Managed Store (WIP)
 在 TransferEngine 基础上，Mooncake Managed Store 实际上是上下两层的实现结构。上层控制面向 Client 提供 Object 级别的 Get/Put 等操作，下层数据面则是提供 VRAM/DRAM/NVM Buffer 层面的尽可能零拷贝和多网卡池化的数据传输。具体如下图所示。
-![managed_store](doc/fig/managed_store.png)
+![managed_store](docs/fig/managed_store.png)
 
 ### Mooncake P2P Store
 和由 Master 统一管理空间分配并负责维护固定数量的多个副本的 Managed Store 不同，P2P Store 的定位是临时中转数据的转存。典型的场景比如 checkpoint 的分发。为此，P2P Store 主要提供 Register 和 GetReplica 两个接口。
