@@ -14,4 +14,4 @@ link_directories(thirdparties/lib)
 
 add_subdirectory(mooncake-transfer-engine)
 #add_subdirectory(mooncake-p2p-store)
-#add_subdirectory(mooncake-allocator)
+add_subdirectory(mooncake-allocator)

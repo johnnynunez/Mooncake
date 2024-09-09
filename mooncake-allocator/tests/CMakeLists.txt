@@ -1,0 +1,15 @@
+
+
+add_executable(replica_allocator_test replica_allocator_test.cpp)
+target_link_libraries(replica_allocator_test PUBLIC cache_allocator cachelib_memory_allocator gtest gtest_main pthread)
+
+add_executable(replica_allocator_test2 replica_allocator_test2.cpp)
+target_link_libraries(replica_allocator_test2 PUBLIC cache_allocator cachelib_memory_allocator gtest gtest_main pthread)
+
+add_executable(object_store_test object_store_test.cpp)
+target_link_libraries(object_store_test PUBLIC cache_allocator cachelib_memory_allocator gtest gtest_main pthread)
+
+add_executable(buffer_allocator_test buffer_allocator_test.cpp)
+target_link_libraries(buffer_allocator_test PUBLIC cache_allocator cachelib_memory_allocator gtest gtest_main pthread)
+
+

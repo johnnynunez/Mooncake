@@ -1,3 +1,9 @@
-include_directories(include)
+include_directories(
+    ${CMAKE_SOURCE_DIR}/mooncake-allocator/include/cachelib_memory_allocator/include
+    ${CMAKE_SOURCE_DIR}/mooncake-allocator/include/cachelib_memory_allocator/fake_include
+    ${CMAKE_SOURCE_DIR}/mooncake-allocator/include/cachelib_memory_allocator/
+    ${CMAKE_SOURCE_DIR}/mooncake-allocator/include/
+    ${CMAKE_SOURCE_DIR}/mooncake-transfer-engine/include
+)
 add_subdirectory(src)
 add_subdirectory(tests)
