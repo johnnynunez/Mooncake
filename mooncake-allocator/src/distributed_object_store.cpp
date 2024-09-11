@@ -86,7 +86,7 @@ namespace mooncake
         uint64_t total_size = calculateObjectSize(ptrs, sizes);
         if (total_size == 0)
         {
-            LOG(WARNING) << "the sizes is 0";
+            LOG(WARNING) << "the size is 0";
             return getError(ERRNO::INVALID_PARAMS);
         }
         bool first_add = true;
@@ -201,6 +201,7 @@ namespace mooncake
         Version latest_version = replica_allocator_.getObjectVersion(key);
         if (latest_version < 0)
         {
+            LOG(ERROR) << "cann't get version for key when replicating: " << key;
             return latest_version;
         }
         size_t existed_replica_number = replica_allocator_.getReplicaRealNumber(key, latest_version);
