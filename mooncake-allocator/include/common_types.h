@@ -42,6 +42,10 @@ namespace mooncake
 
     };
 
+    const std::string& errnoToString(const int64_t errnoValue);
+
+    const std::string& errEnumToString(const ERRNO errno);
+
     int64_t getError(ERRNO err);
 
     enum class BufStatus

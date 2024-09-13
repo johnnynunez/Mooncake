@@ -321,8 +321,8 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentReplicateAndGetTest)
 TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
 {
     const int numThreads = 20;
-    const int numKeys = 100;
-    const int numOperationsPerThread = 100;
+    const int numKeys = 300;
+    const int numOperationsPerThread = 1000;
 
     std::vector<ObjectKey> keys(numKeys);
     std::vector<std::vector<char>> initialData(numKeys);
@@ -394,7 +394,7 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
                         TaskID getVersion = store.get(keys[keyIndex], getPtrs, getSizes, 0, 0); // Get latest version
                         if (getVersion < 0)
                         {
-                            LOG(ERROR) << "get key: " << keys[keyIndex] << " , ret: " << getVersion;
+                            LOG(ERROR) << "get key: " << keys[keyIndex] << " , ret: " << errnoToString(getVersion);
                         }
                         // EXPECT_GE(getVersion, 0);
                         break;
@@ -405,7 +405,7 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
                         // EXPECT_GE(removeVersion, 0);
                         if (removeVersion < 0)
                         {
-                            LOG(ERROR) << "remove key: " << keys[keyIndex] << ", ret:" << removeVersion;
+                            LOG(ERROR) << "remove key: " << keys[keyIndex] << ", ret:" << errnoToString(removeVersion);
                         }
                         break;
                     }
@@ -418,7 +418,7 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
                         // EXPECT_GE(replicateVersion, 0);
                         if (replicateVersion < 0)
                         {
-                            LOG(ERROR) << "replica key: " << keys[keyIndex] << ", ret: " << replicateVersion;
+                            LOG(ERROR) << "replica key: " << keys[keyIndex] << ", ret: " << errnoToString(replicateVersion);
                         }
                         break;
                     }
