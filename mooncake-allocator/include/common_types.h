@@ -38,6 +38,7 @@ namespace mooncake
         // for engine operation
         INVALID_WRITE = -9,
         INVALID_READ = -10,
+        INVALID_REPLICA = -11,
 
     };
 

@@ -46,7 +46,7 @@ namespace mooncake
         // 添加主池到分配器
         pool_id_ = memory_allocator_->addPool("main", size);
 
-        LOG(INFO) << "BufferAllocator initialized with pool_id " << pool_id_;
+        LOG(INFO) << "BufferAllocator initialized with pool_id " << (int)pool_id_;
     }
 
     BufferAllocator::~BufferAllocator()

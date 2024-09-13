@@ -318,11 +318,154 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentReplicateAndGetTest)
     }
 }
 
+TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
+{
+    const int numThreads = 20;
+    const int numKeys = 100;
+    const int numOperationsPerThread = 100;
+
+    std::vector<ObjectKey> keys(numKeys);
+    std::vector<std::vector<char>> initialData(numKeys);
+    std::vector<ReplicateConfig> configs(numKeys);
+
+    std::random_device rd;
+    std::mt19937 gen(rd());
+    std::uniform_int_distribution<> sizeDist(1, 1024 * 1024); // 1 to 1MB
+    std::uniform_int_distribution<> replicaDist(1, 3);        // 1 to 3 replicas
+
+    // Initialize keys and initial data
+    for (int i = 0; i < numKeys; ++i)
+    {
+        keys[i] = "test_object_multithread_" + std::to_string(i);
+        initialData[i].resize(sizeDist(gen));
+        std::generate(initialData[i].begin(), initialData[i].end(), randomChar);
+        configs[i].replica_num = replicaDist(gen);
+    }
+
+    // Initially put all objects
+    std::vector<TaskID> initialVersions(numKeys);
+    for (int i = 0; i < numKeys; ++i)
+    {
+        std::vector<void *> ptrs = {initialData[i].data()};
+        std::vector<void *> sizes = {reinterpret_cast<void *>(initialData[i].size())};
+        initialVersions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+        EXPECT_NE(initialVersions[i], 0);
+    }
+
+    std::atomic<bool> start{false};
+    std::vector<std::thread> threads;
+    std::atomic<int> totalOperations{0};
+
+    for (int i = 0; i < numThreads; ++i)
+    {
+        threads.emplace_back([this, &keys, &initialData, &configs, &initialVersions, &start, &gen, &totalOperations, &sizeDist, &replicaDist, numKeys, numOperationsPerThread]() {
+            std::uniform_int_distribution<> keyDist(0, numKeys - 1);
+            std::uniform_int_distribution<> opDist(0, 3); // 0: put, 1: get, 2: remove, 3: replicate
+
+            while (!start.load())
+            {
+                std::this_thread::yield();
+            }
+
+            for (int op = 0; op < numOperationsPerThread; ++op)
+            {
+                int keyIndex = keyDist(gen);
+                int operation = opDist(gen);
+
+                try
+                {
+                    switch (operation)
+                    {
+                    case 0: // put
+                    {
+                        std::vector<char> newData(sizeDist(gen));
+                        std::generate(newData.begin(), newData.end(), randomChar);
+                        std::vector<void *> ptrs = {newData.data()};
+                        std::vector<void *> sizes = {reinterpret_cast<void *>(newData.size())};
+                        TaskID version = store.put(keys[keyIndex], ptrs, sizes, configs[keyIndex]);
+                        EXPECT_NE(version, 0);
+                        break;
+                    }
+                    case 1: // get
+                    {
+                        std::vector<char> retrievedData(initialData[keyIndex].size());
+                        std::vector<void *> getPtrs = {retrievedData.data()};
+                        std::vector<void *> getSizes = {reinterpret_cast<void *>(retrievedData.size())};
+                        TaskID getVersion = store.get(keys[keyIndex], getPtrs, getSizes, 0, 0); // Get latest version
+                        if (getVersion < 0)
+                        {
+                            LOG(ERROR) << "get key: " << keys[keyIndex] << " , ret: " << getVersion;
+                        }
+                        // EXPECT_GE(getVersion, 0);
+                        break;
+                    }
+                    case 2: // remove
+                    {
+                        TaskID removeVersion = store.remove(keys[keyIndex]); // Remove latest version
+                        // EXPECT_GE(removeVersion, 0);
+                        if (removeVersion < 0)
+                        {
+                            LOG(ERROR) << "remove key: " << keys[keyIndex] << ", ret:" << removeVersion;
+                        }
+                        break;
+                    }
+                    case 3: // replicate
+                    {
+                        ReplicateConfig newConfig;
+                        newConfig.replica_num = replicaDist(gen);
+                        DistributedObjectStore::ReplicaDiff replicaDiff;
+                        TaskID replicateVersion = store.replicate(keys[keyIndex], newConfig, replicaDiff);
+                        // EXPECT_GE(replicateVersion, 0);
+                        if (replicateVersion < 0)
+                        {
+                            LOG(ERROR) << "replica key: " << keys[keyIndex] << ", ret: " << replicateVersion;
+                        }
+                        break;
+                    }
+                    }
+                    totalOperations.fetch_add(1, std::memory_order_relaxed);
+                }
+                catch (const std::exception &e)
+                {
+                    LOG(ERROR) << "Exception in thread " << std::this_thread::get_id() << ": " << e.what();
+                }
+            }
+        });
+    }
+
+    start.store(true);
+
+    for (auto &thread : threads)
+    {
+        thread.join();
+    }
+
+    LOG(INFO) << "Total operations performed: " << totalOperations.load();
+
+    // Final verification
+    for (int i = 0; i < numKeys; ++i)
+    {
+        std::vector<char> finalData(initialData[i].size());
+        std::vector<void *> getPtrs = {finalData.data()};
+        std::vector<void *> getSizes = {reinterpret_cast<void *>(finalData.size())};
+        TaskID finalVersion = store.get(keys[i], getPtrs, getSizes, 0, 0); // Get latest version
+
+        if (finalVersion >= 0)
+        {
+            LOG(INFO) << "Key " << keys[i] << " final version: " << finalVersion;
+        }
+        else
+        {
+            LOG(INFO) << "Key " << keys[i] << " not found (possibly removed)";
+        }
+    }
+}
+
 int main(int argc, char **argv)
 {
     google::InitGoogleLogging("test_log");
-    // google::SetLogDestination(google::INFO, "logs/log_info_");
-    google::SetLogDestination(google::WARNING, "logs/log_warning_");
+    google::SetLogDestination(google::INFO, "logs/log_info_");
+    // google::SetLogDestination(google::WARNING, "logs/log_warning_");
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

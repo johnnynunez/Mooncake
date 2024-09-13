@@ -167,6 +167,11 @@ namespace mooncake
             return ver;
         }
         generateReadTransferRequests(replica_info, offset, ptrs, sizes, transfer_tasks);
+        if (ptrs.size() == 0 || transfer_tasks.size() == 0)
+        {
+            LOG(ERROR) << "ptrs.size() == 0 || transfer_tasks.size() == 0";
+            return getError(ERRNO::INVALID_READ);
+        }
         while (!success && trynum < max_trynum_)
         {
             success = doRead(transfer_tasks, status);
@@ -237,7 +242,11 @@ namespace mooncake
                 }
                 assert(existed_version == add_version);
                 generateReplicaTransferRequests(existed_replica_info, new_replica_info, transfer_tasks);
-
+                if (transfer_tasks.size() == 0)
+                {
+                    LOG(ERROR) << "no transfer tasks generated in replicate operation, key: " << key;
+                    return getError(ERRNO::INVALID_REPLICA);
+                }
                 while (!success && try_num < max_trynum_)
                 {
                     std::vector<TransferStatusEnum> status;
@@ -487,7 +496,7 @@ namespace mooncake
             status.push_back(TransferStatusEnum::COMPLETED);
             std::memcpy(target_address, task.source, task.length);
             std::string str((char *)task.source, task.length);
-            LOG(INFO) << "write data to " << (void *)target_address << " with size " << task.length << ", the content: " << str;
+            LOG(INFO) << "write data to " << (void *)target_address << " with size " << task.length;
         }
         // return doRead(transfer_tasks);
         return true;
@@ -509,7 +518,7 @@ namespace mooncake
             std::memcpy(task.source, target_address, task.length);
             status.push_back(TransferStatusEnum::COMPLETED);
             std::string str((char *)task.source, task.length);
-            LOG(INFO) << "read data from " << (void *)target_address << " with size " << task.length << " , the content: " << str;
+            LOG(INFO) << "read data from " << (void *)target_address << " with size " << task.length;
         }
 
         if (dis(gen) < 0.2)
