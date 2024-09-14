@@ -196,8 +196,7 @@ namespace mooncake
             return getError(ERRNO::INVALID_KEY);
         }
         ver = replica_allocator_.removeOneReplica(key, info, version);
-        while (replica_allocator_.removeOneReplica(key, info, version) >= 0)
-            ;
+        while (replica_allocator_.removeOneReplica(key, info, version) >= 0);
         return ver;
     }
 
@@ -369,7 +368,8 @@ namespace mooncake
 
                 LOG(INFO) << "create write request, input_idx: " << input_idx << ", input_offset: " << input_offset
                           << " , segmentid: " << handle->segment_id << ", shard_offset: " << shard_offset
-                          << ", to_write_length: " << to_write << ", target offset:" << (void *)request.target_offset << ", handle buffer: " << handle->buffer << std::endl;
+                          << ", to_write_length: " << to_write << ", target offset:" 
+                          << (void *)request.target_offset << ", handle buffer: " << handle->buffer << std::endl;
 
                 shard_offset += to_write;
                 input_offset += to_write;

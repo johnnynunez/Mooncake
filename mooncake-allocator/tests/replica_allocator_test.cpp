@@ -217,7 +217,6 @@ int main(int argc, char *argv[])
         threads.emplace_back(concurrentTest, allocator, i, std::ref(stop));
     }
 
-    // Let the test run for a certain duration
     // std::this_thread::sleep_for(std::chrono::seconds(1));
 
     // Signal threads to stop
