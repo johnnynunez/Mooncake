@@ -13,6 +13,9 @@ if (USE_CUDA)
 
   add_executable(cufile_transport_test cufile_transport_test.c)
   target_link_libraries(cufile_transport_test PUBLIC transfer_engine)
+
+  add_executable(unit_tests unit_tests.cpp)
+  target_link_libraries(unit_tests PUBLIC transfer_engine gtest gtest_main)
 endif()
   
 # add_executable(endpoint_test endpoint_test.cpp)

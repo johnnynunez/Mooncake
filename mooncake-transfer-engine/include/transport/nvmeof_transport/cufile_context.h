@@ -1,6 +1,7 @@
 #ifndef CUFILE_CONTEXT_H_
 #define CUFILE_CONTEXT_H_
 
+#include <cassert>
 #include <cstddef>
 #include <glog/logging.h>
 #include <unistd.h>
@@ -37,7 +38,8 @@ static std::string cuFileGetErrorString(CUfileError_t status)
     {                                                                                                              \
         if (e.err != CU_FILE_SUCCESS)                                                                              \
         {                                                                                                          \
-            throw std::runtime_error(cuFileGetErrorString(e) + " @ " + __FILE__ + ":" + std::to_string(__LINE__)); \
+            throw std::runtime_error("Error Code: " + std::to_string(e.err) + " " + cuFileGetErrorString(e) + " @ " + __FILE__ + ":" + std::to_string(__LINE__)); \
+            assert(false);                                                                                         \
         }                                                                                                          \
     } while (0)
 
@@ -54,11 +56,10 @@ public:
     {
         // LOG(INFO) << "construct " << filename;
         int fd = open(filename, O_RDWR | O_DIRECT, 0664);
-        // LOG(INFO) << "open " << filename << " get " << fd;
+        LOG(INFO) << "open " << filename << " get " << fd;
         memset(&desc, 0, sizeof(desc));
         desc.type = CU_FILE_HANDLE_TYPE_OPAQUE_FD;
         desc.handle.fd = fd;
-
         CUFILE_CHECK(cuFileHandleRegister(&handle, &desc));
     }
 
