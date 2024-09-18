@@ -34,8 +34,9 @@ P2P Store 完全不保证可靠性，如果 peer 都丢了那数据就是丢了�
                       cmake \
                       libibverbs-dev \
                       libgoogle-glog-dev \
+                      libgtest-dev \
                       libjsoncpp-dev \
-                      libnuma-dev
+                      libnuma-dev \
    ```
 
 2. 安装 etcd-cpp-apiv3 库（https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3），请参阅 `Build and install` 一节的说明，并确保 `make install` 执行成功

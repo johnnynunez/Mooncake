@@ -14,7 +14,7 @@
 
 #include "transfer_metadata.h"
 
-// #define USE_LOCAL_DESC
+#define USE_LOCAL_DESC
 
 namespace mooncake
 {

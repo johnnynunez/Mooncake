@@ -56,8 +56,10 @@ namespace mooncake
 
     private:
         struct MemoryRegion {
-            uint64_t start;
+            void* addr;
             uint64_t length;
+            const char* location;
+            bool remote_accessible;
         };
 
         Transport *findName(const char *name, size_t n = SIZE_MAX);
