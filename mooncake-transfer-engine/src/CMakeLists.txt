@@ -4,7 +4,6 @@ add_subdirectory(transport)
 add_library(transfer_engine ${ENGINE_SOURCES} $<TARGET_OBJECTS:transport>)
 
 add_compile_definitions(transfer_engine PUBLIC MOONCAKE_USE_ETCD)
-# set(USE_STATIC_ETCD_CPP_API ON)
 if (USE_STATIC_ETCD_CPP_API)
   target_link_libraries(transfer_engine PUBLIC etcd-cpp-api-core protobuf grpc++ grpc)
 else()

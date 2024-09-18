@@ -1,22 +1,22 @@
-# 设计目标
+# Mooncake Transfer Engine 
 
 Mooncake Transfer Engine 是一个围绕 Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。其中 Segment 代表一段可被远程读写的连续地址空间，实际后端可以是 DRAM 或 VRAM 提供的非持久化存储 RAM Segment，也可以是 NVMeof 提供的持久化存储 NVMeof Segment。BatchTransfer 则负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
 
 ![transfer_engine](fig/transfer_engine.png)
 
-具体来说如上图所示一个特定的客户端对应一个 TransferEngine，其中不仅包含一个 RAM Segment 还集成了对于多线程多网卡高速传输的管理。RAM Segment 原则上就对应这个 TransferEngine 的全部虚拟地址空间，但实际上仅仅会注册其中的部分区域（被称为一个 Buffer）供外部 (GPUDirect) RDMA Read/Write。每一段 Buffer 可以分别设置权限（对应 RDMA rkey 等）和网卡亲和性（比如基于拓扑优先从哪张卡读写等）。
+具体来说，如上图所示，每个特定的客户端对应一个 TransferEngine，其中不仅包含一个 RAM Segment，还集成了对于多线程多网卡高速传输的管理。RAM Segment 原则上就对应这个 TransferEngine 的全部虚拟地址空间，但实际上仅仅会注册其中的部分区域（被称为一个 Buffer）供外部 (GPUDirect) RDMA Read/Write。每一段 Buffer 可以分别设置权限（对应 RDMA rkey 等）和网卡亲和性（比如基于拓扑优先从哪张卡读写等）。
 
 # 核心用户接口
 
-TransferEngine 对外提供 TransferEngine 类，具体定义在 src/transfer_engine/transfer_engine.h 中。
+Mooncake Transfer Engine 通过 `TransferEngine` 类对外提供接口（位于 `mooncake-transfer-engine/include/transfer_engine.h`），其中对应不同后端的具体的数据传输功能由 `Transport` 类实现，目前支持 `RdmaTransport` 和 `NVMeoFTransport`。
 
 ## 数据传输
 
-### TransferRequest
+### Transport::TransferRequest
 
-TransferEngine 提供的最核心 API 是：提交一组异步的 BatchTransfer 任务（submit_transfer）并查询其状态（get_transfer_status）。单个连续块的传输请求定义为一个 TransferRequest 及将本地总 source 开始长度为 length 的连续空间 Read/Write 到 target_id 对应 segment 从 target_offset 开始的空间。
+Mooncake Transfer Engine 提供的最核心 API 是：通过 `Transport::submitTransfer` 接口提交一组异步的 `Transport::TransferRequest` 任务，并通过 `Transport::getTransferStatus` 接口查询其状态。每个 `Transport::TransferRequest` 规定从本地的起始地址 `source` 开始，读取或写入长度为 `length` 的连续数据空间，到 `target_id` 对应的段、从 `target_offset` 开始的位置。
 
-结构体定义如下：
+`Transport::TransferRequest` 结构体定义如下：
 
 ```cpp
 using SegmentID = int32_t;
@@ -31,88 +31,141 @@ struct TransferRequest
 };
 ```
 
-- Opcode 取值为 READ 或 WRITE。READ 表示数据从 <target_id, target_offset> 表示的地址复制到 source；WRITE 表示数据从 source 复制到 <target_id, target_offset> 表示的地址。
-- Source 表示当前 TransferEngine 管理的 DRAM/VRAM buffer，必须提前已经被 registerLocalMemory() 接口注册
-- Target_ID 表示传输目标的 Segment ID。Segment ID 的获取需要用到 getSegmentID() 接口。Segment 分为以下两种类型：
-  - RAM 空间型，涵盖 DRAM/VRAM 两种形态。如前所述，同一进程（或者说是 TransferEngine 实例）下只有一个 Segment，这个 Segment 内含多种不同种类的 Buffer（DRAM/VRAM）。此时 getSegmentID() 接口传入的 Segment 名称等同于服务器主机名。target_offset 为目标服务器的虚拟地址。
-  - NVMeOF 空间型，每个文件对应一个 Segment。此时 getSegmentID() 接口传入的 Segment 名称等同于文件的唯一标识符。target_offset 为目标文件的偏移量。
-- length 表示传输的数据量。TransferEngine 在内部可能会进一步拆分成多个读写请求。
+- `opcode` 取值为 `READ` 或 `WRITE`。`READ` 表示数据从 `<target_id, target_offset>` 表示的目标地址复制到本地的起始地址 `source`；`WRITE` 表示数据从 `source` 复制到 `<target_id, target_offset>` 表示的地址。
+- `source` 表示当前 `TransferEngine` 管理的 DRAM/VRAM buffer，需提前已经被 `registerLocalMemory` 接口注册
+- `target_id` 表示传输目标的 Segment ID。Segment ID 的获取需要用到 `openSegment` 接口。Segment 分为以下两种类型：
+  - RAM 空间型，涵盖 DRAM/VRAM 两种形态。如前所述，同一进程（或者说是 `TransferEngine` 实例）下只有一个 Segment，这个 Segment 内含多种不同种类的 Buffer（DRAM/VRAM）。此时 `openSegment` 接口传入的 Segment 名称等同于服务器主机名。`target_offset` 为目标服务器的虚拟地址。
+  - NVMeOF 空间型，每个文件对应一个 Segment。此时 `openSegment` 接口传入的 Segment 名称等同于文件的唯一标识符。`target_offset` 为目标文件的偏移量。
+- `length` 表示传输的数据量。TransferEngine 在内部可能会进一步拆分成多个读写请求。
 
-### TransferEngine::allocateBatchID
-
-```cpp
-BatchID TransferEngine::allocateBatchID(size_t batch_size);
-```
-
-分配 BatchID。同一 BatchID 下最多可提交 batch_size 个 TransferRequest。
-
-- batch_size: 同一 BatchID 下最多可提交的 TransferRequest 数量；
-- 返回值：若成功，返回 BatchID（非负）；否则返回负数值。
-
-### TransferEngine::submitTransfer
+### Transport::allocateBatchID
 
 ```cpp
-int TransferEngine::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries);
+BatchID Transport::allocateBatchID(size_t batch_size);
 ```
 
-向 batch_id 追加提交新的 Transfer 任务。为异步操作，提交到后台线程池后立即返回。同一 batch_id 下累计的 entries 数量不应超过创建时定义的 batch_size。
+分配 `BatchID`。同一 `BatchID` 下最多可提交 `batch_size` 个 `TransferRequest`。
 
-- batch_id: 所属的 BatchID ；
-- entries: Transfer 任务数组；
+- `batch_size`: 同一 `BatchID` 下最多可提交的 `TransferRequest` 数量；
+- 返回值：若成功，返回 `BatchID`（非负）；否则返回负数值。
+
+### Transport::submitTransfer
+
+```cpp
+int Transport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries);
+```
+
+向 `batch_id` 追加提交新的 `TransferRequest` 任务。该任务被异步提交到后台线程池。同一 `batch_id` 下累计的 `entries` 数量不应超过创建时定义的 `batch_size`。
+
+- `batch_id`: 所属的 `BatchID`；
+- `entries`: `TransferRequest` 数组；
 - 返回值：若成功，返回 0；否则返回负数值。
 
-### TransferEngine::getTransferStatus
+### Transport::getTransferStatus
 
 ```cpp
 enum TaskStatus
 {
-  WAITING, // 正在处于传输阶段
-  PENDING,
-  INVALID, // 参数不合法
-  CANNELED, // 暂不支持
+  WAITING,   // 正在处于传输阶段
+  PENDING,   // 暂不支持
+  INVALID,   // 参数不合法
+  CANNELED,  // 暂不支持
   COMPLETED, // 传输完毕
-  TIMEOUT, // 暂不支持
-  FAILED // 即使经过重试仍传输失败
+  TIMEOUT,   // 暂不支持
+  FAILED     // 即使经过重试仍传输失败
 };
 struct TransferStatus {
   TaskStatus s;
   size_t transferred; // 已成功传输了多少数据（不一定是准确值，确保是 lower bound）
 };
-int TransferEngine::getTransferStatus(BatchID batch_id, std::vector<TransferStatus> &status)
+int Transport::getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status)
 ```
 
-获取 batch_id 对应所有 TransferRequest 的运行状态。
+获取 `batch_id` 中第 `task_id` 个 `TransferRequest` 的运行状态。
 
-- batch_id: 所属的 BatchID ；
-- status: 输出 Transfer 状态数组，其长度等于该 BatchID 中通过 submitTransfer 累计传入的 TransferRequest 数量。目前；
+- `batch_id`: 所属的 `BatchID`；
+- `task_id`: 要查询的 `TransferRequest` 序号；
+- `status`: 输出 Transfer 状态；
 - 返回值：若成功，返回 0；否则返回负数值。
 
-### TransferEngine::freeBatchID
+### Transport::freeBatchID
 
 ```cpp
-int freeBatchID(BatchID batch_id);
+int Transport::freeBatchID(BatchID batch_id);
 ```
 
-回收 BatchID，之后对此的 submitTransfer 及 getTransferStatus 操作均是未定义的。若 BatchID 内仍有 TransferRequest 未完成（即处于 WAITING），则拒绝操作。
+回收 `BatchID`，之后对此的 `submitTransfer` 及 `getTransferStatus` 操作均是未定义的。若 `BatchID` 内仍有 `TransferRequest` 未完成，则拒绝操作。
 
-- batch_id: 所属的 BatchID ；
+- `batch_id`: 所属的 `BatchID`；
+- 返回值：若成功，返回 0；否则返回负数值。
+
+## 多 Transport 管理
+`TransferEngine` 类内部管理多后端的 `Transport` 类，用户可向 `TransferEngine` 中装载或卸载对不同后端进行传输的 `Transport`。
+
+### TransferEngine::installOrGetTransport
+```cpp
+Transport* installOrGetTransport(const std::string& proto, void** args);
+```
+在 `TransferEngine` 中注册 `Transport`。如果某个协议对应的 `Transport` 已存在，则返回该 `Transport`。
+
+- `proto`: `Transport` 使用的传输协议名称，目前支持 `rdma`, `nvmeof`。
+- `args`：以变长数组形式呈现的 `Transport` 初始化需要的其他参数，数组内最后一个成员应当是 `nullptr`。
+- 返回值：若 `proto` 在确定范围内，返回对应 `proto` 的 `Transport`；否则返回空指针。
+
+#### RDMA 传输模式
+对于 RDMA 传输模式，注册 `Transport` 期间需通过 `args` 指定网卡优先级顺序。
+```cpp
+void** args = (void**) malloc(2 * sizeof(void*));
+args[0] = /* topology matrix */;
+args[1] = nullptr;
+engine->installOrGetTransport("rdma", args);
+```
+网卡优先级顺序是一个 JSON 字符串，表示使用的存储介质名称及优先使用的网卡列表，样例如下：
+```json
+{
+    "cpu:0": [["mlx0", "mlx1"], ["mlx2", "mlx3"]],
+    "cuda:0": [["mlx1", "mlx0"]],
+    ...
+}
+```
+其中每个 `key` 代表一个 CPU socket 或者一个 GPU device 对应的设备名称
+每个 `value` 为一个 (`preferred_nic_list`, `accessable_nic_list`) 的二元组，每一项都是一个 NIC 名称的列表（list）。
+- `preferred_nic_list` 表示优先选择的 NIC，比如对于 CPU 可以是当前直连而非跨 NUMA 的 NIC，对于 GPU 可以是挂在同一个 PCIe Switch 下的 NIC；
+- `accessable_nic_list` 表示虽然不优选但是理论上可以连接上的 NIC，用于故障重试场景。
+
+#### NVMeOF 传输模式
+对于 NVMeOF 传输模式，注册 `Transport` 期间需通过 `args` 指定文件路径。
+```cpp
+void** args = (void**) malloc(2 * sizeof(void*));
+args[0] = /* topology matrix */;
+args[1] = nullptr;
+engine->installOrGetTransport("nvmeof", args);
+```
+
+### TransferEngine::uinstallTransport
+```cpp
+int uninstallTransport(const std::string& proto);
+```
+从 `TransferEngine` 中卸载 `Transport`。
+- `proto`: `Transport` 使用的传输协议名称，目前支持 `rdma`, `nvmeof`。
 - 返回值：若成功，返回 0；否则返回负数值。
 
 ## 空间注册
 
-上述传输过程作为源端指针的 TransferRequest::source，理论上可以是当前进程虚拟空间中的任何一个指向 DRAM 或 VRAM 的指针，但必须提前注册为 RDMA 可读写的 Memory Region 空间。因此提供如下的辅助函数：
+对于 RDMA 的传输过程，作为源端指针的 `TransferRequest::source` 必须提前注册为 RDMA 可读写的 Memory Region 空间。因此提供如下的辅助函数：
 
 ### TransferEngine::registerLocalMemory
 
 ```cpp
-int TransferEngine::registerLocalMemory(void \*addr, size_t size, string location);
+int TransferEngine::registerLocalMemory(void *addr, size_t size, string location, bool remote_accessible);
 ```
 
-在本地 DRAM/VRAM 上注册起始地址为 addr，长度为 size 的空间。
+在本地 DRAM/VRAM 上注册起始地址为 `addr`，长度为 `size` 的空间。
 
-- addr: 注册空间起始地址；
-- size：注册空间长度；
-- location: 这一段内存对应的 device 比如 cuda:0 表示对应 GPU，cpu:0 表示对应 socket，通过和 PriorityMatrix（见构造函数一节） 匹配可用的 RNIC 列表，用于识别优选的网卡。
+- `addr`: 注册空间起始地址；
+- `size`：注册空间长度；
+- `location`: 这一段内存对应的 `device`，比如 `cuda:0` 表示对应 GPU 设备，`cpu:0` 表示对应 CPU socket，通过和网卡优先级顺序表（见`installOrGetTransport`） 匹配，识别优选的网卡。
+- `remote_accessible`: 标识这一块内存能否被远端节点访问。
 - 返回值：若成功，返回 0；否则返回负数值。
 
 ### TransferEngine::unregisterLocalMemory
@@ -126,54 +179,43 @@ int TransferEngine::unregisterLocalMemory(void *addr);
 - addr: 注册空间起始地址；
 - 返回值：若成功，返回 0；否则返回负数值。
 
-## Segment 管理
+## Segment 管理与 ETCD 元数据
 
-前文指出构造 TransferRequest 的过程中仅仅需要传递 segment_id 就可以代表一个远端的 Segment。在 RDMA 连接期间，为了完成对应连接的建立需要维护并交换 RDMA 和多网卡亲和性相关的元数据。TransferEngine 内部使用 TransferMetadata 模块实现编解码功能，结合中心化全局的 metadata server（当前由 memcached/etcd 实现）及节点之间互相传递实现上述目标。
-
-在构造 TransferEngine 对象期间，会向 memcached/etcd 写入一条新的 SegmentDesc 记录，并按需要进行更新。
-
-适用于 RDMA 模式的 SegmentDesc 涵盖了所有 RDMA 网卡的信息、优先矩阵及 Buffer 列表。
-
+### Segment 管理
+TranferEngine 提供 `openSegment` 函数，该函数获取一个 `SegmentHandle`，用于后续 `Transport` 的传输。
 ```cpp
-struct DeviceDesc
-{
-    std::string name; // 网卡名称（如 mlx5_3）
-    uint16_t lid;
-    std::string gid;
-};
-
-struct BufferDesc
-{
-    std::string name; // Buffer 类别名称，如“cpu:0”等
-    uint64_t addr; // 起始虚拟地址
-    uint64_t length; // 长度
-    std::vector<uint32_t> lkey;
-    std::vector<uint32_t> rkey;
-};
-
-struct PriorityItem
-{
-    std::vector<std::string> preferred_rnic_list; // 对于指定类别的 Buffer，优先使用的网卡名称
-    std::vector<std::string> available_rnic_list; // 对于指定类别的 Buffer，次使用的网卡名称
-};
-
-using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;
-
-struct SegmentDesc
-{
-    std::string name; // Segment 的名称，对于 RDMA Segment 同所述服务器名称
-    std::vector<DeviceDesc> devices; // priority_matrix 所用的所有网卡设备信息
-    PriorityMatrix priority_matrix; // 优先矩阵
-    std::vector<BufferDesc> buffers; // BufferDesc 表示一段连续的注册内存空间
-};
+SegmentHandle openSegment(const std::string& segment_name);
 ```
-
-存储在 memcached/etcd 的 JSON 数据如下
-
+- `segment_name`：segment 的唯一标志符。
+- 返回值：若成功，返回对应的 SegmentHandle；否则返回负数值。
+  
 ```cpp
-Key = mooncake/[server_name]
-Value= {
-    'name': 'optane20'
+int closeSegment(SegmentHandle segment_id);
+```
+- `segment_id`：segment 的唯一标志符。
+- 返回值：若成功，返回 0；否则返回负数值。
+
+### ETCD 元数据形态
+```
+// 用于根据 server_name 查找可通信的地址以及暴露的 rpc 端口。
+// 创建：调用 TransferEngine::init() 时。
+// 删除：TransferEngine 被析构时。
+Key = mooncake/rpc_meta/[server_name]
+Value = {
+    'ip_or_host_name': 'optane20'
+    'rpc_port': 12345
+}
+
+// 对于 segment，采用 mooncake/[proto]/[segment_name] 的 key 命名方式，segment name 可以采用 Server Name。 
+// Segment 对应机器，buffer 对应机器内的不同段内存或者不同的文件或者不同的盘。同一个 segment 的不同 buffer 处于同一个故障域。
+
+// RAM Segment，用于 RDMA Transport 获取传输信息。
+// 创建：命令行工具 register.py，此时 buffers 为空，仅填入可预先获知的信息。
+// 修改：TransferEngine 在运行时通过 register / unregister 添加或删除 Buffer。
+Key = mooncake/ram/[segment_name]
+Value = {
+    'server_name': server_name,
+    'protocol': rdma,
     'devices': [
         { 'name': 'mlx5_2', 'lid': 17, 'gid': 'fe:00:...' },
         { 'name': 'mlx5_3', 'lid': 22, 'gid': 'fe:00:...' }
@@ -192,6 +234,38 @@ Value= {
         },
     ],
 }
+
+// 创建：命令行工具 register.py，确定可被挂载的文件路径。
+// 修改：命令行工具 mount.py，向被挂载的 buffers.local_path_map 中添加挂载该文件的机器 -> 挂载机器上的文件路径的映射。
+Key = mooncake/nvmeof/[segment_name]
+Value = {
+    'server_name': server_name,
+    'protocol': nvmeof,
+    'buffers':[ 
+    {
+        'length': 1073741824,
+        'file_path': "/mnt/nvme0" // 本机器上的文件路径
+        'local_path_map': {
+            "optane13": "/mnt/transfer_engine/optane14/nvme0", // 挂载该文件的机器 -> 挂载机器上的文件路径
+            ....
+        },
+     }，
+     {
+        'length': 1073741824,
+        'file_path': "/mnt/nvme1", 
+        'local_path_map': {
+            "optane13": "/mnt/transfer_engine/optane14/nvme1",
+            ....
+        },
+     }
+    ]
+}
+
+// 更多不需要依赖运行时信息即可完整注册的存储介质。
+Key = mooncake/s3/[segment_name]
+Value = {
+    ...
+}
 ```
 
 TransferMetadata 的下列接口用于上传和下载 SegmentDesc 项目。
@@ -209,28 +283,22 @@ TransferEngine 的下列操作会影响位于 memcached/etcd 的 SegmentDesc 记
 - unregisterLocalMemory 函数则会向当前对象对应的 SegmentDesc 记录中删除对应的 BufferDesc
 - 析构函数：删除 key=mooncake/server_name 的新项
 
-## 构造函数
+## 构造函数与初始化
 
 ```cpp
-TransferEngine(std::unique_ptr<TransferEngineMetadataClient> metadata_client,
-const std::string &local_server_name,
-const std::string &nic_priority_matrix);
+TransferEngine(std::unique_ptr<TransferEngineMetadataClient> metadata_client);
 ```
 
 - metadata_client：TransferEngineMetadataClient 对象指针，该对象将 TransferEngine 框架与元数据服务器/etcd 等带外通信逻辑抽取出来，以方便用户将其部署到不同的环境中。
-- local_server_name：标识本地 CLIENT 的名称。集群内 local_server_name 的值应当具备唯一性。推荐使用 hostname。
-- nic_priority_matrix：是一个 JSON 字符串，表示使用的存储介质名称及优先使用的网卡列表，样例如下
 
+为了便于异常处理，TransferEngine 在完成构造后需要调用init函数进行二次构造：
 ```cpp
-{
-    "cpu:0": [["mlx0", "mlx1"], ["mlx2", "mlx3"]],
-    "cuda:0": [["mlx1", "mlx0"]],
-    ...
-}
+int init(std::string& server_name, std::string& connectable_name, uint64_t rpc_port = 12345);
 ```
-
-- 其中每个 key 代表一个 CPU socket 或者一个 GPU device 对应的设备名称
-- 每个 value 为一个 (prefered_nic, accessable_nic) 的二元组，每一项都是一个 nic 名称的 list。 - prefer_nic 表示优先选择的 NIC，比如对于 CPU 可以是当前直连而非跨 NUMA 的 NIC，对于 GPU 可以是挂在同一个 PCIe Switch 下的 NIC - accessable_nic 表示虽然不优选但是理论上可以连接上的 NIC，用于故障重试时使用
+- server_name: 本地的 server name，保证在集群内唯一。
+- connectable_name：用于被其它 client 连接的 name，可为 hostname 或 ip 地址。
+- rpc_port：用于与其它 client 交互的 rpc 端口。- 
+- 返回值：若成功，返回 0；若 TransferEngine 已被 init 过，返回 -1。
 
 ```cpp
   ~TransferEngine();
@@ -238,114 +306,89 @@ const std::string &nic_priority_matrix);
 
 回收分配的所有类型资源，同时也会删除掉全局 meta data server 上的信息。
 
-## RPC
-
-### ExchangeQPN
-
-用于交换 QPNum 来建立 RDMA 连接。
-
+## 封装成的 C 接口
 ```cpp
-    struct HandShakeDesc
-    {
-        std::string local_nic_path; // 请求方的 server_name@nic_name
-        std::string peer_nic_path; // 接收方的 server_name@nic_name
-        std::vector<uint32_t> qp_num;
-    };
-    /*
-    JSON 格式
-    value = {
-        'local_nic_path': 'optane20@mlx5_2',
-        'peer_nic_path': 'optane21@mlx5_2',
-        'qp_num': [xxx, yyy]
-    }
-    */
+// transfer_engine_c.h
+extern "C" {
+    // 将 TransferEngine 和 Transport 类的接口改写成 C，以便上层由其它语言编写的服务调用。
+    // 除了需要将 engine / transport 作为参数传入，其它均与对应的 C++ 接口等价。
 
-    int TransferEngine::onSetupRdmaConnections(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc);
-```
+    typedef struct transfer_status transfer_status_t;
+    typedef void * transfer_engine_t;
+    typedef void * transport_t;
 
-为实现 RDMA 通联，需要将新 Segment 所属 CLIENT 与集群内原有 CLIENT 之间建立 QP 配对，以建立点对点可靠连接。例如，请求方 server1@mlx5_1 想和远端 server2@mlx5_2 建立连接，则 server1 会主动向 server2 发出 HandShakeDesc 消息，server2 需要接收消息并执行 onSetupRdmaConnections() 更新自身的 QP 状态，同时以自身状态为基础传回 HandShakeDesc 消息，最后 server1 同样更新自身的 QP 状态，完成连接操作。
+    transfer_engine_t createTransferEngine(const char *metadata_uri);
+    int initTransferEngine(transfer_engine_t engine，
+                           const char* server_name);
 
-- request_qp_reg_desc：传入的请求方（远程）RDMA QP 注册标识信息（LID、GID、QPN）
-- response_qp_reg_desc：传出的响应方（本地）RDMA QP 注册标识信息（LID、GID、QPN）
-- 返回值：若成功，返回 0；否则返回负数值。
+    transport_t installOrGetTransport(transfer_engine_t engine, 
+                                      const char *proto,
+                                      void **args);
 
-### SubmitTransfer
+    segment_handle_t openSegment(transfer_engine_t engine,
+                                 const char *segment_name, 
+                                 transport_t *transport);
 
-TBD —— 组合了 allocateBatchID 和 submitTransfer 语义。
+    int closeSegment(transfer_engine_t engine, 
+                     segment_id_t segment_id);
 
-### GetStatus
+    void destroyTransferEngine(transfer_engine_t engine);
 
-TBD —— 组合了 getTransferStatus 和 freeBatchID 语义（若第一次返回 SUCCESS 或 FAILED，则可以立即释放空间）。
+    int registerLocalMemory(transfer_engine_t engine,
+                            void *addr,
+                            size_t size,
+                            const char* location,
+                            bool remote_accessible = false);
 
-## EndPoint
+    batch_id_t allocateBatchID(transport_t xport,
+                               size_t batch_size);
 
-RdmaEndPoint 表示本地 NIC1 (由所属的 RdmaContext 确定) 与远端 NIC2 (由 peer_nic_path 确定) 之间的所有 QP 连接。构造完毕后（RdmaEndPoint::RdmaEndPoint() 和 RdmaEndPoint::construct()），相应资源被分配，但不指定对端，随后需要与对手方交换 Handshake 信息，RdmaEndPoint 才能正确发送工作请求。
+    int submitTransfer(transport_t xport,
+                       batch_id_t batch_id,
+                       struct transfer_request *entries,
+                       size_t count);
 
-- 主动发起握手的一方，调用 setupConnectionsByActive 函数，传入对端的 peer_nic_path。peer_nic_path 的格式如下：peer_nic_path := peer_server_name@nic_name。如 optane20@mlx5_3，可由对端 RdmaContext::nicPath() 取得
-- 被动触发握手的一方，由 TransferMetadata 监听线程调用 setupConnectionsByPassive 函数。对端的 peer_nic_path 位于 peer_desc.local_nic_path 内
+    int getTransferStatus(transport_t xport,
+                          batch_id_t batch_id,
+                          size_t task_id,
+                          struct transfer_status *status);
 
-  完成上述操作后，RdmaEndPoint 状态被设置为 CONNECTED
-  用户主动调用 disconnect() 或内部检测到错误时，连接作废，RdmaEndPoint 状态被设置为 UNCONNECTED。此时可以重新触发握手流程
-
-## 支持多种 Transport
-
-为了实现对于多种传输协议的支持，将 `TransferEngine` 的功能进一步拆分为两个类，即 `MultiTransferEngine` 和 `Transport`（虚基类），其中`MultiTransferEngine` 用于进行多后端的管理，`Transport`用于实现某种特定协议的传输逻辑（实际上就对应了之前部分中`TransferEngine`的功能）。
-
-### Transport
-
-Transport 基类的接口如下：
-
-```cpp
-  struct Transport
-    {
-        virtual int install(void **args) = 0;
-        /// @brief Register a memory region for use with this transport.
-        virtual int registerLocalMemory(void *addr, size_t size, const std::string &location) = 0;
-        /// @brief Unregister a memory region for use with this transport.
-        virtual int unregisterLocalMemory(void *addr) = 0;
-        /// @brief Open the segment with specified path.
-        virtual SegmentID openSegment(const std::string &path) = 0;
-        /// @brief Close the segment.
-        virtual int closeSegment(SegmentID segment_id) = 0;
-        /// @brief Create a batch with specified maximum outstanding transfers.
-        virtual BatchID allocateBatchID(size_t batch_size) = 0;
-        /// @brief Free an allocated batch.
-        virtual int freeBatchID(BatchID batch_id) = 0;
-        /// @brief Submit a batch of transfer requests to the batch.
-        /// @return The number of successfully submitted transfers on success. If that number is less than nr, errno is set.
-        virtual int submitTransfer(BatchID batch_id,
-                                   const std::vector<TransferRequest> &entries) = 0;
-        /// @brief Get the status of a submitted transfer. This function shall not be called again after completion.
-        /// @return Return 1 on completed (either success or failure); 0 if still in progress.
-        virtual int getTransferStatus(BatchID batch_id, size_t task_id,
-                                      TransferStatus &status) = 0;
-    };
-```
-
-除 `install `外的函数功能基本均与之前介绍的`TransferEngine`相同，在此不再赘述。唯一值得注意的是，为了实现对后端资源的更加灵活管理，将原本的`getSegmentID`接口扩充为`openSegment`和`closeSegment`，`openSegment`的语义包括：1）若该 Transport 的后端为 remote 文件，则将文件挂载到本地；2）获得用于传输的 `segment_id`。`closeSegment`的语义包括：若该 Transport 的后端为 remote 文件，则将文件从本地卸载。
-
-`install`函数用于进行传输资源的初始化，如对于 RDMA 连接初始化本地的 memory region 等。由于不同的后端资源所需的初始化参数不同，传入的参数为`void**`类型，实现 `Transport` 的开发者需要手动对其进行unpack。
-
-实现对于一种后端的支持时，需要继承 `Transport` 类并实现相应接口。值得注意的是，后端的构造函数不应接受任何参数且不进行资源初始化，对资源的初始化统一通过`install`函数完成。（这样设计的原因是 C++ 不支持构造函数的运行时多态）。
-
-### MultiTransferEngine
-
-`MultiTransferEngine` 管理多种后端，其底层数据结构是一个`vector<Transport*>`。其为用户提供了如下接口：
-
-```cpp
-struct MultiTransferEngine {
-  	Transport *installTransport(const char *proto, const char *path_prefix, void **args);
-  	int uninstallTransport(Transport *xport);
-    SegmentID openSegment(const char *path);
-    int closeSegment(SegmentID seg_id);
-  
-  	std::vector<Transport *> installed_transports;
+    int freeBatchID(transport_t xport, batch_id_t batch_id);
 }
-
 ```
+## 利用 TransferEngine 进行二次开发
+要利用 TransferEngine 进行二次开发，可使用编译好的静态库文件 `libtransfer_engine.a` 及 C 头文件 `transfer_engine_c.h`，不需要用到 `src/transfer_engine` 下的其他文件。
 
-其中，`installTransport`用于初始化特定`proto`传输协议下的`Transport`，`path_prefix`代表了远端文件的挂载点（TODO：确定用 RDMA 时的语义），`args`将被传入用于`Transport`的初始化。`uninstallTransport`用于从 Engine 中删除某个`Transport`并释放资源。
 
-`openSegment`和`clostSegment`与 `Transport`类中的相应函数语义相同，其会根据 `path`自动确定该 `segment` 应由哪个 `Transport ` 负责，并相应调用`Transport`的`openSegment`函数。
+## 样例程序使用
+样例程序的代码见 `tests/transfer_engine_test.cpp`。使用要点如下:
 
-（TODO：需要记录 `seg_id` 与 `Transport` 的对应关系用于 `close`，比如`SegmentID`里记个指针）
+1. 在机器 E 上启动 etcd 服务，记录该服务的 [IP/域名:端口]，如 optane21:2379。要求集群内所有服务器能通过该 [IP/域名:端口] 访问到 etcd 服务（通过 curl 验证），因此若有必要需要设置集群所有节点的 /etc/hosts 文件，或者换用 IP 地址。
+
+    使用命令行直接启动 etcd，需确保设置 --listen-client-urls 参数为 0.0.0.0：
+    ```
+    bash
+    ./etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://<your-server-ip>:2379
+    ```
+
+2. 在机器 A 上启动 transfer_engine 服务，模式设置为 target，负责在测试中提供 Segment 源（实际环境中每个节点既可发出传输请求，也可作为传输数据源）
+
+    ```
+    ./example/transfer_engine_test --mode=target <通用选项>
+    ```
+   
+    为了正确建立连接，一般需要设置下列通用选项：
+    - metadata_server：为开启 etcd 服务机器 E 的 [IP/域名:端口]，如 optane21:12345。
+    - local_server_name：本机器 [IP/域名]，如 optane20，如果不设置，则直接使用本机的主机名。本机内存形成的 Segment 名称与 local_server_name 一致。其他节点会直接使用 local_server_name（可为 IP 或域名形态）与本机进行 RDMA EndPoint 握手，若握手失败则无法完成后续通信。因此，务必需要保证填入的参数是有效的 IP 或域名，若有必要需要设置集群所有节点的 /etc/hosts 文件。
+    - nic_priority_matrix：网卡优先级矩阵。一种最简单的形态如下：
+        ```
+        {  "cpu:0": [["mlx5_1", "mlx5_2", "mlx5_3", "mlx5_4"], []] }
+        ```
+        表示，对于登记类别（即 registerMemory 的 location 字段）为 "cpu:0" 的内存区域，优先从 "mlx5_1", "mlx5_2", "mlx5_3", "mlx5_4" 中随机选取一张网卡建立连接并传输。
+
+3. 在机器 B 上再启动一个 transfer_engine 服务，用以发起 transfer 请求。segment_id 表示测试用 Segment 来源，在这里就是机器 A 的 [IP/域名]。
+    ```
+    ./example/transfer_engine_test --segment_id=[IP/域名] <通用选项>
+    ```
+    此外，operation（可为 read 或 write）、batch_size、block_size、duration、threads 等均为测试配置项，其含义不言自明。
+

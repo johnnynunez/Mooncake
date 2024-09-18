@@ -16,10 +16,25 @@ set(CMAKE_BUILD_TYPE "Release")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_CUDA "option for using gpu" OFF)
+option(USE_STATIC_ETCD_CPP_API "option for using statically-linked etcd cpp api" ON)
 
-include_directories(thirdparties/include)
-link_directories(thirdparties/lib)
+option(BUILD_TRANSFER_ENGINE "build transfer engine" ON)
+option(BUILD_P2P_STORE "build p2p store" ON)
+option(BUILD_ALLOCATOR "build allocator" ON)
 
-add_subdirectory(mooncake-transfer-engine)
-#add_subdirectory(mooncake-p2p-store)
-add_subdirectory(mooncake-allocator)
+if (USE_STATIC_ETCD_CPP_API)
+  include_directories(thirdparties/include)
+  link_directories(thirdparties/lib)
+endif()
+
+if (BUILD_TRANSFER_ENGINE)
+  add_subdirectory(mooncake-transfer-engine)
+endif()
+
+if (BUILD_P2P_STORE)
+  add_subdirectory(mooncake-p2p-store)
+endif()
+
+if (BUILD_ALLOCATOR)
+  add_subdirectory(mooncake-allocator)
+endif()

@@ -189,7 +189,7 @@ namespace mooncake
         std::unordered_map<BatchID, std::shared_ptr<BatchDesc>> batch_desc_set_;
 
     private:
-        virtual int registerLocalMemory(void *addr, size_t length, const string &location, bool update_metadata = true) = 0;
+        virtual int registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible, bool update_metadata = true) = 0;
 
         virtual int unregisterLocalMemory(void *addr, bool update_metadata = true) = 0;
 

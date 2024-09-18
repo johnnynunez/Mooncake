@@ -1,45 +1,39 @@
-# 设计目标和约束
+# Mooncake Managed Store [WIP]
 
-本质上来说解耦开来的 Mooncake Store 就是在一个慢速的对象存储之上基于高速互联的 DRAM/SSD 资源构建的一个池化的多级缓存。和传统缓存比最大特点是能够基于 (GPUDirect) RDMA 技术尽可能零拷贝的从发起端的 DRAM/VRAM 拷贝至接受端的 DRAM/SSD，且尽可能最大化利用单机多网卡的资源。
+本质上 Mooncake Managed Store 就是在一个慢速的对象存储之上基于高速互联的 DRAM/SSD 资源构建的一个池化的多级缓存。和传统缓存比最大特点是能够基于 (GPUDirect) RDMA 技术尽可能零拷贝的从发起端的 DRAM/VRAM 拷贝至接受端的 DRAM/SSD，且尽可能最大化利用单机多网卡的资源。
 
-核心设计目标和约束如下
+Mooncake Managed Store 的核心设计目标和约束可概述如下：
 
-- 以 Object Get/Put 而非 File Read/Write 为核心抽象管理数据，且最小分配单元为 16KB（带测），即不针对小对象优化。
-- 支持在缓存层多副本保存数据，但不保证绝对的高可用，极端情况下仅写入了缓存层还未异步刷入下层慢速对象存储上的数据会丢失
+- 以 Object Get/Put 而非 File Read/Write 为核心抽象管理数据，且最小分配单元为 16KB，即不针对小对象优化。
+- 支持在缓存层多副本保存数据，但不保证绝对的高可用，极端情况下仅写入了缓存层还未异步刷入下层慢速对象存储上的数据会丢失。
 - 保证 Object Put 的原子性，即 Get 一定会读到某次 Put 生成的完整的数据。但不保证 Linearizability，即 Get 可能不会读到最新一次 Put 的结果。 提供一个类似 ZooKeeper 的 Sync 操作来强制达成 freshness 的要求。
 - 对较大的 Object 进行条带化和并行处理。Object Size 较大时单个 Object 的 Get/Put 就需要可以利用多网卡的聚合带宽。
 - 缓存对象支持 Eager/Lazy/None 三种下刷慢速对象存储的模式，分别对应持久化要求从高到低的对象。
 - 支持动态增删缓存资源。
-- 【待确定】Mooncake Store 本身虽然是缓存层但自身语义是 store 而非 cache，不实现缓存替换和冷热识别等策略。策略由上层实现，Mooncake Store 本身只提供在各个缓存层之间迁移和删除以及必要的统计信息上报接口。
+- Mooncake Managed Store 本身虽然是缓存层但自身语义是 store 而非 cache，不实现缓存替换和冷热识别等策略。策略由上层实现，Mooncake Managed Store 本身只提供在各个缓存层之间迁移和删除以及必要的统计信息上报接口。
 
 # 总体架构
 
-基于上述目标设计上下两层的实现结构。上层控制面向 Client 提供 Object 级别的 Get/Put 等操作，下层数据面则是提供 VRAM/DRAM/NVM Buffer 层面的尽可能零拷贝和多网卡池化的数据传输。具体如下图如所示
+基于上述目标设计上下两层的实现结构。上层控制面向 Client 提供 Object 级别的 Get/Put 等操作，下层数据面则是提供 VRAM/DRAM/NVM Buffer 层面的尽可能零拷贝和多网卡池化的数据传输。
 
-![transfer_engine](fig/overview.png)
+![transfer_engine](fig/managed_store.png)
 
-从 Object 到 VRAM/DRAM/NVM Buffer 的映射关系和对应的空间管理由 Master 负责，BufProvider 仅负责提供空间和执行具体的数据传输任务。具体来说
+从 Object 到 VRAM/DRAM/NVM Buffer 的映射关系和对应的空间管理由 Master 负责，Managed Pool Buffer 仅负责提供空间和执行具体的数据传输任务。
 
-- 有两大类 Buffer
+Managed Pool Buffer 可分为以下两大类：
+1. DRAM/VRAM 地址空间。用户可指定一段 Memory Buffer 供 Master 进行空间分配，从而成为全局池化 DRAM Cache Pool 的组成部分。同时，也允许注册本地 DRAM 区域，但不由 Master 进行空间分配（比如 vLLM 的 DRAM PageCache 区域，仍按照原逻辑进行管理）。这种模式下，Client 和 Managed Pool Buffer 必须是同一个进程里，而不是 shared memory（考虑 VRAM，优势是简化指针管理）
 
-  - 一类每一个 Client 都会在同一个进程内
+2. 另一类是被注册到 NVMeof 中的一段 SSD 空间。
 
-    - 开辟用户指定大小的一段 Memory Segment 作为可以供 Master 进行空间分配的全局池化 DRAM Cache Pool 的组成部分
-    - 它也可以注册一些本地 DRAM 区域进 RDMA 以供其它节点直接 RDMA 读写但是这些区域的分配管理不由 Master 负责 -- 比如 vLLM 的 DRAM PageCache 区域
-    - Client 和 BufProvider 必须是同一个进程里，而不是 shared memory（due to VRAM，优势是简化指针管理）
+在 Managed Pool Buffer 这边看来上述两类都表示成 `segment_id -> <base_addr, size>` 这样标识的一个大块数组，实际在这个大块数组中进行空间分配和管理的操作是在远端的 Master 中进行的。即 Managed Pool Buffer 并不知道本地空间哪些被分配了哪些没有，只是被动地接受 Master 直接通过 `offset` 指定的对应区间之间的数据传输请求。
 
-  - 另一类是被注册到 NVMeof 中的一段 SSD 空间
+Client 除了可以 Get/Put 外还可以通过 Replicate 命令改变一个 Object 以 `{dram_replicate_num: int, nvmeof_replicate_num: int, flush:{Eager/Lazy/None}}` 三元组所代表的复制状态。具体来说对于一个标号为 `ID` 大小为 `size` 的 `Object` 的一次版本为 `ver` 的 `Put` 实际上会被存储为
 
-- 在 BufProvider 这边看来他们都是 segment_id -> <base_addr, size> 这样标识的一个大块数组，实际在这个大块数组中进行空间分配和管理的操作是在远端的 Master 中进行的。
-- 即 BufProvider 并不知道本地空间哪些被分配了哪些没有，只是被动地接受 Master 直接通过 offset 指定的对应区间之间的数据传输请求。
+- `dram_replicate_num \* ceil(size/dram_shard_size)` 个 DRAM Block，标号分别为 ID-ver-DRAM_Replica_i-Shard_j。其中 dram_shard_size 为全局 config，取决于最小多小能跑满 RDMA（4KB 应该就够）；
+- `nvmeof_replicate_num \* ceil(size/nvmeof_shard_size)` 个 SSD Block，标号分别为 ID-ver-NVMeof_Replica_i-Shard_j。其中 `nvmeof_shard_size` 为全局 config，取决于最小多小能跑满 NVMeof；
+- 一个（或零个，如果 flush=None）下层对象存储上的对象，key 为 ID。
 
-Client 除了可以 Get/Put 外还可以通过 Replicate 命令改变一个 Object 以 {dram_replicate_num: int, nvmeof_replicate_num: int, flush:{Eager/Lazy/None}} 三元组所代表的复制状态。具体来说对于一个标号为 ID 大小为 size 的 Object 的一次版本为 ver 的 Put 实际上会被存储为
-
-- dram_replicate_num \* ceil(size/dram_shard_size) 个 DRAM Block，标号分别为 ID-ver-DRAM_Replica_i-Shard_j。其中 dram_shard_size 为全局 config，取决于最小多小能跑满 RDMA （4KB 应该就够）
-- nvmeof_replicate_num \* ceil(size/nvmeof_shard_size) 个 SSD Block，标号分别为 ID-ver-NVMeof_Replica_i-Shard_j。其中 nvmeof_shard_size 为全局 config，取决于最小多小能跑满 NVMeof （待测）
-- 一个（或零个，如果 flush=None）下层对象存储上的对象，key 为 ID
-
-可以看到在上层缓存层每一次的 Put 实际上都会获得一个新的 version 所以实际上下层存储空间是不共享的，也就是不支持 in-place update。这样比较方便保证原子性，旧版本异步自动空间回收就行。但是最下层只有一个版本，由 Master 保证按照 version 顺序下刷（flush=Lazy 的情况可能跳过一些中间版本）。
+可以看到在上层缓存层每一次的 Put 实际上都会获得一个新的 version 所以实际上下层存储空间是不共享的，也就是不支持 in-place update。这样比较方便保证原子性，旧版本异步自动空间回收就行。但是最下层只有一个版本，由 Master 保证按照 `version` 顺序下刷（`flush=Lazy` 的情况可能跳过一些中间版本）。
 
 Replicate 操作如果增加或者删除了副本数量的话 Master 自己通过空间管理和调用数据面的操作来达成对应分布。类似的机制也可以用在故障恢复中。
 
@@ -201,17 +195,12 @@ int SetupRDMAConnections(const vector<RDMAQPRegDesc> &request_qp_reg_desc,
 Master 节点在注册阶段，除了在本地记录 SegmentDescriptor 并赋予唯一序号外，还需要逐个向集群内的所有**其他** Client 发送 SetupSegment RPC，目的是让集群中的每个 Client 都具备访问该 Segment 的能力。该过程同时隐含要求 RegisterSegment RPC 严格串行执行。
 
 - 当使用 DRAM SHM Segment 时，原 Client 节点（未持有该 Segment 的节点）需与新 Client 节点（持有该 Segment 的节点）建立 QP 连接。
-
-  **建立** **QP** **连接（双向）**
-
   - 原 Client 节点按照 descriptor 参数的信息知道新 Client 节点有 N_new 张卡，需要与自己的 N_old 张卡建立 QP 连接，所需数量至少是 max(N_old, N_new) \* QP_MUL_FACTOR。QP_MUL_FACTOR 表示一对卡建立的 QP 数量。原 Client 节点和新 Client 节点的映射方案是按顺序一一对应（如果数量不等则少的那一边 round robin）
   - 原 Client 节点按规则完成 QP 对象创建阶段，提取 LID、GID、QPNum 信息
   - 通过 SetupRDMAConnections RPC 发送到新 Client 节点。新 Client 节点接收到请求后，按 a. 规则完成 QP 对象创建与建连阶段，返回 LID、GID、QPNum 信息
   - 原 Client 节点继续完成 QP 对象建连阶段
 
-  上述过程中，已有的对象无需重复创建的可以直接重用（如与网卡设备相关联的 ibv_context 等）。操作结束时，每一个 Client 节点都可明确“为与集群内任何一个 Client 节点通信，需要使用的 QP 对象列表”。
-
-  **Memory Region 元数据传递**【20240718 更新】这一阶段不再需要，理由是在创建 Segment 时就可以取得每张卡的 rkey，因此 SetupSegment RPC 下发时的 descriptor 就可以包含此参数。
+  上述过程中，已有的对象无需重复创建的可以直接重用（如与网卡设备相关联的 ibv_context 等）。操作结束时，每一个 Client 节点都可明确“为与集群内任何一个 Client 节点通信，需要使用的 QP 对象列表”。gment RPC 下发时的 descriptor 就可以包含此参数。
 
 - 当使用 NVMeof Segment 时，原 Client 节点按照 descriptor 参数的信息，将 NVMeof 设备挂载到本地（该过程可能需要 root）。 segment id 与挂载点目录的关系存储于 Client 本地
 

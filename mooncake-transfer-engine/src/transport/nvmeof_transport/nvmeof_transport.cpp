@@ -231,7 +231,7 @@ namespace mooncake
         return Transport::install(local_server_name, meta, args);
     }
 
-    int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location, bool update_metadata)
+    int NVMeoFTransport::registerLocalMemory(void *addr, size_t length, const string &location, bool remote_accessible, bool update_metadata)
     {
         CUFILE_CHECK(cuFileBufRegister(addr, length, 0));
         return 0;
