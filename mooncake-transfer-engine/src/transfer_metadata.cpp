@@ -17,7 +17,8 @@
 namespace mooncake
 {
 
-    const static std::string ServerDescPrefix = "mooncake/serverdesc/";
+    const static std::string ServerDescPrefix = "mooncake/ram/";
+    const static std::string ServerDescPrefixForNvmeOF = "mooncake/nvmeof/";
 
     struct TransferMetadataImpl
     {
@@ -619,24 +620,10 @@ namespace mooncake
         hints.ai_family = AF_INET;
         hints.ai_socktype = SOCK_STREAM;
 
-        std::string hostname = peer_server_name;
-        uint16_t port = kDefaultServerPort;
-        auto pos = peer_server_name.find(':');
-        if (pos != peer_server_name.npos)
-        {
-            hostname = peer_server_name.substr(0, pos);
-            auto port_str = peer_server_name.substr(pos + 1);
-            int val = std::atoi(port_str.c_str());
-            if (val <= 0 || val > 65535)
-                PLOG(WARNING) << "Illegal port number in " << peer_server_name
-                              << ". Use default port " << port << " instead";
-            else
-                port = (uint16_t)val;
-        }
-
+        auto hostname_port = parseHostNameWithPort(peer_server_name);
         char service[16];
-        sprintf(service, "%u", port);
-        if (getaddrinfo(hostname.c_str(), service, &hints, &result))
+        sprintf(service, "%u", hostname_port.second);
+        if (getaddrinfo(hostname_port.first.c_str(), service, &hints, &result))
         {
             PLOG(ERROR) << "Failed to get IP address of peer server " << peer_server_name
                         << ", check DNS and /etc/hosts, or use IPv4 address instead";

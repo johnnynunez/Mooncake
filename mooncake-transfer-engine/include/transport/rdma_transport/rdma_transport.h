@@ -137,7 +137,7 @@ namespace mooncake
     private:
         int initializeRdmaResources();
 
-        int startHandshakeDaemon();
+        int startHandshakeDaemon(std::string &local_server_name);
 
     public:
         static int selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_cnt = 0);

@@ -69,7 +69,7 @@ namespace mooncake
             return -1;
         }
 
-        ret = startHandshakeDaemon();
+        ret = startHandshakeDaemon(local_server_name);
         if (ret)
         {
             LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot start handshake daemon";
@@ -90,6 +90,7 @@ namespace mooncake
 
     int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool remote_accessible, bool update_metadata)
     {
+        (void) remote_accessible;
         BufferDesc buffer_desc;
         buffer_desc.name = name;
         buffer_desc.addr = (uint64_t)addr;
@@ -349,12 +350,13 @@ namespace mooncake
         return 0;
     }
 
-    int RdmaTransport::startHandshakeDaemon()
+    int RdmaTransport::startHandshakeDaemon(std::string &local_server_name)
     {
+        auto hostname_port = parseHostNameWithPort(local_server_name);
         return metadata_->startHandshakeDaemon(
             std::bind(&RdmaTransport::onSetupRdmaConnections, this,
                       std::placeholders::_1, std::placeholders::_2),
-            globalConfig().handshake_port);
+            hostname_port.second);
     }
 
     int RdmaTransport::selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_count)
