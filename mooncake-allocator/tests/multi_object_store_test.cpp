@@ -9,14 +9,14 @@
 
 using namespace mooncake;
 
+thread_local std::random_device rd;
+thread_local std::mt19937 gen(rd());
+thread_local std::uniform_int_distribution<> dis('a', 'z');
+
 char randomChar()
 {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis('a', 'z'); // 假设随机字符的范围是 0-255
     return static_cast<char>(dis(gen));
 }
-
 class DistributedObjectStoreMultiThreadTest : public ::testing::Test
 {
 protected:
@@ -463,6 +463,8 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
 
 int main(int argc, char **argv)
 {
+    // FLAGS_stderrthreshold = google::FATAL;
+    // FLAGS_logtostderr = false;
     google::InitGoogleLogging("test_log");
     google::SetLogDestination(google::INFO, "logs/log_info_");
     // google::SetLogDestination(google::WARNING, "logs/log_warning_");

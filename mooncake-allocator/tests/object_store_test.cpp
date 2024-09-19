@@ -36,8 +36,11 @@ protected:
         for (auto &meta : segment_and_index)
         {
             // 暂时屏蔽
-            //testUnregisterBuffer(store, meta.first, meta.second);
+            for (int index = 0; index < meta.second.size(); ++index) {
+                testUnregisterBuffer(store, meta.first, meta.second[index]);
+            }
         }
+        LOG(WARNING) << "finish teardown";
     }
 
     uint64_t testRegisterBuffer(DistributedObjectStore &store, SegmentId segmentId)

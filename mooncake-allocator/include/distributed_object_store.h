@@ -11,6 +11,8 @@
 
 //#include "transfer_engine/transfer_engine.h"
 #include "transfer_engine.h"
+#include "transport/transport.h"
+#include "transport/rdma_transport/rdma_transport.h"
 
 namespace mooncake
 {
@@ -36,6 +38,8 @@ namespace mooncake
 
         DistributedObjectStore();
         ~DistributedObjectStore();
+        
+        void transferEngineInit();
 
         uint64_t registerBuffer(SegmentId segment_id, size_t base, size_t size);
         void unregisterBuffer(SegmentId segment_id, uint64_t index);
@@ -94,6 +98,8 @@ namespace mooncake
 
     private:
         std::unique_ptr<TransferEngine> transfer_engine_;
+        RdmaTransport *rdma_engine_;
+
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;
         int max_trynum_;

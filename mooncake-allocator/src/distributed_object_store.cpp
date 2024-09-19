@@ -1,26 +1,90 @@
 #include <cassert>
 #include <unordered_set>
+#include <iostream>
+#include <fstream>
 
 #include "distributed_object_store.h"
 
 namespace mooncake
 {
 
+    // for transfer engine
+    #define NR_SOCKETS (1)
+    DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
+    DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
     DEFINE_string(metadata_server_dummy, "optane21:12345", "etcd server host address");
+    DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], []], \"cpu:1\": [[\"mlx5_2\"], []]}", "NIC priority matrix");
     DEFINE_string(
         nic_priority_matrix_dummy,
         "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}",
         "NIC priority matrix");
+    
+    DEFINE_string(segment_id, "optane20", "Segment ID to access data");
+
     DEFINE_int32(batch_size_dummy, 128, "Batch size");
 
-    // replica_allocator_参数为shard_size
-    DistributedObjectStore::DistributedObjectStore() : replica_allocator_(1024 * 64), allocation_strategy_(nullptr), max_trynum_(10)
+    // for store
+    DEFINE_int32(shard_size, 1024 * 64, "Shard size");
+    DEFINE_int32(max_trynum, 10, "max try number");
+
+    static void *allocateMemoryPool(size_t size, int socket_id)
     {
-        auto metadata_client = std::make_unique<TransferMetadata>(FLAGS_metadata_server_dummy);
+        return numa_alloc_onnode(size, socket_id);
+    }
+    std::string loadNicPriorityMatrix(const std::string &path)
+    {
+        std::ifstream file(path);
+        if (file.is_open())
+        {
+            std::string content((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+            file.close();
+            return content;
+        }
+        else
+        {
+            return path;
+        }
+    }
+
+    void DistributedObjectStore::transferEngineInit() {
+        auto metadata_client = std::make_shared<TransferMetadata>(FLAGS_metadata_server);
+        LOG_ASSERT(metadata_client);
+
+        auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
         const size_t dram_buffer_size = 1ull << 30;
-        // transfer_engine_ = std::make_unique<TransferEngine>(metadata_client,
-        //                                                getHostname(),
-        //                                                FLAGS_nic_priority_matrix_dummy);
+        transfer_engine_ = std::make_unique<TransferEngine>(metadata_client);
+
+        void** args = (void**) malloc(2 * sizeof(void*));
+        args[0] = (void*)FLAGS_nic_priority_matrix.c_str();
+        args[1] = nullptr;
+
+        const string& connectable_name = FLAGS_local_server_name;
+        transfer_engine_->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
+        rdma_engine_ = static_cast<RdmaTransport*>(transfer_engine_->installOrGetTransport("rdma", args));
+
+        LOG_ASSERT(transfer_engine_);
+
+        void *addr[NR_SOCKETS] = {nullptr};
+        for (int i = 0; i < NR_SOCKETS; ++i)
+        {
+            // 这个是本地暂存地址
+            addr[i] = allocateMemoryPool(dram_buffer_size, i);
+            int rc = transfer_engine_->registerLocalMemory(addr[i], dram_buffer_size, "cpu:" + std::to_string(i));
+            LOG_ASSERT(!rc);
+
+            // 注册多个buffer
+            auto segment_id = transfer_engine_->openSegment(FLAGS_segment_id.c_str());
+            // 远端地址
+            registerBuffer(segment_id, (size_t)addr[i], dram_buffer_size);
+            LOG_ASSERT(segment_id >= 0);
+        }
+        
+    }
+
+    DistributedObjectStore::DistributedObjectStore() : replica_allocator_(FLAGS_shard_size), allocation_strategy_(nullptr), max_trynum_(FLAGS_max_trynum)
+    {
+        // transferEngineInit();
     }
 
     DistributedObjectStore::~DistributedObjectStore() = default;
@@ -232,8 +296,8 @@ namespace mooncake
                     LOG(ERROR) << "get existed replica failed in replicate operation, key: " << key << ", needed version: " << latest_version;
                     return existed_version;
                 }
-                Version add_version =
-                    replica_allocator_.addOneReplica(key, new_replica_info, latest_version, -1, allocation_strategy_);
+                Version add_version = replica_allocator_.addOneReplica(key, new_replica_info, existed_version, -1, allocation_strategy_);
+                // replica_allocator_.addOneReplica(key, new_replica_info, latest_version, -1, allocation_strategy_);
                 if (add_version < 0)
                 {
                     LOG(ERROR) << "add replica failed in replicate operation, key: " << key << ", needed version: " << latest_version;
@@ -529,14 +593,6 @@ namespace mooncake
             LOG(WARNING) << "Task failed and source content cleared, index: " << index;
             return false;
         }
-
-        // 对status赋值
-        // for (int i = 0; i < transfer_tasks.size(); ++i) {
-        //      if(status[i] != TransferStatusEnum::COMPLETED) {
-        //         LOG(WARNING) << "read failed in DistributedObjectStore::doRead";
-        //         return false;
-        //      }
-        // }
         LOG(INFO) << "doRead succeed, task size: " << transfer_tasks.size();
         return true;
 
@@ -582,6 +638,10 @@ namespace mooncake
         const std::vector<TransferRequest> &transfer_tasks)
     {
         assert(ptrs.size() == sizes.size());
+        if (transfer_tasks.size() == 0) {
+            LOG(WARNING) << "tranfer task is 0 when in validateTransferRequests";
+            return true;
+        }
         // 将 sizes 转换为 uint64_t 类型
         std::vector<uint64_t> size_values;
         for (const auto &size_ptr : sizes)

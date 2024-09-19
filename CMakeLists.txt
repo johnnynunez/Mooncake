@@ -14,6 +14,10 @@ set(CMAKE_CXX_FLAGS_DEBUG "-O0")
 
 set(CMAKE_BUILD_TYPE "Release")
 
+#set(CMAKE_C_FLAGS "-O0 -g -Wall")
+#set(CMAKE_CXX_FLAGS "-O0 -g -Wall")
+#set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_CUDA "option for using gpu" OFF)
 
