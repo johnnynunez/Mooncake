@@ -68,6 +68,24 @@ namespace mooncake
         return (int64_t{ts.tv_sec} * kNanosPerSecond + int64_t{ts.tv_nsec});
     }
 
+    static inline std::pair<std::string, uint16_t> parseHostNameWithPort(const std::string &server_name)
+    {
+        const static uint16_t kDefaultServerPort = 12001;
+        uint16_t port = kDefaultServerPort;
+        auto pos = server_name.find(':');
+        if (pos == server_name.npos)
+            return std::make_pair(server_name, port);
+        auto trimmed_server_name = server_name.substr(0, pos);
+        auto port_str = server_name.substr(pos + 1);
+        int val = std::atoi(port_str.c_str());
+        if (val <= 0 || val > 65535)
+            PLOG(WARNING) << "Illegal port number in " << server_name
+                            << ". Use default port " << port << " instead";
+        else
+            port = (uint16_t)val;
+        return std::make_pair(trimmed_server_name, port);
+    }
+
     static inline ssize_t writeFully(int fd, const void *buf, size_t len)
     {
         char *pos = (char *)buf;

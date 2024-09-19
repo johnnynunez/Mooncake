@@ -83,7 +83,7 @@ namespace mooncake
         return 0;
     }
 
-    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata)
+    int TransferEngine::registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible, bool update_metadata)
     {
         for (auto& local_memory_region: local_memory_regions_) {
             if (overlap(addr, length, local_memory_region.addr, local_memory_region.length)) {
@@ -93,12 +93,12 @@ namespace mooncake
         }
         for (auto &xport : installed_transports_)
         {
-            if (xport->registerLocalMemory(addr, length, location, update_metadata) < 0)
+            if (xport->registerLocalMemory(addr, length, location, remote_accessible, update_metadata) < 0)
             {
                 return -1;
             }
         }
-        local_memory_regions_.push_back({addr, length, location.c_str(), update_metadata});
+        local_memory_regions_.push_back({addr, length, location.c_str(), remote_accessible});
         return 0;
     }
 

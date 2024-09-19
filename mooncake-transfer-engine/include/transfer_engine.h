@@ -41,7 +41,7 @@ namespace mooncake
 
         int closeSegment(Transport::SegmentHandle seg_id);
 
-        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata = true);
+        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible = true, bool update_metadata = true);
 
         int unregisterLocalMemory(void *addr, bool update_metadata = true);
 

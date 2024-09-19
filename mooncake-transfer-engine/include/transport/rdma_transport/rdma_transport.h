@@ -75,7 +75,7 @@ namespace mooncake
         // - length：注册空间长度；
         // - location：这块内存所处的位置提示，如 cpu:0 等，将用于和 PriorityMatrix 匹配可用的 RNIC 列表
         // - 返回值：若成功，返回 0；否则返回负数值。
-        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool update_metadata) override;
+        int registerLocalMemory(void *addr, size_t length, const std::string &location, bool remote_accessible, bool update_metadata) override;
 
         // 解注册区域。
         // - addr: 注册空间起始地址；
@@ -137,7 +137,7 @@ namespace mooncake
     private:
         int initializeRdmaResources();
 
-        int startHandshakeDaemon();
+        int startHandshakeDaemon(std::string &local_server_name);
 
     public:
         static int selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_cnt = 0);
