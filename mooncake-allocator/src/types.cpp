@@ -1,4 +1,4 @@
-#include "common_types.h"
+#include "types.h"
 
 namespace mooncake
 {

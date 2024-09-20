@@ -5,7 +5,7 @@
 #include <string>
 #include <vector>
 
-#include "common_types.h"
+#include "types.h"
 #include "random_allocation_strategy.h"
 #include "replica_allocator.h"
 

@@ -7,7 +7,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "common_types.h"
+#include "types.h"
 
 #include "cachelib_memory_allocator/MemoryAllocator.h"
 
