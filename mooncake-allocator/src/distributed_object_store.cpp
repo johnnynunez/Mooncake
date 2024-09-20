@@ -1,26 +1,26 @@
 #include <cassert>
-#include <unordered_set>
-#include <iostream>
 #include <fstream>
+#include <iostream>
+#include <unordered_set>
 
 #include "distributed_object_store.h"
 
 namespace mooncake
 {
-
     // for transfer engine
-    #define NR_SOCKETS (1)
+    #define BASE_ADDRESS_HINT (0x40000000000)
+
     DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
     DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
-    DEFINE_string(metadata_server_dummy, "optane21:12345", "etcd server host address");
-    DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], []], \"cpu:1\": [[\"mlx5_2\"], []]}", "NIC priority matrix");
+    // DEFINE_string(metadata_server_dummy, "optane21:12345", "etcd server host address");
+    // DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], []], \"cpu:1\": [[\"mlx5_2\"], []]}", "NIC priority matrix");
+    DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_0\"], []], \"cpu:1\": [[\"mlx5_0\"], []]}", "NIC priority matrix");
     DEFINE_string(
         nic_priority_matrix_dummy,
         "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}",
         "NIC priority matrix");
-    
-    DEFINE_string(segment_id, "optane20", "Segment ID to access data");
 
+    DEFINE_string(segment_id, "optane08", "Segment ID to access data");
     DEFINE_int32(batch_size_dummy, 128, "Batch size");
 
     // for store
@@ -31,6 +31,12 @@ namespace mooncake
     {
         return numa_alloc_onnode(size, socket_id);
     }
+
+    static void freeMemoryPool(void *addr, size_t size)
+    {
+        numa_free(addr, size);
+    }
+
     std::string loadNicPriorityMatrix(const std::string &path)
     {
         std::ifstream file(path);
@@ -47,47 +53,58 @@ namespace mooncake
         }
     }
 
-    void DistributedObjectStore::transferEngineInit() {
+    DistributedObjectStore::DistributedObjectStore() : replica_allocator_(FLAGS_shard_size), allocation_strategy_(nullptr), max_trynum_(FLAGS_max_trynum)
+    {
+        std::cout << "create the DistributedObjectStore!" << std::endl;
+        transferEngineInit();
+    }
+
+    DistributedObjectStore::~DistributedObjectStore()
+    {
+
+        for (int i = 0; i < addr_.size(); ++i)
+        {
+            transfer_engine_->unregisterLocalMemory(addr_[i]);
+        }
+        freeMemoryPool((void *)BASE_ADDRESS_HINT, dram_buffer_size_);
+    }
+
+    void *DistributedObjectStore::allocateLocalMemory(size_t buffer_size)
+    {
+        void *address = allocateMemoryPool(buffer_size, 0);
+        addr_.push_back(address);
+        int rc = transfer_engine_->registerLocalMemory(address, buffer_size, "cpu:" + std::to_string(0));
+        LOG_ASSERT(!rc);
+        return address;
+    }
+
+    void DistributedObjectStore::transferEngineInit()
+    {
         auto metadata_client = std::make_shared<TransferMetadata>(FLAGS_metadata_server);
         LOG_ASSERT(metadata_client);
 
+        // FLAGS_nic_priority_matrix 是一个参数
         auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
-        const size_t dram_buffer_size = 1ull << 30;
         transfer_engine_ = std::make_unique<TransferEngine>(metadata_client);
 
-        void** args = (void**) malloc(2 * sizeof(void*));
-        args[0] = (void*)FLAGS_nic_priority_matrix.c_str();
+        void **args = (void **)malloc(2 * sizeof(void *));
+        args[0] = (void *)nic_priority_matrix.c_str();
         args[1] = nullptr;
 
-        const string& connectable_name = FLAGS_local_server_name;
+        const string &connectable_name = FLAGS_local_server_name;
         transfer_engine_->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
-        rdma_engine_ = static_cast<RdmaTransport*>(transfer_engine_->installOrGetTransport("rdma", args));
+        rdma_engine_ = static_cast<RdmaTransport *>(transfer_engine_->installOrGetTransport("rdma", args));
 
         LOG_ASSERT(transfer_engine_);
 
-        void *addr[NR_SOCKETS] = {nullptr};
-        for (int i = 0; i < NR_SOCKETS; ++i)
         {
-            // 这个是本地暂存地址
-            addr[i] = allocateMemoryPool(dram_buffer_size, i);
-            int rc = transfer_engine_->registerLocalMemory(addr[i], dram_buffer_size, "cpu:" + std::to_string(i));
-            LOG_ASSERT(!rc);
-
-            // 注册多个buffer
+            // 注册segment
             auto segment_id = transfer_engine_->openSegment(FLAGS_segment_id.c_str());
-            // 远端地址
-            registerBuffer(segment_id, (size_t)addr[i], dram_buffer_size);
+            // 注册远端地址
+            registerBuffer(segment_id, (size_t)BASE_ADDRESS_HINT, dram_buffer_size_);
             LOG_ASSERT(segment_id >= 0);
         }
-        
     }
-
-    DistributedObjectStore::DistributedObjectStore() : replica_allocator_(FLAGS_shard_size), allocation_strategy_(nullptr), max_trynum_(FLAGS_max_trynum)
-    {
-        // transferEngineInit();
-    }
-
-    DistributedObjectStore::~DistributedObjectStore() = default;
 
     uint64_t DistributedObjectStore::registerBuffer(SegmentId segment_id, size_t base, size_t size)
     {
@@ -260,7 +277,8 @@ namespace mooncake
             return getError(ERRNO::INVALID_KEY);
         }
         ver = replica_allocator_.removeOneReplica(key, info, version);
-        while (replica_allocator_.removeOneReplica(key, info, version) >= 0);
+        while (replica_allocator_.removeOneReplica(key, info, version) >= 0)
+            ;
         return ver;
     }
 
@@ -378,10 +396,10 @@ namespace mooncake
                         {
                             LOG(ERROR) << "Failed to recover partial replica " << replica_id << " for key " << key << ", version " << version;
                         } // end if
-                    }     // end if PARIAL
-                }         // end for replicas
-            }             // end for versions
-        }                 // end for object_meta
+                    } // end if PARIAL
+                } // end for replicas
+            } // end for versions
+        } // end for object_meta
     }
 
     // private methods
@@ -432,7 +450,7 @@ namespace mooncake
 
                 LOG(INFO) << "create write request, input_idx: " << input_idx << ", input_offset: " << input_offset
                           << " , segmentid: " << handle->segment_id << ", shard_offset: " << shard_offset
-                          << ", to_write_length: " << to_write << ", target offset:" 
+                          << ", to_write_length: " << to_write << ", target offset:"
                           << (void *)request.target_offset << ", handle buffer: " << handle->buffer << std::endl;
 
                 shard_offset += to_write;
@@ -551,84 +569,96 @@ namespace mooncake
 
     bool DistributedObjectStore::doWrite(
         const std::vector<TransferRequest> &transfer_tasks,
-        std::vector<TransferStatusEnum> &status)
+        std::vector<TransferStatusEnum> &transfer_status)
     {
-        // 实现写数据的逻辑 暂时使用doRead
-        for (auto &task : transfer_tasks)
-        {
-            void *target_address = (void *)task.target_offset;
-            status.push_back(TransferStatusEnum::COMPLETED);
-            std::memcpy(target_address, task.source, task.length);
-            std::string str((char *)task.source, task.length);
-            LOG(INFO) << "write data to " << (void *)target_address << " with size " << task.length;
-        }
-        // return doRead(transfer_tasks);
-        return true;
+        // 实现写数据的逻辑
+        // for (auto &task : transfer_tasks)
+        // {
+        //     void *target_address = (void *)task.target_offset;
+        //     status.push_back(TransferStatusEnum::COMPLETED);
+        //     std::memcpy(target_address, task.source, task.length);
+        //     std::string str((char *)task.source, task.length);
+        //     LOG(INFO) << "write data to " << (void *)target_address << " with size " << task.length;
+        // }
+        // return true;
+        LOG(INFO) << "begin write data, task size: " << transfer_tasks.size();
+        int ret = doTransfers(transfer_tasks, transfer_status);
+        LOG(INFO) << "finish write data, task size: " << transfer_tasks.size();
+        return (ret == 0) ? true : false;
     }
 
     bool DistributedObjectStore::doRead(
         const std::vector<TransferRequest> &transfer_tasks,
-        std::vector<TransferStatusEnum> &status)
+        std::vector<TransferStatusEnum> &transfer_status)
     {
-        status.clear();
-        // 实现读数据的逻辑
-        std::random_device rd;
-        std::mt19937 gen(rd());
-        std::uniform_real_distribution<> dis(0.0, 1.0);
+        // transfer_status.clear();
+        // // 实现读数据的逻辑
+        // std::random_device rd;
+        // std::mt19937 gen(rd());
+        // std::uniform_real_distribution<> dis(0.0, 1.0);
 
-        for (auto &task : transfer_tasks)
-        {
-            void *target_address = (void *)task.target_offset;
-            std::memcpy(task.source, target_address, task.length);
-            status.push_back(TransferStatusEnum::COMPLETED);
-            std::string str((char *)task.source, task.length);
-            LOG(INFO) << "read data from " << (void *)target_address << " with size " << task.length;
-        }
-
-        if (dis(gen) < 0.2)
-        {
-            int index = status.size() / 2;
-            status[status.size() / 2] = TransferStatusEnum::FAILED;
-            std::memset(transfer_tasks[index].source, 0, transfer_tasks[index].length); // 清理task.source的内容
-            LOG(WARNING) << "Task failed and source content cleared, index: " << index;
-            return false;
-        }
-        LOG(INFO) << "doRead succeed, task size: " << transfer_tasks.size();
-        return true;
-
-        // auto batch_id = transfer_engine_->allocateBatchID(FLAGS_batch_size_dummy);
-        // int ret = transfer_engine_->submitTransfer(batch_id, transfer_tasks);
-        // LOG_ASSERT(!ret);
-        // std::vector<TransferStatus> status;
-        // while (true)
+        // for (auto &task : transfer_tasks)
         // {
-        //     ret = transfer_engine_->getTransferStatus(batch_id, status);
-        //     LOG_ASSERT(!ret);
-        //     int completed = 0, failed = 0;
-        //     for (int i = 0; i < FLAGS_batch_size_dummy; ++i)
-        //         if (status[i].s == TransferStatusEnum::COMPLETE)
-        //             completed++;
-        //         else if (status[i].s == TransferStatusEnum::FAILED)
-        //             failed++;
-        //     if (completed + failed == FLAGS_batch_size_dummy)
-        //     {
-        //         if (failed)
-        //             LOG(WARNING) << "Found " << failed << " failures in this batch";
-        //         break;
-        //     }
+        //     void *target_address = (void *)task.target_offset;
+        //     std::memcpy(task.source, target_address, task.length);
+        //     transfer_status.push_back(TransferStatusEnum::COMPLETED);
+        //     std::string str((char *)task.source, task.length);
+        //     LOG(INFO) << "read data from " << (void *)target_address << " with size " << task.length;
         // }
 
-        // ret = transfer_engine_->freeBatchID(batch_id);
-        // return (ret == 0) ? true : false;
+        // if (dis(gen) < 0.2)
+        // {
+        //     int index = transfer_status.size() / 2;
+        //     transfer_status[transfer_status.size() / 2] = TransferStatusEnum::FAILED;
+        //     std::memset(transfer_tasks[index].source, 0, transfer_tasks[index].length); // 清理task.source的内容
+        //     LOG(WARNING) << "Task failed and source content cleared, index: " << index;
+        //     return false;
+        // }
+        // LOG(INFO) << "doRead succeed, task size: " << transfer_tasks.size();
+        // return true;
+
+        LOG(INFO) << "begin read data, task size: " << transfer_tasks.size();
+        int ret = doTransfers(transfer_tasks, transfer_status);
+        LOG(INFO) << "finish read data, task size: " << transfer_tasks.size();
+        return (ret == 0) ? true : false;
     }
 
     bool DistributedObjectStore::doReplica(
         const std::vector<TransferRequest> &transfer_tasks,
-        std::vector<TransferStatusEnum> &status)
+        std::vector<TransferStatusEnum> &transfer_status)
     {
-        // 实现执行副本操作的逻辑 暂时使用doRead
-        return doWrite(transfer_tasks, status);
-        // return doRead(transfer_tasks);
+        // 实现执行副本操作的逻辑
+        return doTransfers(transfer_tasks, transfer_status);
+    }
+
+    int DistributedObjectStore::doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status)
+    {
+        transfer_status.resize(transfer_tasks.size());
+        auto batch_id = rdma_engine_->allocateBatchID(transfer_tasks.size());
+        LOG_ASSERT(batch_id >= 0);
+        int ret = rdma_engine_->submitTransfer(batch_id, transfer_tasks);
+        LOG_ASSERT(!ret);
+
+        for (int task_id = 0; task_id < transfer_tasks.size(); ++task_id)
+        {
+            bool completed = false, failed = false;
+            TransferStatus status;
+            while (!completed && !failed)
+            {
+                int ret = rdma_engine_->getTransferStatus(batch_id, task_id, status);
+                LOG_ASSERT(!ret);
+                if (status.s == TransferStatusEnum::COMPLETED)
+                    completed = true;
+                else if (status.s == TransferStatusEnum::FAILED)
+                    failed = true;
+            }
+            transfer_status[task_id] = status.s;
+            if (failed)
+                return false;
+        }
+
+        ret = rdma_engine_->freeBatchID(batch_id);
+        return ret;
     }
 
     bool DistributedObjectStore::validateTransferRequests(
@@ -638,7 +668,8 @@ namespace mooncake
         const std::vector<TransferRequest> &transfer_tasks)
     {
         assert(ptrs.size() == sizes.size());
-        if (transfer_tasks.size() == 0) {
+        if (transfer_tasks.size() == 0)
+        {
             LOG(WARNING) << "tranfer task is 0 when in validateTransferRequests";
             return true;
         }

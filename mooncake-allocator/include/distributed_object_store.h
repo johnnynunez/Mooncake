@@ -9,14 +9,13 @@
 #include "random_allocation_strategy.h"
 #include "replica_allocator.h"
 
-//#include "transfer_engine/transfer_engine.h"
+// #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine.h"
-#include "transport/transport.h"
 #include "transport/rdma_transport/rdma_transport.h"
+#include "transport/transport.h"
 
 namespace mooncake
 {
-
     static std::string getHostname()
     {
         char hostname[256];
@@ -38,8 +37,14 @@ namespace mooncake
 
         DistributedObjectStore();
         ~DistributedObjectStore();
-        
+
+        void *allocateLocalMemory(size_t buffer_size);
+
         void transferEngineInit();
+        std::vector<void *> getLocalAddr()
+        {
+            return addr_;
+        }
 
         uint64_t registerBuffer(SegmentId segment_id, size_t base, size_t size);
         void unregisterBuffer(SegmentId segment_id, uint64_t index);
@@ -75,11 +80,13 @@ namespace mooncake
             const ReplicaInfo &new_replica_info,
             std::vector<TransferRequest> &transfer_tasks);
 
-        bool doWrite(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &status);
+        bool doWrite(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
-        bool doRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &status);
+        bool doRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
-        bool doReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &status);
+        bool doReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
+
+        int doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
         void updateReplicaStatus(const std::vector<TransferRequest> &requests, const std::vector<TransferStatusEnum> &status,
                                  const std::string key, const Version version, ReplicaInfo &replica_info);
@@ -99,6 +106,8 @@ namespace mooncake
     private:
         std::unique_ptr<TransferEngine> transfer_engine_;
         RdmaTransport *rdma_engine_;
+        std::vector<void *> addr_; // 本地存储
+        const size_t dram_buffer_size_ = 1ull << 30;
 
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;
