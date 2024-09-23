@@ -27,6 +27,12 @@ namespace mooncake
         return hostname;
     }
 
+    // 定义 slice 结构体
+    struct Slice {
+        void* ptr;
+        size_t size;
+    };
+
     class DistributedObjectStore
     {
     public:
@@ -34,6 +40,8 @@ namespace mooncake
         {
             // 副本差异的具体实现
         };
+
+        
 
         DistributedObjectStore();
         ~DistributedObjectStore();
@@ -49,9 +57,9 @@ namespace mooncake
         uint64_t registerBuffer(SegmentId segment_id, size_t base, size_t size);
         void unregisterBuffer(SegmentId segment_id, uint64_t index);
 
-        TaskID put(ObjectKey key, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config);
-
-        TaskID get(ObjectKey key, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset);
+        TaskID put(ObjectKey key, const std::vector<Slice>& slices, ReplicateConfig config);
+    
+        TaskID get(ObjectKey key, std::vector<Slice>& slices, Version min_version, size_t offset);
 
         TaskID remove(ObjectKey key, Version version = -1);
 
@@ -64,15 +72,13 @@ namespace mooncake
 
         void generateWriteTransferRequests(
             const ReplicaInfo &replica_info,
-            const std::vector<void *> &ptrs,
-            const std::vector<void *> &sizes,
+            const std::vector<Slice> &slices,
             std::vector<TransferRequest> &transfer_tasks);
 
         void generateReadTransferRequests(
             const ReplicaInfo &replica_info,
             size_t offset,
-            const std::vector<void *> &ptrs,
-            const std::vector<void *> &sizes,
+            const std::vector<Slice> &slices,
             std::vector<TransferRequest> &transfer_tasks);
 
         void generateReplicaTransferRequests(
@@ -102,11 +108,15 @@ namespace mooncake
             const std::vector<void *> &ptrs,
             const std::vector<void *> &sizes,
             const std::vector<TransferRequest> &transfer_tasks);
+        
+        bool validateTransferRequests(
+            const ReplicaInfo &replica_info,
+            const std::vector<Slice> &slices,
+            const std::vector<TransferRequest> &transfer_tasks);
 
         bool validateTransferReadRequests(
             const ReplicaInfo &replica_info,
-            const std::vector<void *> &ptrs,
-            const std::vector<void *> &sizes, // 使用void*来表示大小
+            const std::vector<Slice> &slices,
             const std::vector<TransferRequest> &transfer_tasks);
 
     private:

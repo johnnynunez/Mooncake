@@ -155,15 +155,17 @@ namespace mooncake
     }
 
     TaskID DistributedObjectStore::put(
-        ObjectKey key,
-        std::vector<void *> ptrs,
-        std::vector<void *> sizes,
-        ReplicateConfig config)
+    ObjectKey key,
+    const std::vector<Slice>& slices,
+    ReplicateConfig config)
     {
         std::vector<TransferRequest> requests;
         int replica_num = config.replica_num;
         int succeed_num = 0; // 只用于日志记录
-        uint64_t total_size = calculateObjectSize(sizes);
+        uint64_t total_size = 0;
+        for (const auto& slice : slices) {
+            total_size += slice.size;
+        }
         if (total_size == 0)
         {
             LOG(WARNING) << "the size is 0";
@@ -194,7 +196,7 @@ namespace mooncake
             }
             uint32_t trynum = 0;
             requests.clear();
-            generateWriteTransferRequests(replica_info, ptrs, sizes, requests);
+            generateWriteTransferRequests(replica_info, slices, requests);
             for (; trynum < max_trynum_; ++trynum)
             {
                 std::vector<TransferStatusEnum> status;
@@ -229,8 +231,7 @@ namespace mooncake
 
     TaskID DistributedObjectStore::get(
         ObjectKey key,
-        std::vector<void *> ptrs,
-        std::vector<void *> sizes,
+        std::vector<Slice>& slices,
         Version min_version,
         size_t offset)
     {
@@ -247,10 +248,10 @@ namespace mooncake
             LOG(ERROR) << "cannot get replica, key: " << key;
             return ver;
         }
-        generateReadTransferRequests(replica_info, offset, ptrs, sizes, transfer_tasks);
-        if (ptrs.size() == 0 || transfer_tasks.size() == 0)
+        generateReadTransferRequests(replica_info, offset, slices, transfer_tasks);
+        if (slices.empty() || transfer_tasks.empty())
         {
-            LOG(ERROR) << "ptrs.size() == 0 || transfer_tasks.size() == 0";
+            LOG(ERROR) << "slices.empty() || transfer_tasks.empty()";
             return getError(ERRNO::INVALID_READ);
         }
         while (!success && trynum < max_trynum_)
@@ -417,49 +418,43 @@ namespace mooncake
     }
 
     void DistributedObjectStore::generateWriteTransferRequests(
-        const ReplicaInfo &replica_info,
-        const std::vector<void *> &ptrs,
-        const std::vector<void *> &sizes,
-        std::vector<TransferRequest> &transfer_tasks)
+    const ReplicaInfo &replica_info,
+    const std::vector<Slice> &slices,
+    std::vector<TransferRequest> &transfer_tasks)
     {
-        // 实现生成写传输请求的逻辑
         size_t written = 0;
         size_t input_offset = 0;
         size_t input_idx = 0;
 
-        // shard类型为 BufHandle
         for (const auto &handle : replica_info.handles)
         {
             size_t shard_offset = 0;
 
-            while (shard_offset < handle->size && input_idx < ptrs.size())
+            while (shard_offset < handle->size && input_idx < slices.size())
             {
-                size_t input_size = reinterpret_cast<size_t>(sizes[input_idx]);
-                size_t remaining_input = input_size - input_offset;
+                const auto& current_slice = slices[input_idx];
+                size_t remaining_input = current_slice.size - input_offset;
                 size_t remaining_shard = handle->size - shard_offset;
                 size_t to_write = std::min(remaining_input, remaining_shard);
 
-                // Copy data
-
                 TransferRequest request;
                 request.opcode = TransferRequest::OpCode::WRITE;
-                request.source = (void *)(static_cast<char *>(ptrs[input_idx]) + input_offset);
+                request.source = static_cast<char*>(current_slice.ptr) + input_offset;
                 request.length = to_write;
                 request.target_id = handle->segment_id;
-                // TODO: 确认这里使用地址是否正确
                 request.target_offset = (uint64_t)handle->buffer + shard_offset;
                 transfer_tasks.push_back(std::move(request));
 
                 LOG(INFO) << "create write request, input_idx: " << input_idx << ", input_offset: " << input_offset
-                          << " , segmentid: " << handle->segment_id << ", shard_offset: " << shard_offset
-                          << ", to_write_length: " << to_write << ", target offset:"
-                          << (void *)request.target_offset << ", handle buffer: " << handle->buffer << std::endl;
+                        << " , segmentid: " << handle->segment_id << ", shard_offset: " << shard_offset
+                        << ", to_write_length: " << to_write << ", target offset:"
+                        << (void *)request.target_offset << ", handle buffer: " << handle->buffer << std::endl;
 
                 shard_offset += to_write;
                 input_offset += to_write;
                 written += to_write;
 
-                if (input_offset == input_size)
+                if (input_offset == current_slice.size)
                 {
                     input_idx++;
                     input_offset = 0;
@@ -470,34 +465,30 @@ namespace mooncake
         }
 
         LOG(INFO) << "Total written for replica: " << written << " bytes" << std::endl;
-        // 调用检查函数验证生成的请求是否符合预期
-        if (!validateTransferRequests(replica_info, ptrs, sizes, transfer_tasks))
+        
+        if (!validateTransferRequests(replica_info, slices, transfer_tasks))
         {
             LOG(ERROR) << "Transfer requests validation failed!";
-            // 可以根据需要抛出异常或处理错误
         }
-        return;
     }
 
     void DistributedObjectStore::generateReadTransferRequests(
-        const ReplicaInfo &replica_info,
-        size_t offset,
-        const std::vector<void *> &ptrs,
-        const std::vector<void *> &sizes,
-        std::vector<TransferRequest> &transfer_tasks)
+    const ReplicaInfo &replica_info,
+    size_t offset,
+    const std::vector<Slice> &slices,
+    std::vector<TransferRequest> &transfer_tasks)
     {
-        // 实现生成读传输请求的逻辑
         size_t total_size = 0;
-        for (const auto &size : sizes)
+        for (const auto &slice : slices)
         {
-            total_size += reinterpret_cast<size_t>(size);
+            total_size += slice.size;
         }
         LOG(INFO) << "generate read request, offset: " << offset << ", total_size: " << total_size << std::endl;
         size_t current_offset = 0;
         size_t remaining_offset = offset; // offset in input
         size_t bytes_read = 0;
-        size_t output_index = 0;  // ptrs index
-        size_t output_offset = 0; // offset in one ptr
+        size_t output_index = 0;  // slices index
+        size_t output_offset = 0; // offset in one slice
 
         for (const auto &handle : replica_info.handles)
         {
@@ -515,26 +506,26 @@ namespace mooncake
             {
                 size_t bytes_to_read = std::min(
                     {handle->size - shard_start,
-                     reinterpret_cast<size_t>(sizes[output_index]) - output_offset,
-                     total_size - bytes_read});
+                    slices[output_index].size - output_offset,
+                    total_size - bytes_read});
 
-                request.source = (void *)(static_cast<char *>(ptrs[output_index]) + output_offset);
+                request.source = static_cast<char*>(slices[output_index].ptr) + output_offset;
                 request.target_id = handle->segment_id;
-                request.target_offset = (uint64_t)handle->buffer + shard_start; // TODO： 传入的是buffer地址，确认是否符合预期
+                request.target_offset = (uint64_t)handle->buffer + shard_start;
                 request.length = bytes_to_read;
                 request.opcode = TransferRequest::OpCode::READ;
                 transfer_tasks.push_back(std::move(request));
 
                 LOG(INFO) << "read reqeust, source: " << request.source << ", target_id: " << request.target_id << ", target_offset: "
-                          << (void *)request.target_offset << ", length: " << request.length << ", handle_size: " << handle->size << ", shard_start: " << shard_start
-                          << ", output_size: " << sizes[output_index] << ", output_offset: " << output_offset
-                          << " total_size: " << total_size << " ,bytes_read: " << bytes_read;
+                        << (void *)request.target_offset << ", length: " << request.length << ", handle_size: " << handle->size << ", shard_start: " << shard_start
+                        << ", output_size: " << slices[output_index].size << ", output_offset: " << output_offset
+                        << " total_size: " << total_size << " ,bytes_read: " << bytes_read;
 
                 shard_start += bytes_to_read;
                 output_offset += bytes_to_read;
                 bytes_read += bytes_to_read;
 
-                if (output_offset == reinterpret_cast<size_t>(sizes[output_index]))
+                if (output_offset == slices[output_index].size)
                 {
                     output_index++;
                     output_offset = 0;
@@ -543,46 +534,32 @@ namespace mooncake
 
             current_offset += handle->size;
         }
-        // 调用检查函数验证生成的请求是否符合预期
-        if (!validateTransferReadRequests(replica_info, ptrs, sizes, transfer_tasks))
+        
+        if (!validateTransferReadRequests(replica_info, slices, transfer_tasks))
         {
             LOG(ERROR) << "Transfer requests validation failed!";
             // 可以根据需要抛出异常或处理错误
         }
-        return;
     }
-
     void DistributedObjectStore::generateReplicaTransferRequests(
         const ReplicaInfo &existed_replica_info,
         const ReplicaInfo &new_replica_info,
         std::vector<TransferRequest> &transfer_tasks)
     {
         // 实现生成副本传输请求的逻辑
-        std::vector<void *> ptrs;
-        std::vector<void *> sizes;
+        std::vector<Slice> slices;
         for (const auto &handle : existed_replica_info.handles)
         {
-            ptrs.push_back(reinterpret_cast<void *>(handle->buffer));
-            sizes.push_back(reinterpret_cast<void *>(handle->size));
+            slices.push_back(Slice{reinterpret_cast<void*>(handle->buffer), handle->size});
         }
         // 复用 generateWriteTransferRequests 来生成传输请求
-        generateWriteTransferRequests(new_replica_info, ptrs, sizes, transfer_tasks);
+        generateWriteTransferRequests(new_replica_info, slices, transfer_tasks);
     }
 
     bool DistributedObjectStore::doWrite(
         const std::vector<TransferRequest> &transfer_tasks,
         std::vector<TransferStatusEnum> &transfer_status)
     {
-        // 实现写数据的逻辑
-        // for (auto &task : transfer_tasks)
-        // {
-        //     void *target_address = (void *)task.target_offset;
-        //     status.push_back(TransferStatusEnum::COMPLETED);
-        //     std::memcpy(target_address, task.source, task.length);
-        //     std::string str((char *)task.source, task.length);
-        //     LOG(INFO) << "write data to " << (void *)target_address << " with size " << task.length;
-        // }
-        // return true;
         LOG(INFO) << "begin write data, task size: " << transfer_tasks.size();
         int ret = doTransfers(transfer_tasks, transfer_status);
         LOG(INFO) << "finish write data, task size: " << transfer_tasks.size();
@@ -693,22 +670,14 @@ namespace mooncake
     }
 
     bool DistributedObjectStore::validateTransferRequests(
-        const ReplicaInfo &replica_info,
-        const std::vector<void *> &ptrs,
-        const std::vector<void *> &sizes, // 使用void*来表示大小
-        const std::vector<TransferRequest> &transfer_tasks)
+    const ReplicaInfo &replica_info,
+    const std::vector<Slice> &slices,
+    const std::vector<TransferRequest> &transfer_tasks)
     {
-        assert(ptrs.size() == sizes.size());
-        if (transfer_tasks.size() == 0)
+        if (transfer_tasks.empty())
         {
-            LOG(WARNING) << "tranfer task is 0 when in validateTransferRequests";
+            LOG(WARNING) << "tranfer task is empty when in validateTransferRequests";
             return true;
-        }
-        // 将 sizes 转换为 uint64_t 类型
-        std::vector<uint64_t> size_values;
-        for (const auto &size_ptr : sizes)
-        {
-            size_values.push_back(reinterpret_cast<size_t>(size_ptr));
         }
 
         // 记录每个 segment_id 的累计写入量
@@ -726,19 +695,19 @@ namespace mooncake
             // 找到对应的 BufHandle
             const auto &handle = replica_info.handles[handle_index];
             // 验证 source 地址是否正确
-            if (reinterpret_cast<char *>(ptrs[input_idx]) + input_offset != task.source)
+            if (static_cast<char*>(slices[input_idx].ptr) + input_offset != task.source)
             {
-                LOG(ERROR) << "Invalid source address. Expected: " << reinterpret_cast<char *>(ptrs[input_idx]) + input_offset
-                           << ", Actual: " << task.source << std::endl;
+                LOG(ERROR) << "Invalid source address. Expected: " << static_cast<char*>(slices[input_idx].ptr) + input_offset
+                        << ", Actual: " << task.source << std::endl;
                 return false;
             }
 
             // 验证 length 是否正确
-            if (size_values[input_idx] - input_offset < task.length)
+            if (slices[input_idx].size - input_offset < task.length)
             {
                 google::FlushLogFiles(google::INFO);
-                LOG(ERROR) << "Invalid length. Expected: " << size_values[input_idx] - input_offset
-                           << ", Actual: " << task.length << std::endl;
+                LOG(ERROR) << "Invalid length. Expected: " << slices[input_idx].size - input_offset
+                        << ", Actual: " << task.length << std::endl;
                 return false;
             }
 
@@ -747,7 +716,7 @@ namespace mooncake
             if (expected_target_offset != task.target_offset)
             {
                 LOG(ERROR) << "Invalid target_offset. Expected: " << (void *)expected_target_offset
-                           << ", Actual: " << (void *)task.target_offset << std::endl;
+                        << ", Actual: " << (void *)task.target_offset << std::endl;
                 LOG(INFO) << "---------------------------------------------------";
                 return false;
             }
@@ -759,10 +728,10 @@ namespace mooncake
             LOG(INFO) << "task length: " << task.length << ", segment_id: " << handle->segment_id << ", shard_offset: " << shard_offset;
 
             // 如果当前数据块已全部写入，则移动到下一个数据块 || 到了最后一个任务了
-            if (input_offset == size_values[input_idx] || task_id == transfer_tasks.size() - 1)
+            if (input_offset == slices[input_idx].size || task_id == transfer_tasks.size() - 1)
             {
                 LOG(INFO) << "enter if: "
-                          << "before_input_idx: " << input_idx << ", input_offset: " << input_offset << ", size_values[input_idx]: " << size_values[input_idx] << ", task_id: " << task_id << ", transfer_tasks.size(): " << transfer_tasks.size();
+                        << "before_input_idx: " << input_idx << ", input_offset: " << input_offset << ", slices[input_idx].size: " << slices[input_idx].size << ", task_id: " << task_id << ", transfer_tasks.size(): " << transfer_tasks.size();
                 input_idx++;
                 input_offset = 0;
             }
@@ -774,42 +743,41 @@ namespace mooncake
             }
 
             LOG(INFO) << "Validated transfer task: "
-                      << "input_idx: " << input_idx
-                      << ", input_offset: " << input_offset
-                      << ", segment_id: " << handle->segment_id
-                      << std::hex
-                      << ", target_offset: " << task.target_offset
-                      << std::dec
-                      << ", length: " << task.length << ", task_id: " << task_id;
+                    << "input_idx: " << input_idx
+                    << ", input_offset: " << input_offset
+                    << ", segment_id: " << handle->segment_id
+                    << std::hex
+                    << ", target_offset: " << task.target_offset
+                    << std::dec
+                    << ", length: " << task.length << ", task_id: " << task_id;
             LOG(INFO) << "------------------------------------------------------------";
         }
 
         // 检查所有数据块是否都已处理
-        if (size_values[ptrs.size() - 1] == 0)
+        if (slices.back().size == 0)
         {
             // 由于最后一个元素大小为0，则tasks中不会包含,记录会少1 单独处理
             input_idx++;
         }
-        if (input_idx != ptrs.size())
+        if (input_idx != slices.size())
         {
             google::FlushLogFiles(google::INFO);
-            LOG(ERROR) << "Not all input blocks were processed. Processed: " << input_idx << ", Total: " << ptrs.size() << std::endl;
+            LOG(ERROR) << "Not all input blocks were processed. Processed: " << input_idx << ", Total: " << slices.size() << std::endl;
             return false;
         }
         LOG(INFO) << "----------All transfer tasks validated successfully.----------------" << std::endl;
         return true;
     }
 
-    bool DistributedObjectStore::validateTransferReadRequests(
-        const ReplicaInfo &replica_info,
-        const std::vector<void *> &ptrs,
-        const std::vector<void *> &sizes,
-        const std::vector<TransferRequest> &transfer_tasks)
+bool DistributedObjectStore::validateTransferReadRequests(
+    const ReplicaInfo &replica_info,
+    const std::vector<Slice> &slices,
+    const std::vector<TransferRequest> &transfer_tasks)
     {
         size_t total_size = 0;
-        for (const auto &size : sizes)
+        for (const auto &slice : slices)
         {
-            total_size += reinterpret_cast<size_t>(size);
+            total_size += slice.size;
         }
 
         size_t bytes_read = 0;
@@ -818,12 +786,12 @@ namespace mooncake
 
         for (const auto &request : transfer_tasks)
         {
-            // Check if the source address is within the range of ptrs
+            // Check if the source address is within the range of slices
             bool valid_source = false;
-            for (size_t i = 0; i < ptrs.size(); ++i)
+            for (size_t i = 0; i < slices.size(); ++i)
             {
-                if (request.source >= ptrs[i] &&
-                    request.source < static_cast<char *>(ptrs[i]) + reinterpret_cast<size_t>(sizes[i]))
+                if (request.source >= slices[i].ptr &&
+                    request.source < static_cast<char *>(slices[i].ptr) + slices[i].size)
                 {
                     valid_source = true;
                     break;
@@ -862,7 +830,7 @@ namespace mooncake
             }
 
             output_offset += request.length;
-            if (output_offset == reinterpret_cast<size_t>(sizes[output_index]))
+            if (output_offset == slices[output_index].size)
             {
                 output_index++;
                 output_offset = 0;

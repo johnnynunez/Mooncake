@@ -68,36 +68,43 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
     ObjectKey key = "test_object";
     
     // 获取本地地址
-    std::vector<void *> ptrs;
-    //size_t dataSize = 1024 * 1024;
     size_t dataSize = 1024 * 10;
-    ptrs.push_back(store.allocateLocalMemory(dataSize));
-    std::vector<void *> sizes = {reinterpret_cast<void *>(dataSize)};
+    void* dataPtr = store.allocateLocalMemory(dataSize);
+    
+    // 在 dataPtr 指向的空间中生成随机字符串
+    std::generate(static_cast<char*>(dataPtr), static_cast<char*>(dataPtr) + dataSize, []() { return 'A' + rand() % 26; });
+    static_cast<char*>(dataPtr)[dataSize - 1] = '\0';
+    
+    // 创建 Slice 结构体
+    Slice slice;
+    slice.ptr = dataPtr;
+    slice.size = dataSize;
+    std::vector<Slice> slices = {slice};
+    
     ReplicateConfig config;
     config.replica_num = 1;
 
-    // 在 ptrs[0] 指向的空间中生成随机字符串
-    char* dataPtr = static_cast<char*>(ptrs[0]);
-    std::generate(dataPtr, dataPtr + dataSize, []() { return 'A' + rand() % 26; });
-    dataPtr[dataSize - 1] = '\0';
     // 存储数据
-    TaskID putVersion = store.put(key, ptrs, sizes, config);
+    TaskID putVersion = store.put(key, slices, config);
     EXPECT_NE(putVersion, 0);
     
     LOG(ERROR) << "finish put......";
 
     // 获取数据
-    std::vector<void *> getPtrs;
-    getPtrs.push_back(store.allocateLocalMemory(dataSize));
-    std::vector<void *> getSizes = {reinterpret_cast<void *>(dataSize)};
-    TaskID getVersion = store.get(key, getPtrs, getSizes, 0, 0);
+    void* getPtr = store.allocateLocalMemory(dataSize);
+    Slice getSlice;
+    getSlice.ptr = getPtr;
+    getSlice.size = dataSize;
+    std::vector<Slice> getSlices = {getSlice};
+    
+    TaskID getVersion = store.get(key, getSlices, 0, 0);
     EXPECT_EQ(getVersion, putVersion);
 
     // 比较原始数据和获取的数据
-    char* retrievedDataPtr = static_cast<char*>(getPtrs[0]);
+    char* retrievedDataPtr = static_cast<char*>(getPtr);
     retrievedDataPtr[dataSize - 1] = '\0';
     EXPECT_EQ(std::memcmp(dataPtr, retrievedDataPtr, dataSize), 0);
-    // LOG(ERROR) << "put data: "  << dataPtr;
+    // LOG(ERROR) << "put data: "  << static_cast<char*>(dataPtr);
     // LOG(ERROR) << "get data: " << retrievedDataPtr;
 }
 char randomChar()
