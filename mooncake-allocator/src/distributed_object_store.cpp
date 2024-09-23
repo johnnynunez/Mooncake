@@ -62,7 +62,7 @@ namespace mooncake
     DistributedObjectStore::~DistributedObjectStore()
     {
 
-        for (int i = 0; i < addr_.size(); ++i)
+        for (size_t i = 0; i < addr_.size(); ++i)
         {
             transfer_engine_->unregisterLocalMemory(addr_[i]);
         }
@@ -102,7 +102,6 @@ namespace mooncake
             auto segment_id = transfer_engine_->openSegment(FLAGS_segment_id.c_str());
             // 注册远端地址
             registerBuffer(segment_id, (size_t)BASE_ADDRESS_HINT, dram_buffer_size_);
-            LOG_ASSERT(segment_id >= 0);
         }
     }
 
@@ -126,7 +125,7 @@ namespace mooncake
         int handle_index = 0;
         uint64_t length = 0;
         std::unordered_set<int> failed_index;
-        for (int i = 0; i < requests.size(); ++i)
+        for (size_t i = 0; i < requests.size(); ++i)
         {
             LOG(INFO) << "request index: " << i << ", handle index: " << handle_index;
             if (status[i] != TransferStatusEnum::COMPLETED)
@@ -164,7 +163,7 @@ namespace mooncake
         std::vector<TransferRequest> requests;
         int replica_num = config.replica_num;
         int succeed_num = 0; // 只用于日志记录
-        uint64_t total_size = calculateObjectSize(ptrs, sizes);
+        uint64_t total_size = calculateObjectSize(sizes);
         if (total_size == 0)
         {
             LOG(WARNING) << "the size is 0";
@@ -193,13 +192,14 @@ namespace mooncake
                 LOG(ERROR) << "fail put object " << key << ", size: " << total_size << " , replica num : " << replica_num;
                 break;
             }
-            int trynum = 0;
+            uint32_t trynum = 0;
             requests.clear();
             generateWriteTransferRequests(replica_info, ptrs, sizes, requests);
             for (; trynum < max_trynum_; ++trynum)
             {
                 std::vector<TransferStatusEnum> status;
                 bool success = doWrite(requests, status);
+                // bool success = doDummyWrite(requests, status);
                 if (success)
                 { // update 状态
                     assert(requests.size() == status.size());
@@ -256,6 +256,7 @@ namespace mooncake
         while (!success && trynum < max_trynum_)
         {
             success = doRead(transfer_tasks, status);
+            // success = doDummyRead(transfer_tasks, status);
             ++trynum;
             LOG(WARNING) << "try agin, trynum:" << trynum << ", key: " << key;
         }
@@ -300,10 +301,10 @@ namespace mooncake
         // 比较新老config
         if (new_config.replica_num > existed_replica_number)
         { // need add
-            for (int i = 0; i < new_config.replica_num - existed_replica_number; ++i)
+            for (size_t i = 0; i < new_config.replica_num - existed_replica_number; ++i)
             {
                 bool success = false;
-                int try_num = 0;
+                uint32_t try_num = 0;
                 std::vector<TransferRequest> transfer_tasks;
                 ReplicaInfo existed_replica_info;
                 ReplicaInfo new_replica_info;
@@ -332,6 +333,7 @@ namespace mooncake
                 {
                     std::vector<TransferStatusEnum> status;
                     success = doReplica(transfer_tasks, status);
+                    // success = doDummyReplica(transfer_tasks, status);
                     if (success)
                     { // update status
                         updateReplicaStatus(transfer_tasks, status, key, add_version, new_replica_info);
@@ -344,7 +346,7 @@ namespace mooncake
         }
         else if (new_config.replica_num < existed_replica_number)
         { // need remove
-            for (int i = 0; i < existed_replica_number - new_config.replica_num; ++i)
+            for (size_t i = 0; i < existed_replica_number - new_config.replica_num; ++i)
             {
                 ReplicaInfo replica_info;
                 replica_allocator_.removeOneReplica(key, replica_info, latest_version);
@@ -380,7 +382,7 @@ namespace mooncake
                         generateReplicaTransferRequests(complete_replica_info, replica_info, transfer_tasks);
 
                         bool success = false;
-                        int try_num = 0;
+                        uint32_t try_num = 0;
                         while (!success && try_num < max_trynum_)
                         {
                             std::vector<TransferStatusEnum> status;
@@ -403,7 +405,7 @@ namespace mooncake
     }
 
     // private methods
-    uint64_t DistributedObjectStore::calculateObjectSize(const std::vector<void *> &ptrs, const std::vector<void *> &sizes)
+    uint64_t DistributedObjectStore::calculateObjectSize(const std::vector<void *> &sizes)
     {
         // 实现计算对象大小的逻辑
         size_t total_size = 0;
@@ -587,40 +589,63 @@ namespace mooncake
         return (ret == 0) ? true : false;
     }
 
+    bool DistributedObjectStore::doDummyWrite(
+        const std::vector<TransferRequest> &transfer_tasks,
+        std::vector<TransferStatusEnum> &transfer_status)
+    {
+        // 实现写数据的逻辑
+        for (auto &task : transfer_tasks)
+        {
+            void *target_address = (void *)task.target_offset;
+            transfer_status.push_back(TransferStatusEnum::COMPLETED);
+            std::memcpy(target_address, task.source, task.length);
+            std::string str((char *)task.source, task.length);
+            LOG(INFO) << "write data to " << (void *)target_address << " with size " << task.length;
+        }
+        return true;
+
+    }
+
     bool DistributedObjectStore::doRead(
         const std::vector<TransferRequest> &transfer_tasks,
         std::vector<TransferStatusEnum> &transfer_status)
     {
-        // transfer_status.clear();
-        // // 实现读数据的逻辑
-        // std::random_device rd;
-        // std::mt19937 gen(rd());
-        // std::uniform_real_distribution<> dis(0.0, 1.0);
-
-        // for (auto &task : transfer_tasks)
-        // {
-        //     void *target_address = (void *)task.target_offset;
-        //     std::memcpy(task.source, target_address, task.length);
-        //     transfer_status.push_back(TransferStatusEnum::COMPLETED);
-        //     std::string str((char *)task.source, task.length);
-        //     LOG(INFO) << "read data from " << (void *)target_address << " with size " << task.length;
-        // }
-
-        // if (dis(gen) < 0.2)
-        // {
-        //     int index = transfer_status.size() / 2;
-        //     transfer_status[transfer_status.size() / 2] = TransferStatusEnum::FAILED;
-        //     std::memset(transfer_tasks[index].source, 0, transfer_tasks[index].length); // 清理task.source的内容
-        //     LOG(WARNING) << "Task failed and source content cleared, index: " << index;
-        //     return false;
-        // }
-        // LOG(INFO) << "doRead succeed, task size: " << transfer_tasks.size();
-        // return true;
-
         LOG(INFO) << "begin read data, task size: " << transfer_tasks.size();
         int ret = doTransfers(transfer_tasks, transfer_status);
         LOG(INFO) << "finish read data, task size: " << transfer_tasks.size();
         return (ret == 0) ? true : false;
+    }
+
+
+    bool DistributedObjectStore::doDummyRead(
+        const std::vector<TransferRequest> &transfer_tasks,
+        std::vector<TransferStatusEnum> &transfer_status)
+    {
+        transfer_status.clear();
+        // 实现读数据的逻辑
+        std::random_device rd;
+        std::mt19937 gen(rd());
+        std::uniform_real_distribution<> dis(0.0, 1.0);
+
+        for (auto &task : transfer_tasks)
+        {
+            void *target_address = (void *)task.target_offset;
+            std::memcpy(task.source, target_address, task.length);
+            transfer_status.push_back(TransferStatusEnum::COMPLETED);
+            std::string str((char *)task.source, task.length);
+            LOG(INFO) << "read data from " << (void *)target_address << " with size " << task.length;
+        }
+
+        if (dis(gen) < 0.2)
+        {
+            int index = transfer_status.size() / 2;
+            transfer_status[transfer_status.size() / 2] = TransferStatusEnum::FAILED;
+            std::memset(transfer_tasks[index].source, 0, transfer_tasks[index].length); // 清理task.source的内容
+            LOG(WARNING) << "Task failed and source content cleared, index: " << index;
+            return false;
+        }
+        LOG(INFO) << "doRead succeed, task size: " << transfer_tasks.size();
+        return true;
     }
 
     bool DistributedObjectStore::doReplica(
@@ -631,15 +656,22 @@ namespace mooncake
         return doTransfers(transfer_tasks, transfer_status);
     }
 
+    bool DistributedObjectStore::doDummyReplica(
+        const std::vector<TransferRequest> &transfer_tasks,
+        std::vector<TransferStatusEnum> &transfer_status)
+    {
+        // 实现执行副本操作的逻辑
+        return doDummyWrite(transfer_tasks, transfer_status);
+    }
+
     int DistributedObjectStore::doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status)
     {
         transfer_status.resize(transfer_tasks.size());
         auto batch_id = rdma_engine_->allocateBatchID(transfer_tasks.size());
-        LOG_ASSERT(batch_id >= 0);
         int ret = rdma_engine_->submitTransfer(batch_id, transfer_tasks);
         LOG_ASSERT(!ret);
 
-        for (int task_id = 0; task_id < transfer_tasks.size(); ++task_id)
+        for (size_t task_id = 0; task_id < transfer_tasks.size(); ++task_id)
         {
             bool completed = false, failed = false;
             TransferStatus status;
@@ -656,7 +688,6 @@ namespace mooncake
             if (failed)
                 return false;
         }
-
         ret = rdma_engine_->freeBatchID(batch_id);
         return ret;
     }
@@ -687,15 +718,13 @@ namespace mooncake
 
         // 遍历所有传输任务
         int handle_index = 0;
-        int shard_offset = 0;
-        for (int task_id = 0; task_id < transfer_tasks.size(); ++task_id)
+        uint64_t shard_offset = 0;
+        for (size_t task_id = 0; task_id < transfer_tasks.size(); ++task_id)
         {
             const auto &task = transfer_tasks[task_id];
-
             LOG(INFO) << "the segment id: " << task.target_id << ", task length: " << task.length << " task target offset: " << (void *)task.target_offset << std::endl;
             // 找到对应的 BufHandle
             const auto &handle = replica_info.handles[handle_index];
-
             // 验证 source 地址是否正确
             if (reinterpret_cast<char *>(ptrs[input_idx]) + input_offset != task.source)
             {
@@ -714,11 +743,9 @@ namespace mooncake
             }
 
             // 验证 target_offset 是否正确
-            // uint64_t expected_target_offset = (uint64_t)handle->buffer + total_written_by_handle[reinterpret_cast<uint64_t>(handle->buffer)];
             uint64_t expected_target_offset = (uint64_t)handle->buffer + shard_offset;
             if (expected_target_offset != task.target_offset)
             {
-                google::FlushLogFiles(google::INFO);
                 LOG(ERROR) << "Invalid target_offset. Expected: " << (void *)expected_target_offset
                            << ", Actual: " << (void *)task.target_offset << std::endl;
                 LOG(INFO) << "---------------------------------------------------";
@@ -729,7 +756,6 @@ namespace mooncake
             total_written_by_handle[reinterpret_cast<uint64_t>(handle->buffer)] += task.length;
             input_offset += task.length;
             shard_offset += task.length;
-            // LOG(INFO) << "task length: " << task.length << ", segment_id: " << handle->segment_id << ", total_written_by_handle: " << total_written_by_handle[reinterpret_cast<uint64_t>(handle->buffer)];
             LOG(INFO) << "task length: " << task.length << ", segment_id: " << handle->segment_id << ", shard_offset: " << shard_offset;
 
             // 如果当前数据块已全部写入，则移动到下一个数据块 || 到了最后一个任务了

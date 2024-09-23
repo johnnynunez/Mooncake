@@ -12,7 +12,7 @@
 
 namespace mooncake
 {
-#define WRONG_VERSION 0
+    #define WRONG_VERSION 0
     using ObjectKey = std::string;
     using Version = int64_t;
     using SegmentId = int64_t;
@@ -69,7 +69,7 @@ namespace mooncake
     class BufHandle
     {
     public:
-        int segment_id;
+        SegmentId segment_id;
         uint64_t size;
         BufStatus status;
         MetaForReplica replica_meta;
@@ -95,7 +95,7 @@ namespace mooncake
 
     struct ReplicateConfig
     {
-        int replica_num;
+        size_t replica_num;
     };
 
     struct ReplicaInfo

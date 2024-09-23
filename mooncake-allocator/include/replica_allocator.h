@@ -31,7 +31,7 @@ namespace mooncake
             const ObjectKey &key,
             ReplicaInfo &ret,
             Version ver = -1,
-            size_t object_size = -1,
+            uint64_t object_size = -1,
             std::shared_ptr<AllocationStrategy> strategy = nullptr);
 
         Version getOneReplica(const ObjectKey &key, ReplicaInfo &ret, Version ver = -1, std::shared_ptr<AllocationStrategy> strategy = nullptr);
@@ -76,7 +76,7 @@ namespace mooncake
         bool ifExist(const ObjectKey &key);
 
     private:
-        std::shared_ptr<BufHandle> allocateShard(SegmentId segment_id, int allocator_index, size_t size);
+        std::shared_ptr<BufHandle> allocateShard(SegmentId segment_id, uint64_t allocator_index, size_t size);
 
     private:
         // 维护所有资源元信息

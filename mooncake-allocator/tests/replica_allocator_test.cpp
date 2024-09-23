@@ -13,7 +13,7 @@ void testAddOneReplica(std::shared_ptr<ReplicaAllocator> &allocator)
     ObjectKey key = "test_object";
     ReplicaInfo info;
     Version version = allocator->addOneReplica(key, info, -1, 2048); // 2KB object
-
+    LOG(INFO) << "testAddOneReplica, the version: " << version;
     if (info.handles.size() == 2 && info.handles[0]->size == 1024 && info.handles[1]->size == 1024)
     {
         std::cout << "-----------------testAddOneReplica passed----------------------\n";
@@ -32,7 +32,7 @@ void testAddOneReplicaWithStrategy(std::shared_ptr<ReplicaAllocator> &allocator)
     auto config = std::make_shared<RandomAllocationStrategyConfig>();
     std::shared_ptr<AllocationStrategy> strategy = std::make_shared<RandomAllocationStrategy>(config);
     Version version = allocator->addOneReplica(key, info, -1, 2048, strategy); // 2KB object
-
+    LOG(INFO) << "testAddOneReplicaWithStrategy, the version: " << version;
     if (info.handles.size() == 2 && info.handles[0]->size == 1024 && info.handles[1]->size == 1024)
     {
         std::cout << "-----------------testAddOneReplicaWithStrategy passed----------------------\n";
@@ -53,7 +53,7 @@ void testAddMultipleReplicas(std::shared_ptr<ReplicaAllocator> &allocator)
     Version v1 = allocator->addOneReplica(key, info1, -1, 3072); // 3KB object
     Version v2 = allocator->addOneReplica(key, info2, v1);
     Version v3 = allocator->addOneReplica(key, info3, v1);
-
+    LOG(INFO) << "testAddMultipleReplicas, the version: " << v1 << " " << v2 << " " << v3;
     if (v1 == v2 && v2 == v3 && info1.handles.size() == 3 && info2.handles.size() == 3 && info3.handles.size() == 3)
     {
         std::cout << "----------------------------testAddMultipleReplicas passed---------------------------\n";
@@ -73,7 +73,7 @@ void testReassignReplica(std::shared_ptr<ReplicaAllocator> &allocator)
     ObjectKey key = "reassign_object";
     ReplicaInfo info;
     Version version = allocator->addOneReplica(key, info, -1, 2048);
-
+    LOG(INFO) << "testReassignReplica, the version: " << version;
     // Simulate a shard becoming partial
     info.handles[0]->status = BufStatus::FAILED;
     info.handles[1]->status = BufStatus::COMPLETE;
@@ -120,7 +120,7 @@ void testLargeObjectAllocation(std::shared_ptr<ReplicaAllocator> &allocator)
     ObjectKey key = "large_object";
     ReplicaInfo info;
     Version version = allocator->addOneReplica(key, info, -1, 20480); // 20KB object
-
+    LOG(INFO) << "testLargeObjectAllocation, the version: " << version;
     bool passed = (info.handles.size() == 20);
     for (const auto &handle : info.handles)
     {
@@ -149,7 +149,7 @@ void testMultipleVersions(std::shared_ptr<ReplicaAllocator> &allocator)
 
     Version v1 = allocator->addOneReplica(key, info1, -1, 1024);
     Version v2 = allocator->addOneReplica(key, info2, -1, 2048);
-
+    LOG(INFO) << "testMultipleVersions, the version: " << v1 << " " << v2;
     if (info1.handles.size() == 1 && info2.handles.size() == 2)
     {
         std::cout << "-------------------testMultipleVersions passed----------------------------\n";

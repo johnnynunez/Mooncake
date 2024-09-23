@@ -60,7 +60,7 @@ namespace mooncake
         void checkAll();
 
         // private:
-        uint64_t calculateObjectSize(const std::vector<void *> &ptrs, const std::vector<void *> &sizes);
+        uint64_t calculateObjectSize(const std::vector<void *> &ptrs);
 
         void generateWriteTransferRequests(
             const ReplicaInfo &replica_info,
@@ -82,9 +82,15 @@ namespace mooncake
 
         bool doWrite(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
+        bool doDummyWrite(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
+
         bool doRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
+        bool doDummyRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
+
         bool doReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
+
+        bool doDummyReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
         int doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status);
 
@@ -111,7 +117,7 @@ namespace mooncake
 
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;
-        int max_trynum_;
+        uint32_t max_trynum_;
     };
 
 } // namespace mooncake

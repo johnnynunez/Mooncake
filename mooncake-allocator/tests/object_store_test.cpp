@@ -36,7 +36,7 @@ protected:
         for (auto &meta : segment_and_index)
         {
             // 暂时屏蔽
-            for (int index = 0; index < meta.second.size(); ++index) {
+            for (size_t index = 0; index < meta.second.size(); ++index) {
                 testUnregisterBuffer(store, meta.first, meta.second[index]);
             }
         }

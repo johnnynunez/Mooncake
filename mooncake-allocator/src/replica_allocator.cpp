@@ -10,10 +10,8 @@ namespace mooncake
     ReplicaAllocator::ReplicaAllocator(size_t shard_size) : shard_size_(shard_size), global_version_(0)
     { // version从1开始
         auto config = std::make_shared<RandomAllocationStrategyConfig>();
-        config;
         allocation_strategy_ = std::make_unique<RandomAllocationStrategy>(config);
         max_select_num_ = 30;
-
         LOG(INFO) << "ReplicaAllocator initialized with shard size: " << shard_size;
     }
 
@@ -36,7 +34,7 @@ namespace mooncake
         const ObjectKey &key,
         ReplicaInfo &ret,
         Version ver,
-        size_t object_size,
+        uint64_t object_size,
         std::shared_ptr<AllocationStrategy> strategy)
     {
         ret.reset();
@@ -87,14 +85,14 @@ namespace mooncake
             strategy = allocation_strategy_;
         }
 
-        int num_shards = (size + shard_size_ - 1) / shard_size_;
+        size_t num_shards = (size + shard_size_ - 1) / shard_size_;
         ret.handles.reserve(num_shards);
 
         LOG(INFO) << "Adding replica for key " << key << ", version " << target_version << ", size " << size
                   << ", num_shards " << num_shards;
 
         // 为每个分片分配空间
-        for (int i = 0; i < num_shards; ++i)
+        for (size_t i = 0; i < num_shards; ++i)
         {
             size_t shard_size;
             if (i == num_shards - 1)
@@ -495,7 +493,7 @@ namespace mooncake
         }
     }
 
-    std::shared_ptr<BufHandle> ReplicaAllocator::allocateShard(SegmentId segment_id, int allocator_index, size_t size)
+    std::shared_ptr<BufHandle> ReplicaAllocator::allocateShard(SegmentId segment_id, uint64_t allocator_index, size_t size)
     {
         std::shared_ptr<BufHandle> handle;
         if (segment_id == -1 || allocator_index == -1)
