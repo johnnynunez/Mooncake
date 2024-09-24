@@ -4,6 +4,7 @@
 #include <random>
 
 #include "rdma_transfer_agent.h"
+#include "config.h"
 
 namespace mooncake
 {
@@ -20,18 +21,6 @@ namespace mooncake
         return hostname;
     }
 
-    DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
-    DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
-    DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_0\"], []], \"cpu:1\": [[\"mlx5_0\"], []]}", "NIC priority matrix");
-    DEFINE_string(
-        nic_priority_matrix_dummy,
-        "{\"cpu:0\": [[\"mlx5_2\"], [\"mlx5_3\"]], \"cpu:1\": [[\"mlx5_3\"], [\"mlx5_2\"]]}",
-        "NIC priority matrix");
-
-    DEFINE_string(segment_id, "optane08", "Segment ID to access data");
-    DEFINE_int32(batch_size_dummy, 128, "Batch size");
-
-    
     static void *allocateMemoryPool(size_t size, int socket_id)
     {
         return numa_alloc_onnode(size, socket_id);
@@ -71,20 +60,27 @@ namespace mooncake
 
     void RdmaTransferAgent::init()
     {
-        auto metadata_client = std::make_shared<TransferMetadata>(FLAGS_metadata_server);
+        // 使用 ConfigManager 获取配置值
+        auto& configManager = ConfigManager::getInstance();
+        auto local_server_name = configManager.get("local_server_name");
+        auto metadata_server = configManager.get("metadata_server");
+        auto nic_priority_matrix = configManager.get("nic_priority_matrix");
+        auto segment_id = configManager.get("segment_id");
+        auto batch_size = std::stoi(configManager.get("batch_size"));
+
+        auto metadata_client = std::make_shared<TransferMetadata>(metadata_server);
         LOG_ASSERT(metadata_client);
 
-        auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
+        auto nic_priority_matrix_content = loadNicPriorityMatrix(nic_priority_matrix);
         transfer_engine_ = std::make_unique<TransferEngine>(metadata_client);
 
         void **args = (void **)malloc(2 * sizeof(void *));
-        args[0] = (void *)nic_priority_matrix.c_str();
+        args[0] = (void *)nic_priority_matrix_content.c_str();
         args[1] = nullptr;
 
-        const string &connectable_name = FLAGS_local_server_name;
-        transfer_engine_->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
+        const string &connectable_name = local_server_name;
+        transfer_engine_->init(local_server_name.c_str(), connectable_name.c_str(), 12345);
         rdma_engine_ = static_cast<RdmaTransport *>(transfer_engine_->installOrGetTransport("rdma", args));
-
         LOG_ASSERT(transfer_engine_);
     }
 

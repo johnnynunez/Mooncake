@@ -7,17 +7,18 @@
 #include "transfer_agent.h"
 #include "rdma_transfer_agent.h"
 #include "dummy_transfer_agent.h"
+#include "config.h"
 
 namespace mooncake
 {
-    
-    // for store
-    DEFINE_int32(shard_size, 1024 * 64, "Shard size");
-    DEFINE_int32(max_trynum, 10, "max try number");
-
-    DistributedObjectStore::DistributedObjectStore() : replica_allocator_(FLAGS_shard_size), allocation_strategy_(nullptr), max_trynum_(FLAGS_max_trynum)
+    DistributedObjectStore::DistributedObjectStore()
+        : replica_allocator_(std::stoi(ConfigManager::getInstance().get("shard_size", "65536"))), 
+          allocation_strategy_(nullptr),
+          max_trynum_(std::stoi(ConfigManager::getInstance().get("max_trynum", "10")))  
     {
+        ConfigManager::getInstance().loadConfig("conf/allocator.conf");
         std::cout << "create the DistributedObjectStore!" << std::endl;
+
         // 初始化 TransferAgent
         transfer_agent_ = std::make_unique<RdmaTransferAgent>();
         transfer_agent_->init();
@@ -80,8 +81,8 @@ namespace mooncake
         }
         if (ifCompleted)
         {
-            LOG(INFO) << "the key " << key << " , replica " << replica_info.replica_id << " is completed";
             replica_allocator_.updateStatus(key, ReplicaStatus::COMPLETE, replica_info.replica_id, version);
+            LOG(INFO) << "the key " << key << " , replica " << replica_info.replica_id << " is completed";
         }
     }
 
