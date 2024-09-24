@@ -5,33 +5,20 @@
 #include <string>
 #include <vector>
 
-#include "types.h"
 #include "random_allocation_strategy.h"
 #include "replica_allocator.h"
+#include "types.h"
 
 #include "transfer_agent.h"
-
-// #include "transfer_engine/transfer_engine.h"
 #include "transfer_engine.h"
 #include "transport/rdma_transport/rdma_transport.h"
 #include "transport/transport.h"
 
 namespace mooncake
 {
-    static std::string getHostname()
+    struct Slice
     {
-        char hostname[256];
-        if (gethostname(hostname, 256))
-        {
-            PLOG(ERROR) << "Failed to get hostname";
-            return "";
-        }
-        return hostname;
-    }
-
-    // 定义 slice 结构体
-    struct Slice {
-        void* ptr;
+        void *ptr;
         size_t size;
     };
 
@@ -40,32 +27,30 @@ namespace mooncake
     public:
         struct ReplicaDiff
         {
-            // 副本差异的具体实现
+            // diff of replica
         };
 
-        
         DistributedObjectStore();
+
         ~DistributedObjectStore();
 
         void *allocateLocalMemory(size_t buffer_size);
 
-        SegmentId openSegment(const std::string segment_name);
+        SegmentId openSegment(const std::string &segment_name);
 
         uint64_t registerBuffer(SegmentId segment_id, size_t base, size_t size);
+
         void unregisterBuffer(SegmentId segment_id, uint64_t index);
 
-        TaskID put(ObjectKey key, const std::vector<Slice>& slices, ReplicateConfig config);
-    
-        TaskID get(ObjectKey key, std::vector<Slice>& slices, Version min_version, size_t offset);
+        TaskID put(ObjectKey key, const std::vector<Slice> &slices, ReplicateConfig config);
+
+        TaskID get(ObjectKey key, std::vector<Slice> &slices, Version min_version, size_t offset);
 
         TaskID remove(ObjectKey key, Version version = -1);
 
         TaskID replicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff);
 
         void checkAll();
-
-        // private:
-        uint64_t calculateObjectSize(const std::vector<void *> &ptrs);
 
         void generateWriteTransferRequests(
             const ReplicaInfo &replica_info,
@@ -83,16 +68,18 @@ namespace mooncake
             const ReplicaInfo &new_replica_info,
             std::vector<TransferRequest> &transfer_tasks);
 
-       
+    private:
+        uint64_t calculateObjectSize(const std::vector<void *> &ptrs);
+
         void updateReplicaStatus(const std::vector<TransferRequest> &requests, const std::vector<TransferStatusEnum> &status,
-                                 const std::string key, const Version version, ReplicaInfo &replica_info);
+                                 const std::string &key, const Version version, ReplicaInfo &replica_info);
 
         bool validateTransferRequests(
             const ReplicaInfo &replica_info,
             const std::vector<void *> &ptrs,
             const std::vector<void *> &sizes,
             const std::vector<TransferRequest> &transfer_tasks);
-        
+
         bool validateTransferRequests(
             const ReplicaInfo &replica_info,
             const std::vector<Slice> &slices,
@@ -104,12 +91,11 @@ namespace mooncake
             const std::vector<TransferRequest> &transfer_tasks);
 
     private:
-
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;
         uint32_t max_trynum_;
 
-         std::unique_ptr<TransferAgent> transfer_agent_; 
+        std::unique_ptr<TransferAgent> transfer_agent_;
     };
 
 } // namespace mooncake
