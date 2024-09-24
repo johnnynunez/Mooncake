@@ -16,19 +16,8 @@ protected:
 
     void SetUp() override
     {
-    //     for (int i = 0; i < 10; i++)
-    //     {
-    //         for (SegmentID segment_id = 1; segment_id <= 6; segment_id++)
-    //         {
-    //             segment_and_index[segment_id].push_back(testRegisterBuffer(store, segment_id));
-    //         }
-
-    //         // segment_and_index[1] = testRegisterBuffer(store, 1);
-    //         // segment_and_index[2] = testRegisterBuffer(store, 2);
-    //         // segment_and_index[3] = testRegisterBuffer(store, 3);
-    //         // segment_and_index[4] = testRegisterBuffer(store, 4);
-    //         // segment_and_index[5] = testRegisterBuffer(store, 5);
-    //     }
+        SegmentId segment = store.openSegment("optane08");
+        testRegisterBuffer(store, segment);
     }
 
     void TearDown() override
@@ -45,12 +34,10 @@ protected:
 
     uint64_t testRegisterBuffer(DistributedObjectStore &store, SegmentId segmentId)
     {
-        // size_t base = 0x100000000;
-        size_t size = 1024 * 1024 * 4 * 200;
-        void *ptr = nullptr;
-        posix_memalign(&ptr, 4194304, size);
-        size_t base = reinterpret_cast<size_t>(ptr);
+        size_t base = 0x40000000000;  // 远程base地址
+        size_t size = 1ull << 30; // 远程大小
         LOG(INFO) << "registerbuffer: " << (void *)base;
+        
         uint64_t index = store.registerBuffer(segmentId, base, size);
         EXPECT_GE(index, 0);
         return index;
