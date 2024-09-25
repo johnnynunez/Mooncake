@@ -12,21 +12,19 @@
 #include "allocation_strategy.h"
 #include "buffer_allocator.h"
 
-namespace mooncake
-{
+namespace mooncake {
 
-    // 上层 put get  replica recovery （给一个key，然后去遍历） --> 到这一层要怎么做
-    // 卸载时 如果handle有人用
-    // 多线程  (加锁， 或者原子变量)
-
-    class ReplicaAllocator
-    {
+    class ReplicaAllocator {
     public:
         ReplicaAllocator(size_t shard_size);
         ~ReplicaAllocator();
 
+        // Registers a buffer with the given segment ID, base offset, and size.
+        // Returns the buffer index.
         uint64_t registerBuffer(SegmentId segment_id, size_t base, size_t size);
 
+        // Adds a new replica for the given object key.
+        // Returns the version of the newly added replica.
         Version addOneReplica(
             const ObjectKey &key,
             ReplicaInfo &ret,
@@ -34,52 +32,85 @@ namespace mooncake
             uint64_t object_size = -1,
             std::shared_ptr<AllocationStrategy> strategy = nullptr);
 
-        Version getOneReplica(const ObjectKey &key, ReplicaInfo &ret, Version ver = -1, std::shared_ptr<AllocationStrategy> strategy = nullptr);
+        // Retrieves a replica for the given object key.
+        // Returns the version of the retrieved replica.
+        Version getOneReplica(
+            const ObjectKey &key,
+            ReplicaInfo &ret,
+            Version ver = -1,
+            std::shared_ptr<AllocationStrategy> strategy = nullptr);
 
-        void reassignReplica(const ObjectKey &key, Version ver, int replica_id, ReplicaInfo &ret);
+        // Reassigns a replica for the given object key and version.
+        void reassignReplica(
+            const ObjectKey &key,
+            Version ver,
+            int replica_id,
+            ReplicaInfo &ret);
 
-        Version removeOneReplica(const ObjectKey &key, ReplicaInfo &ret, Version ver = -1);
+        // Removes a replica for the given object key.
+        // Returns the version of the removed replica.
+        Version removeOneReplica(
+            const ObjectKey &key,
+            ReplicaInfo &ret,
+            Version ver = -1);
 
-        // 卸载bufferallocator中包含的bufhandle,segment当前状态
-        std::vector<std::shared_ptr<BufHandle>> unregister(SegmentId segment_id, uint64_t buffer_index);
+        // Unregisters the buffer allocator for the given segment ID and buffer index.
+        // Returns the list of buffer handles that were unregistered.
+        std::vector<std::shared_ptr<BufHandle>> unregister(
+            SegmentId segment_id,
+            uint64_t buffer_index);
 
-        // 对old_handles中的BufHandle重新分配空间
-        // return: 重新成功分配的个数
-        size_t recovery(std::vector<std::shared_ptr<BufHandle>> &old_handles, std::shared_ptr<AllocationStrategy> strategy = nullptr);
+        // Recovers the given buffer handles by reallocating their space.
+        // Returns the number of successfully reallocated handles.
+        size_t recovery(
+            std::vector<std::shared_ptr<BufHandle>> &old_handles,
+            std::shared_ptr<AllocationStrategy> strategy = nullptr);
 
-        // 检查全部副本信息
+        // Checks all replicas and returns the list of buffer handles.
         std::vector<std::shared_ptr<BufHandle>> checkall();
 
-        // 获取全部object信息
+        // Retrieves the metadata for all objects.
         std::unordered_map<ObjectKey, VersionList> &getObjectMeta();
 
-        // 获取shard大小
-
+        // Retrieves the shard size.
         size_t getShardSize();
-        // 获取key对应的最新版本号
-        Version getObjectVersion(ObjectKey key);
 
-        // 获取key对应的副本config
-        ReplicateConfig getObjectReplicaConfig(ObjectKey key);
+        // Retrieves the latest version for the given object key.
+        Version getObjectVersion(const ObjectKey &key);
 
-        // 获取具体完整数据的副本个数
-        size_t getReplicaRealNumber(ObjectKey key, Version version);
+        // Retrieves the replica configuration for the given object key.
+        ReplicateConfig getObjectReplicaConfig(const ObjectKey &key);
 
-        // 清理没有完整数据的副本，并保留max_replica_num个完整的副本
-        // 如果完整副本个数没有达到max_replica_num，则保留complete+partial 为max_replica_num个
-        size_t cleanUncompleteReplica(ObjectKey key, Version version, int max_replica_num);
+        // Retrieves the number of real replicas for the given object key and version.
+        size_t getReplicaRealNumber(const ObjectKey &key, Version version);
 
-        // 更新副本状态, index指的是更新第几个副本，默认为最新的副本
-        void updateStatus(const ObjectKey &key, ReplicaStatus status, size_t index = -1, Version ver = -1);
+        // Cleans up incomplete replicas and ensures that at least `max_replica_num` complete replicas are retained.
+        // If the number of complete replicas is less than `max_replica_num`, partial replicas are also retained.
+        size_t cleanUncompleteReplica(
+            const ObjectKey &key,
+            Version version,
+            int max_replica_num);
 
-        // 对应key是否存在
+        // Updates the status of the replica for the given object key.
+        // The index specifies which replica to update, defaulting to the latest replica.
+        void updateStatus(
+            const ObjectKey &key,
+            ReplicaStatus status,
+            size_t index = -1,
+            Version ver = -1);
+
+        // Checks if the given object key exists.
         bool ifExist(const ObjectKey &key);
 
     private:
-        std::shared_ptr<BufHandle> allocateShard(SegmentId segment_id, uint64_t allocator_index, size_t size);
+        // Allocates a shard for the given segment ID, buffer index, and size.
+        std::shared_ptr<BufHandle> allocateShard(
+            SegmentId segment_id,
+            uint64_t allocator_index,
+            size_t size);
 
     private:
-        // 维护所有资源元信息
+        // Maintains metadata for all resources.
         std::map<SegmentId, std::vector<std::shared_ptr<BufferAllocator>>> buf_allocators_;
         std::map<SegmentId, std::map<uint64_t, std::vector<std::weak_ptr<BufHandle>>>> handles_;
 
@@ -90,7 +121,7 @@ namespace mooncake
 
         int max_select_num_;
 
-        // 添加读写锁保护元数据
+        // Adds read-write locks to protect metadata.
         mutable std::shared_mutex object_meta_mutex_;
         mutable std::shared_mutex buf_allocators_mutex_;
     };
