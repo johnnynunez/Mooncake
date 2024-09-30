@@ -30,6 +30,14 @@ namespace mooncake
             // diff of replica
         };
 
+        struct PutContext {
+            ObjectKey key;
+            Version version;
+            int replica_num;
+            std::vector<ReplicaInfo> replica_infos;
+            std::vector<std::vector<TransferRequest>> all_requests;
+        };
+
         DistributedObjectStore();
 
         ~DistributedObjectStore();
@@ -89,6 +97,10 @@ namespace mooncake
             const ReplicaInfo &replica_info,
             const std::vector<Slice> &slices,
             const std::vector<TransferRequest> &transfer_tasks);
+
+        void handlePutCompletion(
+    std::shared_ptr<PutContext> context,
+        const std::vector<TransferStatusEnum>& status);
 
     private:
         ReplicaAllocator replica_allocator_;

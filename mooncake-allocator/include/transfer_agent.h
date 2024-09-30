@@ -8,6 +8,7 @@
 
 namespace mooncake
 {
+    using TransferCallback = std::function<void(const std::vector<TransferStatusEnum>&)>;
     class TransferAgent
     {
     public:
@@ -21,6 +22,7 @@ namespace mooncake
         virtual bool doRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) = 0;
         virtual bool doReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) = 0;
         virtual bool doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) = 0;
+        virtual BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback) = 0;
     };
 
 } // namespace mooncake

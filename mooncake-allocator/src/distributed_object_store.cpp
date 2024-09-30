@@ -128,74 +128,110 @@ namespace mooncake
             LOG(WARNING) << "Key already exists: " << key;
         }
 
-        for (int index = 0; index < replica_num; ++index)
-        {
-            ReplicaInfo replica_info;
+        std::vector<ReplicaInfo> replica_infos(replica_num);
+        std::vector<std::vector<TransferRequest>> all_requests(replica_num);
 
-            if (first_add)
-            {
-                version = replica_allocator_.addOneReplica(key, replica_info, 
-                                                        -1, total_size, 
-                                                        allocation_strategy_);
-            }
-            else
-            {
-                version = replica_allocator_.addOneReplica(key, replica_info, 
-                                                        version, -1, 
-                                                        allocation_strategy_);
+        // add all replicas
+        for (int index = 0; index < replica_num; ++index) {
+            if (first_add) {
+                version = replica_allocator_.addOneReplica(key, replica_infos[index], -1, total_size, allocation_strategy_);
+            } else {
+                version = replica_allocator_.addOneReplica(key, replica_infos[index], version, -1, allocation_strategy_);
             }
 
-            if (version < 0)
-            {
-                LOG(ERROR) << "Failed to put object " << key 
-                        << ", size: " << total_size 
+            if (version < 0) {
+                LOG(ERROR) << "Failed to put object " << key
+                        << ", size: " << total_size
                         << ", replica num: " << replica_num;
                 break;
             }
-
-            uint32_t trynum = 0;
-            requests.clear();
-            generateWriteTransferRequests(replica_info, slices, requests);
-
-            for (; trynum < max_trynum_; ++trynum)
-            {
-                std::vector<TransferStatusEnum> status;
-                bool success = transfer_agent_->doTransfers(requests, status);
-
-                if (success)
-                {
-                    // Update status
-                    assert(requests.size() == status.size());
-                    updateReplicaStatus(requests, status, key, version, replica_info);
-                    first_add = false;
-                    succeed_num++;
-                    break;
-                }
-
-                // Attempt to reassign space
-                replica_info.reset();
-                replica_allocator_.reassignReplica(key, version, index, replica_info);
-            }
+            generateWriteTransferRequests(replica_infos[index], slices, all_requests[index]);
         }
 
-        if (first_add)
-        {
-            // None of the replicas succeeded
-            for (int index = 0; index < replica_num; ++index)
-            {
+        if (version < 0) {
+            // Cleanup if any replica addition failed
+            for (int index = 0; index < replica_num; ++index) {
                 ReplicaInfo ret;
                 replica_allocator_.removeOneReplica(key, ret, version);
             }
-
-            LOG(WARNING) << "No replica succeeded when putting, key: " << key 
+            LOG(WARNING) << "No replica succeeded when putting, key: " << key
                         << ", replica_num: " << replica_num;
             return getError(ERRNO::WRITE_FAIL);
         }
 
-        LOG(INFO) << "Put object succeeded, key: " << key 
-                << ", succeed num: " << succeed_num 
-                << ", needed replica num: " << replica_num;
+        // Combine all requests into a single vector for batch processing
+        std::vector<TransferRequest> combined_requests;
+        for (const auto& requests : all_requests) {
+            combined_requests.insert(combined_requests.end(), requests.begin(), requests.end());
+        }
+
+        // Perform batch transfer
+       auto context = std::make_shared<PutContext>();
+        context->key = key;
+        context->version = version;
+        context->replica_num = replica_num;
+        context->replica_infos = std::move(replica_infos);
+        context->all_requests = std::move(all_requests);
+
+        auto batch_id = transfer_agent_->submitTransfersAsync(
+            combined_requests,
+            [this, context](const std::vector<TransferStatusEnum>& status) {
+                this->handlePutCompletion(context, status);
+            }
+        );
+
+        if (batch_id == -1) {
+            // 清理已分配的副本
+            for (int index = 0; index < replica_num; ++index) {
+                ReplicaInfo ret;
+                replica_allocator_.removeOneReplica(key, ret, version);
+            }
+            LOG(WARNING) << "Failed to submit transfer requests, key: " << key;
+            return getError(ERRNO::WRITE_FAIL);
+        }
+
+        LOG(INFO) << "Put object submitted asynchronously, key: " << key
+                << ", version: " << version
+                << ", replica_num: " << replica_num;
         return version;
+    }
+
+    void DistributedObjectStore::handlePutCompletion(
+    std::shared_ptr<PutContext> context,
+        const std::vector<TransferStatusEnum>& status)
+    {
+        int succeed_num = 0;
+        size_t status_index = 0;
+
+        for (int index = 0; index < context->replica_num; ++index) {
+            const auto& requests = context->all_requests[index];
+            std::vector<TransferStatusEnum> replica_status(
+                status.begin() + status_index,
+                status.begin() + status_index + requests.size()
+            );
+            updateReplicaStatus(requests, replica_status, context->key, 
+                                context->version, context->replica_infos[index]);
+            status_index += requests.size();
+
+            if (std::all_of(replica_status.begin(), replica_status.end(), 
+                            [](TransferStatusEnum s) { return s == TransferStatusEnum::COMPLETED; })) {
+                ++succeed_num;
+            }
+        }
+
+        if (succeed_num == 0) {
+            // 所有副本都失败，删除无用的副本
+            for (int index = 0; index < context->replica_num; ++index) {
+                ReplicaInfo ret;
+                replica_allocator_.removeOneReplica(context->key, ret, context->version);
+            }
+            LOG(WARNING) << "No replica succeeded when putting, key: " << context->key
+                        << ", replica_num: " << context->replica_num;
+        } else {
+            LOG(INFO) << "Put object completed asynchronously, key: " << context->key
+                    << ", succeed num: " << succeed_num
+                    << ", needed replica num: " << context->replica_num;
+        }
     }
     TaskID DistributedObjectStore::get(
         ObjectKey key, 

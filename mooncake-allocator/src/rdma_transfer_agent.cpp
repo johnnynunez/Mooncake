@@ -149,4 +149,50 @@ namespace mooncake
         LOG(ERROR) << "freeBatchID ret: " << ret;
         return (ret == 0) ? true : false;
     }
+
+    // 异步提交传输请求
+    BatchID RdmaTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback) {
+        auto batch_id = rdma_engine_->allocateBatchID(transfer_tasks.size());
+        int ret = rdma_engine_->submitTransfer(batch_id, transfer_tasks);
+        if (ret != 0) {
+            LOG(ERROR) << "Failed to submit transfer, batch_id: " << batch_id;
+            rdma_engine_->freeBatchID(batch_id);
+            return -1;
+        }
+
+        // 启动异步监控线程
+        std::thread([this, batch_id, transfer_tasks, callback]() {
+            this->monitorTransferStatus(batch_id, transfer_tasks.size(), callback);
+        }).detach();
+
+        return batch_id;
+    }
+
+    void RdmaTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, TransferCallback callback) {
+        std::vector<TransferStatusEnum> transfer_status(task_count, TransferStatusEnum::PENDING);
+        size_t completed_count = 0;
+
+        while (completed_count < task_count) {
+            for (size_t task_id = 0; task_id < task_count; ++task_id) {
+                if (transfer_status[task_id] == TransferStatusEnum::PENDING) {
+                    TransferStatus status;
+                    int ret = rdma_engine_->getTransferStatus(batch_id, task_id, status);
+                    if (ret == 0) {
+                        if (status.s == TransferStatusEnum::COMPLETED || status.s == TransferStatusEnum::FAILED) {
+                            transfer_status[task_id] = status.s;
+                            ++completed_count;
+                        }
+                    } else {
+                        LOG(ERROR) << "Failed to get transfer status, batch_id: " << batch_id << ", task_id: " << task_id;
+                    }
+                }
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(10)); // 避免频繁轮询
+        }
+
+        rdma_engine_->freeBatchID(batch_id);
+        callback(transfer_status); // 调用回调函数，通知上层所有传输已完成
+    }
+
+
 } // namespace mooncake

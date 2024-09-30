@@ -24,6 +24,11 @@ namespace mooncake
         
         bool doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) override;
 
+        BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback);
+
+    private:
+        void monitorTransferStatus(BatchID batch_id, size_t task_count, TransferCallback callback);
+
     private:
         std::unique_ptr<TransferEngine> transfer_engine_;
         RdmaTransport *rdma_engine_;

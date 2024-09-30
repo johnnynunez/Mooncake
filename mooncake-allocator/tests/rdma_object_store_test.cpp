@@ -76,7 +76,7 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
     EXPECT_NE(putVersion, 0);
     
     LOG(ERROR) << "finish put......";
-
+    sleep(1);
     // 获取数据
     void* getPtr = store.allocateLocalMemory(dataSize);
     Slice getSlice;

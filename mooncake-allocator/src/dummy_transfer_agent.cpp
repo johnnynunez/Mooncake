@@ -72,4 +72,8 @@ namespace mooncake
         }
         return true;
     }
+
+    BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback)  {
+        return 0;
+    }
 } // namespace mooncake
