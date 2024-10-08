@@ -76,7 +76,27 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
     EXPECT_NE(putVersion, 0);
     
     LOG(ERROR) << "finish put......";
-    sleep(1);
+    //sleep(1);
+
+    std::vector<ReplicaStatus> status = store.getReplicaStatus(key, putVersion);
+
+    // loop utile all status all completed
+    while (true) {
+        bool all_completed = true;
+        for (auto s : status) {
+            if (s != ReplicaStatus::COMPLETE) {
+                // LOG(ERROR) << "replica status not completed: " << (uint64_t)s;
+                all_completed = false;
+                break;
+            }
+        }
+        if (all_completed) {
+            LOG(ERROR) << "replica status completed!";
+            break;
+        }
+        status = store.getReplicaStatus(key, putVersion);
+    }
+
     // 获取数据
     void* getPtr = store.allocateLocalMemory(dataSize);
     Slice getSlice;

@@ -482,6 +482,34 @@ namespace mooncake
         }
     }
 
+    std::vector<ReplicaStatus> ReplicaAllocator::getStatus(const ObjectKey &key, Version ver)
+    {
+        std::vector<ReplicaStatus> status;
+        if (object_meta_.count(key) == 0)
+        {
+            LOG(WARNING) << "Get status for non-existing key: " << key;
+            return status;
+        }
+        auto &version_list = object_meta_[key];
+        if (ver == -1)
+        {
+            ver = version_list.flushed_version;
+        }
+
+        if (version_list.versions.count(ver) == 0)
+        {
+            LOG(WARNING) << "Get status for non-existing version: " << ver;
+            return status;
+        }
+        size_t replica_num = version_list.versions[ver].replicas.size();
+
+        for (size_t i = 0; i < replica_num; i++)
+        {
+            status.push_back(version_list.versions[ver].replicas[i].status);
+        }
+        return status;
+    }
+
     std::shared_ptr<BufHandle> ReplicaAllocator::allocateShard(SegmentId segment_id, uint64_t allocator_index, size_t size)
     {
         std::shared_ptr<BufHandle> handle;

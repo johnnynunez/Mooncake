@@ -60,6 +60,8 @@ namespace mooncake
 
         void checkAll();
 
+        std::vector<ReplicaStatus> getReplicaStatus(ObjectKey key, Version version = -1);
+
         void generateWriteTransferRequests(
             const ReplicaInfo &replica_info,
             const std::vector<Slice> &slices,

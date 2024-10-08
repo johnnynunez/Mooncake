@@ -434,6 +434,10 @@ namespace mooncake
         }
     }
 
+    std::vector<ReplicaStatus> DistributedObjectStore::getReplicaStatus(ObjectKey key, Version version) {
+        return replica_allocator_.getStatus(key, version);
+    }
+
     // Private methods
     uint64_t DistributedObjectStore::calculateObjectSize(const std::vector<void *> &sizes)
     {

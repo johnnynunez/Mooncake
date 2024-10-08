@@ -15,7 +15,7 @@ struct Config {
         if (it != settings.end()) {
             return it->second;
         }
-        std::cerr << "use defaultValue, key: " << key << ", defaultvalue: " << defaultValue;
+        std::cerr << "use defaultValue, key: " << key << ", defaultvalue: " << defaultValue << std::endl;
         return defaultValue;
     }
 };
