@@ -24,10 +24,10 @@ namespace mooncake
         
         bool doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) override;
 
-        BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback);
+        BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks);
 
     private:
-        void monitorTransferStatus(BatchID batch_id, size_t task_count, TransferCallback callback);
+        void monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status);
 
     private:
         std::unique_ptr<TransferEngine> transfer_engine_;

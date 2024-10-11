@@ -151,7 +151,7 @@ namespace mooncake
     }
 
     // 异步提交传输请求
-    BatchID RdmaTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback) {
+    BatchID RdmaTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks) {
         auto batch_id = rdma_engine_->allocateBatchID(transfer_tasks.size());
         int ret = rdma_engine_->submitTransfer(batch_id, transfer_tasks);
         if (ret != 0) {
@@ -159,17 +159,11 @@ namespace mooncake
             rdma_engine_->freeBatchID(batch_id);
             return -1;
         }
-
-        // 启动异步监控线程
-        std::thread([this, batch_id, transfer_tasks, callback]() {
-            this->monitorTransferStatus(batch_id, transfer_tasks.size(), callback);
-        }).detach();
-
         return batch_id;
     }
 
-    void RdmaTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, TransferCallback callback) {
-        std::vector<TransferStatusEnum> transfer_status(task_count, TransferStatusEnum::PENDING);
+    void RdmaTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status) {
+        // std::vector<TransferStatusEnum> transfer_status(task_count, TransferStatusEnum::PENDING);
         size_t completed_count = 0;
 
         while (completed_count < task_count) {
@@ -182,6 +176,7 @@ namespace mooncake
                             transfer_status[task_id] = status.s;
                             ++completed_count;
                         }
+                        LOG(ERROR) << "the task_id: " << task_id << " , status: " << status.s;
                     } else {
                         LOG(ERROR) << "Failed to get transfer status, batch_id: " << batch_id << ", task_id: " << task_id;
                     }
@@ -191,7 +186,7 @@ namespace mooncake
         }
 
         rdma_engine_->freeBatchID(batch_id);
-        callback(transfer_status); // 调用回调函数，通知上层所有传输已完成
+        // callback(transfer_status); // 调用回调函数，通知上层所有传输已完成
     }
 
 

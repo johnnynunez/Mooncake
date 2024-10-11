@@ -22,6 +22,15 @@ namespace mooncake
         size_t size;
     };
 
+    struct PairHash {
+        template <class T1, class T2>
+        std::size_t operator() (const std::pair<T1, T2>& p) const {
+            auto h1 = std::hash<T1>{}(p.first);
+            auto h2 = std::hash<T2>{}(p.second);
+            return h1 ^ (h2 << 1); 
+        }
+    };
+
     class DistributedObjectStore
     {
     public:
@@ -33,9 +42,11 @@ namespace mooncake
         struct PutContext {
             ObjectKey key;
             Version version;
+            BatchID batch_id;
             int replica_num;
             std::vector<ReplicaInfo> replica_infos;
             std::vector<std::vector<TransferRequest>> all_requests;
+            size_t task_size;
         };
 
         DistributedObjectStore();
@@ -79,6 +90,9 @@ namespace mooncake
             std::vector<TransferRequest> &transfer_tasks);
 
     private:
+
+        bool updatePutStatus(ObjectKey key, Version version, std::vector<TransferStatusEnum>& status); 
+
         uint64_t calculateObjectSize(const std::vector<void *> &ptrs);
 
         void updateReplicaStatus(const std::vector<TransferRequest> &requests, const std::vector<TransferStatusEnum> &status,
@@ -105,6 +119,10 @@ namespace mooncake
         const std::vector<TransferStatusEnum>& status);
 
     private:
+        std::unordered_map<std::pair<ObjectKey, Version>, 
+            std::shared_ptr<PutContext>, 
+            PairHash> put_contexts_;
+
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;
         uint32_t max_trynum_;

@@ -172,14 +172,12 @@ namespace mooncake
         context->replica_num = replica_num;
         context->replica_infos = std::move(replica_infos);
         context->all_requests = std::move(all_requests);
+        context->task_size = combined_requests.size();
 
-        auto batch_id = transfer_agent_->submitTransfersAsync(
-            combined_requests,
-            [this, context](const std::vector<TransferStatusEnum>& status) {
-                this->handlePutCompletion(context, status);
-            }
+        auto batch_id = transfer_agent_->submitTransfersAsync(combined_requests
         );
-
+        context->batch_id = batch_id;
+        LOG(ERROR) << "the batchid : " << context->batch_id;
         if (batch_id == -1) {
             // 清理已分配的副本
             for (int index = 0; index < replica_num; ++index) {
@@ -189,6 +187,8 @@ namespace mooncake
             LOG(WARNING) << "Failed to submit transfer requests, key: " << key;
             return getError(ERRNO::WRITE_FAIL);
         }
+        // Store the context for later use
+        put_contexts_[{key, version}] = context;
 
         LOG(INFO) << "Put object submitted asynchronously, key: " << key
                 << ", version: " << version
@@ -435,10 +435,60 @@ namespace mooncake
     }
 
     std::vector<ReplicaStatus> DistributedObjectStore::getReplicaStatus(ObjectKey key, Version version) {
-        return replica_allocator_.getStatus(key, version);
+       auto it = put_contexts_.find({key, version});
+        if (it == put_contexts_.end()) {
+            return replica_allocator_.getStatus(key, version);
+        }
+
+        auto context = it->second;
+        std::vector<TransferStatusEnum> status;
+        
+        // Update the put status and get the current transfer status
+        bool completed = updatePutStatus(key, version, status);
+
+        // Convert TransferStatusEnum to ReplicaStatus
+        std::vector<ReplicaStatus> replica_status;
+        size_t status_index = 0;
+        for (const auto& replica_info : context->replica_infos) {
+            ReplicaStatus rs;
+            rs = (status_index < status.size() && status[status_index] == TransferStatusEnum::COMPLETED) 
+                ? ReplicaStatus::COMPLETE
+                : ReplicaStatus::PARTIAL;
+            replica_status.push_back(rs);
+            status_index += context->all_requests[&replica_info - &context->replica_infos[0]].size();
+        }
+
+        // If all transfers are completed, remove the context
+        if (completed) {
+            put_contexts_.erase(it);
+        }
+
+        return replica_status;
     }
 
     // Private methods
+    bool DistributedObjectStore::updatePutStatus(ObjectKey key, Version version, std::vector<TransferStatusEnum>& status) {
+        auto it = put_contexts_.find({key, version});
+        if (it == put_contexts_.end()) {
+            return true; // Context not found, assume completed
+        }
+
+        auto context = it->second;
+        status.resize(context->task_size, TransferStatusEnum::PENDING);
+
+        transfer_agent_->monitorTransferStatus(context->batch_id, context->task_size, status);
+
+        // Check if all transfers are completed
+        bool all_completed = std::all_of(status.begin(), status.end(), 
+            [](TransferStatusEnum s) { return s == TransferStatusEnum::COMPLETED || s == TransferStatusEnum::FAILED; });
+
+        if (all_completed) {
+            handlePutCompletion(context, status);
+        }
+
+        return all_completed;
+    }
+    
     uint64_t DistributedObjectStore::calculateObjectSize(const std::vector<void *> &sizes)
     {
         size_t total_size = 0;

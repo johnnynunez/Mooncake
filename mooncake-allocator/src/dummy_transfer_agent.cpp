@@ -73,7 +73,11 @@ namespace mooncake
         return true;
     }
 
-    BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback)  {
+    BatchID DummyTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks)  {
         return 0;
+    }
+
+    void DummyTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status)  {
+        return;
     }
 } // namespace mooncake

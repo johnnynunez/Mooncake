@@ -22,7 +22,9 @@ namespace mooncake
         virtual bool doRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) = 0;
         virtual bool doReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) = 0;
         virtual bool doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) = 0;
-        virtual BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks, TransferCallback callback) = 0;
+        virtual BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks) = 0;
+        
+        virtual void monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status) = 0;
     };
 
 } // namespace mooncake
