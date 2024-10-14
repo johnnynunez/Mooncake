@@ -49,10 +49,10 @@ namespace mooncake
     }
 
     void DistributedObjectStore::updateReplicaStatus(
-        const std::vector<TransferRequest> &requests, 
-        const std::vector<TransferStatusEnum> &status, 
-        const std::string &key, 
-        const Version version, 
+        const std::vector<TransferRequest> &requests,
+        const std::vector<TransferStatusEnum> &status,
+        const std::string &key,
+        const Version version,
         ReplicaInfo &replica_info)
     {
         bool ifCompleted = true;
@@ -63,14 +63,14 @@ namespace mooncake
 
         for (size_t i = 0; i < requests.size(); ++i)
         {
-            LOG(INFO) << "Request index: " << i 
-                    << ", Handle index: " << handle_index;
+            LOG(INFO) << "Request index: " << i
+                      << ", Handle index: " << handle_index;
 
             if (status[i] != TransferStatusEnum::COMPLETED)
             {
                 replica_info.handles[handle_index]->status = BufStatus::FAILED;
                 failed_index.insert(handle_index);
-                replica_allocator_.updateStatus(key, ReplicaStatus::PARTIAL, 
+                replica_allocator_.updateStatus(key, ReplicaStatus::PARTIAL,
                                                 replica_info.replica_id, version);
                 LOG(WARNING) << "Handle " << i << " failed";
                 ifCompleted = false;
@@ -90,17 +90,17 @@ namespace mooncake
 
         if (ifCompleted)
         {
-            replica_allocator_.updateStatus(key, ReplicaStatus::COMPLETE, 
+            replica_allocator_.updateStatus(key, ReplicaStatus::COMPLETE,
                                             replica_info.replica_id, version);
-            LOG(INFO) << "Key " << key 
-                    << ", Replica " << replica_info.replica_id 
-                    << " completed";
+            LOG(INFO) << "Key " << key
+                      << ", Replica " << replica_info.replica_id
+                      << " completed";
         }
     }
 
     TaskID DistributedObjectStore::put(
-        ObjectKey key, 
-        const std::vector<Slice> &slices, 
+        ObjectKey key,
+        const std::vector<Slice> &slices,
         ReplicateConfig config)
     {
         std::vector<TransferRequest> requests;
@@ -132,41 +132,50 @@ namespace mooncake
         std::vector<std::vector<TransferRequest>> all_requests(replica_num);
 
         // add all replicas
-        for (int index = 0; index < replica_num; ++index) {
-            if (first_add) {
+        for (int index = 0; index < replica_num; ++index)
+        {
+            if (first_add)
+            {
                 version = replica_allocator_.addOneReplica(key, replica_infos[index], -1, total_size, allocation_strategy_);
-            } else {
+            }
+            else
+            {
                 version = replica_allocator_.addOneReplica(key, replica_infos[index], version, -1, allocation_strategy_);
             }
 
-            if (version < 0) {
+            if (version < 0)
+            {
                 LOG(ERROR) << "Failed to put object " << key
-                        << ", size: " << total_size
-                        << ", replica num: " << replica_num;
+                           << ", size: " << total_size
+                           << ", replica num: " << replica_num;
                 break;
             }
             generateWriteTransferRequests(replica_infos[index], slices, all_requests[index]);
         }
 
-        if (version < 0) {
+        if (version < 0)
+        {
             // Cleanup if any replica addition failed
-            for (int index = 0; index < replica_num; ++index) {
+            for (int index = 0; index < replica_num; ++index)
+            {
                 ReplicaInfo ret;
                 replica_allocator_.removeOneReplica(key, ret, version);
             }
             LOG(WARNING) << "No replica succeeded when putting, key: " << key
-                        << ", replica_num: " << replica_num;
+                         << ", replica_num: " << replica_num;
             return getError(ERRNO::WRITE_FAIL);
         }
 
         // Combine all requests into a single vector for batch processing
         std::vector<TransferRequest> combined_requests;
-        for (const auto& requests : all_requests) {
+        for (const auto &requests : all_requests)
+        {
             combined_requests.insert(combined_requests.end(), requests.begin(), requests.end());
         }
 
         // Perform batch transfer
-       auto context = std::make_shared<PutContext>();
+        auto context = std::make_shared<TaskContext>();
+        context->task_id = task_id_.fetch_add(1);
         context->key = key;
         context->version = version;
         context->replica_num = replica_num;
@@ -174,13 +183,14 @@ namespace mooncake
         context->all_requests = std::move(all_requests);
         context->task_size = combined_requests.size();
 
-        auto batch_id = transfer_agent_->submitTransfersAsync(combined_requests
-        );
+        auto batch_id = transfer_agent_->submitTransfersAsync(combined_requests);
         context->batch_id = batch_id;
         LOG(ERROR) << "the batchid : " << context->batch_id;
-        if (batch_id == -1) {
+        if (batch_id == -1)
+        {
             // 清理已分配的副本
-            for (int index = 0; index < replica_num; ++index) {
+            for (int index = 0; index < replica_num; ++index)
+            {
                 ReplicaInfo ret;
                 replica_allocator_.removeOneReplica(key, ret, version);
             }
@@ -188,55 +198,61 @@ namespace mooncake
             return getError(ERRNO::WRITE_FAIL);
         }
         // Store the context for later use
-        put_contexts_[{key, version}] = context;
+        task_contexts_[context->task_id] = context;
 
         LOG(INFO) << "Put object submitted asynchronously, key: " << key
-                << ", version: " << version
-                << ", replica_num: " << replica_num;
-        return version;
+                  << ", version: " << version
+                  << ", replica_num: " << replica_num;
+        return context->task_id;
     }
 
     void DistributedObjectStore::handlePutCompletion(
-    std::shared_ptr<PutContext> context,
-        const std::vector<TransferStatusEnum>& status)
+        std::shared_ptr<TaskContext> context,
+        const std::vector<TransferStatusEnum> &status)
     {
         int succeed_num = 0;
         size_t status_index = 0;
 
-        for (int index = 0; index < context->replica_num; ++index) {
-            const auto& requests = context->all_requests[index];
+        for (int index = 0; index < context->replica_num; ++index)
+        {
+            const auto &requests = context->all_requests[index];
             std::vector<TransferStatusEnum> replica_status(
                 status.begin() + status_index,
-                status.begin() + status_index + requests.size()
-            );
-            updateReplicaStatus(requests, replica_status, context->key, 
+                status.begin() + status_index + requests.size());
+            updateReplicaStatus(requests, replica_status, context->key,
                                 context->version, context->replica_infos[index]);
             status_index += requests.size();
 
-            if (std::all_of(replica_status.begin(), replica_status.end(), 
-                            [](TransferStatusEnum s) { return s == TransferStatusEnum::COMPLETED; })) {
+            if (std::all_of(replica_status.begin(), replica_status.end(),
+                            [](TransferStatusEnum s)
+                            { return s == TransferStatusEnum::COMPLETED; }))
+            {
                 ++succeed_num;
             }
         }
 
-        if (succeed_num == 0) {
+        if (succeed_num == 0)
+        {
             // 所有副本都失败，删除无用的副本
-            for (int index = 0; index < context->replica_num; ++index) {
+            for (int index = 0; index < context->replica_num; ++index)
+            {
                 ReplicaInfo ret;
                 replica_allocator_.removeOneReplica(context->key, ret, context->version);
             }
             LOG(WARNING) << "No replica succeeded when putting, key: " << context->key
-                        << ", replica_num: " << context->replica_num;
-        } else {
+                         << ", replica_num: " << context->replica_num;
+        }
+        else
+        {
             LOG(INFO) << "Put object completed asynchronously, key: " << context->key
-                    << ", succeed num: " << succeed_num
-                    << ", needed replica num: " << context->replica_num;
+                      << ", succeed num: " << succeed_num
+                      << ", needed replica num: " << context->replica_num;
         }
     }
     TaskID DistributedObjectStore::get(
-        ObjectKey key, 
-        std::vector<Slice> &slices, 
-        Version min_version, 
+        ObjectKey key,
+        std::vector<Slice> &slices,
+        Version min_version,
         size_t offset)
     {
         std::vector<TransferRequest> transfer_tasks;
@@ -265,14 +281,14 @@ namespace mooncake
         {
             success = transfer_agent_->doTransfers(transfer_tasks, status);
             ++trynum;
-            LOG(WARNING) << "Retrying, trynum: " << trynum 
-                        << ", key: " << key;
+            LOG(WARNING) << "Retrying, trynum: " << trynum
+                         << ", key: " << key;
         }
 
         if (trynum == max_trynum_)
         {
-            LOG(ERROR) << "Read data failed after max tries: " 
-                    << max_trynum_ << ", key: " << key;
+            LOG(ERROR) << "Read data failed after max tries: "
+                       << max_trynum_ << ", key: " << key;
             return getError(ERRNO::INVALID_READ);
         }
 
@@ -300,8 +316,8 @@ namespace mooncake
     }
 
     TaskID DistributedObjectStore::replicate(
-        ObjectKey key, 
-        ReplicateConfig new_config, 
+        ObjectKey key,
+        ReplicateConfig new_config,
         ReplicaDiff &replica_diff)
     {
         Version latest_version = replica_allocator_.getObjectVersion(key);
@@ -314,8 +330,8 @@ namespace mooncake
         size_t existed_replica_number = replica_allocator_.getReplicaRealNumber(key, latest_version);
         if (existed_replica_number == 0)
         {
-            LOG(ERROR) << "Failed to get existed replica number, no complete replica in this version, key: " 
-                    << key << ", latest_version: " << latest_version;
+            LOG(ERROR) << "Failed to get existed replica number, no complete replica in this version, key: "
+                       << key << ", latest_version: " << latest_version;
             return getError(ERRNO::INVALID_VERSION);
         }
 
@@ -334,16 +350,16 @@ namespace mooncake
                 Version existed_version = replica_allocator_.getOneReplica(key, existed_replica_info, latest_version, allocation_strategy_);
                 if (existed_version < 0)
                 {
-                    LOG(ERROR) << "Failed to get existed replica in replicate operation, key: " 
-                            << key << ", needed version: " << latest_version;
+                    LOG(ERROR) << "Failed to get existed replica in replicate operation, key: "
+                               << key << ", needed version: " << latest_version;
                     return existed_version;
                 }
 
                 Version add_version = replica_allocator_.addOneReplica(key, new_replica_info, existed_version, -1, allocation_strategy_);
                 if (add_version < 0)
                 {
-                    LOG(ERROR) << "Failed to add replica in replicate operation, key: " 
-                            << key << ", needed version: " << latest_version;
+                    LOG(ERROR) << "Failed to add replica in replicate operation, key: "
+                               << key << ", needed version: " << latest_version;
                     return add_version;
                 }
 
@@ -357,6 +373,7 @@ namespace mooncake
 
                 while (!success && try_num < max_trynum_)
                 {
+                    // TODO: 异步化
                     std::vector<TransferStatusEnum> status;
                     success = transfer_agent_->doTransfers(transfer_tasks, status);
                     if (success)
@@ -425,8 +442,8 @@ namespace mooncake
                         }
                         if (!success)
                         {
-                            LOG(ERROR) << "Failed to recover partial replica " << replica_id 
-                                    << " for key " << key << ", version " << version;
+                            LOG(ERROR) << "Failed to recover partial replica " << replica_id
+                                       << " for key " << key << ", version " << version;
                         }
                     }
                 }
@@ -434,61 +451,62 @@ namespace mooncake
         }
     }
 
-    std::vector<ReplicaStatus> DistributedObjectStore::getReplicaStatus(ObjectKey key, Version version) {
-       auto it = put_contexts_.find({key, version});
-        if (it == put_contexts_.end()) {
-            return replica_allocator_.getStatus(key, version);
+    TASK_STATUS DistributedObjectStore::getTaskStatus(TaskID task_id)
+    {
+        auto it = task_contexts_.find(task_id);
+        if (it == task_contexts_.end())
+        {
+            LOG(ERROR) << "Task id not found: " << task_id;
+            return std::make_pair<OperationStatus, ERRNO>(OperationStatus::COMPLETE, ERRNO::INVALID_KEY);
         }
 
         auto context = it->second;
         std::vector<TransferStatusEnum> status;
-        
+
         // Update the put status and get the current transfer status
-        bool completed = updatePutStatus(key, version, status);
-
-        // Convert TransferStatusEnum to ReplicaStatus
-        std::vector<ReplicaStatus> replica_status;
-        size_t status_index = 0;
-        for (const auto& replica_info : context->replica_infos) {
-            ReplicaStatus rs;
-            rs = (status_index < status.size() && status[status_index] == TransferStatusEnum::COMPLETED) 
-                ? ReplicaStatus::COMPLETE
-                : ReplicaStatus::PARTIAL;
-            replica_status.push_back(rs);
-            status_index += context->all_requests[&replica_info - &context->replica_infos[0]].size();
-        }
-
-        // If all transfers are completed, remove the context
-        if (completed) {
-            put_contexts_.erase(it);
-        }
-
-        return replica_status;
+        return updatePutStatus(task_id, status);
     }
 
     // Private methods
-    bool DistributedObjectStore::updatePutStatus(ObjectKey key, Version version, std::vector<TransferStatusEnum>& status) {
-        auto it = put_contexts_.find({key, version});
-        if (it == put_contexts_.end()) {
-            return true; // Context not found, assume completed
+    TASK_STATUS DistributedObjectStore::updatePutStatus(TaskID task_id, std::vector<TransferStatusEnum> &status)
+    {
+        auto it = task_contexts_.find(task_id);
+        if (it == task_contexts_.end())
+        {
+            return std::make_pair<OperationStatus, ERRNO>(OperationStatus::COMPLETE, ERRNO::INVALID_KEY);
+        }
+        else if (it->second->task_status.first == OperationStatus::COMPLETE)
+        {
+            return it->second->task_status;
         }
 
         auto context = it->second;
-        status.resize(context->task_size, TransferStatusEnum::PENDING);
+        status.resize(it->second->task_size, TransferStatusEnum::PENDING);
 
         transfer_agent_->monitorTransferStatus(context->batch_id, context->task_size, status);
 
         // Check if all transfers are completed
-        bool all_completed = std::all_of(status.begin(), status.end(), 
-            [](TransferStatusEnum s) { return s == TransferStatusEnum::COMPLETED || s == TransferStatusEnum::FAILED; });
+        bool all_completed = std::all_of(status.begin(), status.end(),
+                                         [](TransferStatusEnum s)
+                                         { return s == TransferStatusEnum::COMPLETED || s == TransferStatusEnum::FAILED; });
 
-        if (all_completed) {
+        if (all_completed)
+        {
             handlePutCompletion(context, status);
+            // 判断在status中是否有TransferStatusEnum::FAILED, 如果有一个则ERRNO为TRANSFER_FAIL 并返回
+            auto op_status =  std::make_pair<OperationStatus, ERRNO>(OperationStatus::COMPLETE,
+            std::any_of(status.begin(), status.end(),
+            [](TransferStatusEnum s) { return s == TransferStatusEnum::FAILED; }) ? 
+            ERRNO::TRANSFER_FAIL : ERRNO::OK);
+            it->second->task_status = op_status;
+            return op_status;
         }
-
-        return all_completed;
+        // 返回PENDING状态
+        auto op_status =  std::make_pair<OperationStatus, ERRNO>(OperationStatus::PENDING, ERRNO::OK);
+        it->second->task_status = op_status;
+        return op_status;
     }
-    
+
     uint64_t DistributedObjectStore::calculateObjectSize(const std::vector<void *> &sizes)
     {
         size_t total_size = 0;
@@ -500,8 +518,8 @@ namespace mooncake
     }
 
     void DistributedObjectStore::generateWriteTransferRequests(
-        const ReplicaInfo &replica_info, 
-        const std::vector<Slice> &slices, 
+        const ReplicaInfo &replica_info,
+        const std::vector<Slice> &slices,
         std::vector<TransferRequest> &transfer_tasks)
     {
         size_t written = 0;
@@ -527,13 +545,13 @@ namespace mooncake
                 request.target_offset = reinterpret_cast<uint64_t>(handle->buffer) + shard_offset;
                 transfer_tasks.push_back(std::move(request));
 
-                LOG(INFO) << "Create write request, input_idx: " << input_idx 
-                        << ", input_offset: " << input_offset
-                        << ", segmentid: " << handle->segment_id 
-                        << ", shard_offset: " << shard_offset
-                        << ", to_write_length: " << to_write 
-                        << ", target offset: " << reinterpret_cast<void *>(request.target_offset)
-                        << ", handle buffer: " << handle->buffer;
+                LOG(INFO) << "Create write request, input_idx: " << input_idx
+                          << ", input_offset: " << input_offset
+                          << ", segmentid: " << handle->segment_id
+                          << ", shard_offset: " << shard_offset
+                          << ", to_write_length: " << to_write
+                          << ", target offset: " << reinterpret_cast<void *>(request.target_offset)
+                          << ", handle buffer: " << handle->buffer;
 
                 shard_offset += to_write;
                 input_offset += to_write;
@@ -546,8 +564,8 @@ namespace mooncake
                 }
             }
 
-            LOG(INFO) << "Written " << shard_offset << " bytes to shard in node " 
-                    << handle->segment_id;
+            LOG(INFO) << "Written " << shard_offset << " bytes to shard in node "
+                      << handle->segment_id;
         }
 
         LOG(INFO) << "Total written for replica: " << written << " bytes";
@@ -559,9 +577,9 @@ namespace mooncake
     }
 
     void DistributedObjectStore::generateReadTransferRequests(
-        const ReplicaInfo &replica_info, 
-        size_t offset, 
-        const std::vector<Slice> &slices, 
+        const ReplicaInfo &replica_info,
+        size_t offset,
+        const std::vector<Slice> &slices,
         std::vector<TransferRequest> &transfer_tasks)
     {
         size_t total_size = 0;
@@ -569,8 +587,8 @@ namespace mooncake
         {
             total_size += slice.size;
         }
-        LOG(INFO) << "Generate read request, offset: " << offset 
-                << ", total_size: " << total_size;
+        LOG(INFO) << "Generate read request, offset: " << offset
+                  << ", total_size: " << total_size;
 
         size_t current_offset = 0;
         size_t remaining_offset = offset; // offset in input
@@ -594,8 +612,8 @@ namespace mooncake
             while (shard_start < handle->size && bytes_read < total_size)
             {
                 size_t bytes_to_read = std::min({handle->size - shard_start,
-                                                slices[output_index].size - output_offset,
-                                                total_size - bytes_read});
+                                                 slices[output_index].size - output_offset,
+                                                 total_size - bytes_read});
 
                 request.source = static_cast<char *>(slices[output_index].ptr) + output_offset;
                 request.target_id = handle->segment_id;
@@ -604,16 +622,16 @@ namespace mooncake
                 request.opcode = TransferRequest::OpCode::READ;
                 transfer_tasks.push_back(std::move(request));
 
-                LOG(INFO) << "Read request, source: " << request.source 
-                        << ", target_id: " << request.target_id 
-                        << ", target_offset: " << reinterpret_cast<void *>(request.target_offset)
-                        << ", length: " << request.length 
-                        << ", handle_size: " << handle->size 
-                        << ", shard_start: " << shard_start
-                        << ", output_size: " << slices[output_index].size 
-                        << ", output_offset: " << output_offset
-                        << ", total_size: " << total_size 
-                        << ", bytes_read: " << bytes_read;
+                LOG(INFO) << "Read request, source: " << request.source
+                          << ", target_id: " << request.target_id
+                          << ", target_offset: " << reinterpret_cast<void *>(request.target_offset)
+                          << ", length: " << request.length
+                          << ", handle_size: " << handle->size
+                          << ", shard_start: " << shard_start
+                          << ", output_size: " << slices[output_index].size
+                          << ", output_offset: " << output_offset
+                          << ", total_size: " << total_size
+                          << ", bytes_read: " << bytes_read;
 
                 shard_start += bytes_to_read;
                 output_offset += bytes_to_read;
@@ -636,8 +654,8 @@ namespace mooncake
         }
     }
     void DistributedObjectStore::generateReplicaTransferRequests(
-        const ReplicaInfo &existed_replica_info, 
-        const ReplicaInfo &new_replica_info, 
+        const ReplicaInfo &existed_replica_info,
+        const ReplicaInfo &new_replica_info,
         std::vector<TransferRequest> &transfer_tasks)
     {
         // Implement logic to generate replica transfer requests
@@ -652,8 +670,8 @@ namespace mooncake
     }
 
     bool DistributedObjectStore::validateTransferRequests(
-        const ReplicaInfo &replica_info, 
-        const std::vector<Slice> &slices, 
+        const ReplicaInfo &replica_info,
+        const std::vector<Slice> &slices,
         const std::vector<TransferRequest> &transfer_tasks)
     {
         if (transfer_tasks.empty())
@@ -673,9 +691,9 @@ namespace mooncake
         for (size_t task_id = 0; task_id < transfer_tasks.size(); ++task_id)
         {
             const auto &task = transfer_tasks[task_id];
-            LOG(INFO) << "Segment id: " << task.target_id 
-                    << ", task length: " << task.length 
-                    << ", task target offset: " << reinterpret_cast<void *>(task.target_offset);
+            LOG(INFO) << "Segment id: " << task.target_id
+                      << ", task length: " << task.length
+                      << ", task target offset: " << reinterpret_cast<void *>(task.target_offset);
 
             // Find the corresponding BufHandle
             const auto &handle = replica_info.handles[handle_index];
@@ -683,18 +701,18 @@ namespace mooncake
             // Validate source address
             if (static_cast<char *>(slices[input_idx].ptr) + input_offset != task.source)
             {
-                LOG(ERROR) << "Invalid source address. Expected: " 
-                        << static_cast<char *>(slices[input_idx].ptr) + input_offset
-                        << ", Actual: " << task.source;
+                LOG(ERROR) << "Invalid source address. Expected: "
+                           << static_cast<char *>(slices[input_idx].ptr) + input_offset
+                           << ", Actual: " << task.source;
                 return false;
             }
 
             // Validate length
             if (slices[input_idx].size - input_offset < task.length)
             {
-                LOG(ERROR) << "Invalid length. Expected: " 
-                        << slices[input_idx].size - input_offset
-                        << ", Actual: " << task.length;
+                LOG(ERROR) << "Invalid length. Expected: "
+                           << slices[input_idx].size - input_offset
+                           << ", Actual: " << task.length;
                 return false;
             }
 
@@ -702,9 +720,9 @@ namespace mooncake
             uint64_t expected_target_offset = reinterpret_cast<uint64_t>(handle->buffer) + shard_offset;
             if (expected_target_offset != task.target_offset)
             {
-                LOG(ERROR) << "Invalid target_offset. Expected: " 
-                        << reinterpret_cast<void *>(expected_target_offset)
-                        << ", Actual: " << reinterpret_cast<void *>(task.target_offset);
+                LOG(ERROR) << "Invalid target_offset. Expected: "
+                           << reinterpret_cast<void *>(expected_target_offset)
+                           << ", Actual: " << reinterpret_cast<void *>(task.target_offset);
                 return false;
             }
 
@@ -712,18 +730,18 @@ namespace mooncake
             total_written_by_handle[reinterpret_cast<uint64_t>(handle->buffer)] += task.length;
             input_offset += task.length;
             shard_offset += task.length;
-            LOG(INFO) << "Task length: " << task.length 
-                    << ", segment_id: " << handle->segment_id 
-                    << ", shard_offset: " << shard_offset;
+            LOG(INFO) << "Task length: " << task.length
+                      << ", segment_id: " << handle->segment_id
+                      << ", shard_offset: " << shard_offset;
 
             // Move to the next data block if current block is fully written
             if (input_offset == slices[input_idx].size || task_id == transfer_tasks.size() - 1)
             {
-                LOG(INFO) << "Enter if: before_input_idx: " << input_idx 
-                        << ", input_offset: " << input_offset 
-                        << ", slices[input_idx].size: " << slices[input_idx].size 
-                        << ", task_id: " << task_id 
-                        << ", transfer_tasks.size(): " << transfer_tasks.size();
+                LOG(INFO) << "Enter if: before_input_idx: " << input_idx
+                          << ", input_offset: " << input_offset
+                          << ", slices[input_idx].size: " << slices[input_idx].size
+                          << ", task_id: " << task_id
+                          << ", transfer_tasks.size(): " << transfer_tasks.size();
                 input_idx++;
                 input_offset = 0;
             }
@@ -735,11 +753,11 @@ namespace mooncake
             }
 
             LOG(INFO) << "Validated transfer task: input_idx: " << input_idx
-                    << ", input_offset: " << input_offset
-                    << ", segment_id: " << handle->segment_id
-                    << ", target_offset: " << reinterpret_cast<void *>(task.target_offset)
-                    << ", length: " << task.length 
-                    << ", task_id: " << task_id;
+                      << ", input_offset: " << input_offset
+                      << ", segment_id: " << handle->segment_id
+                      << ", target_offset: " << reinterpret_cast<void *>(task.target_offset)
+                      << ", length: " << task.length
+                      << ", task_id: " << task_id;
             LOG(INFO) << "------------------------------------------------------------";
         }
 
@@ -751,8 +769,8 @@ namespace mooncake
         }
         if (input_idx != slices.size())
         {
-            LOG(ERROR) << "Not all input blocks were processed. Processed: " 
-                    << input_idx << ", Total: " << slices.size();
+            LOG(ERROR) << "Not all input blocks were processed. Processed: "
+                       << input_idx << ", Total: " << slices.size();
             return false;
         }
         LOG(INFO) << "----------All transfer tasks validated successfully.----------------";
@@ -760,8 +778,8 @@ namespace mooncake
     }
 
     bool DistributedObjectStore::validateTransferReadRequests(
-        const ReplicaInfo &replica_info, 
-        const std::vector<Slice> &slices, 
+        const ReplicaInfo &replica_info,
+        const std::vector<Slice> &slices,
         const std::vector<TransferRequest> &transfer_tasks)
     {
         size_t total_size = 0;
@@ -829,14 +847,14 @@ namespace mooncake
 
         if (bytes_read > total_size)
         {
-            LOG(ERROR) << "Total bytes read does not match total size, bytes_read: " 
-                    << bytes_read << ", total_read: " << total_size;
+            LOG(ERROR) << "Total bytes read does not match total size, bytes_read: "
+                       << bytes_read << ", total_read: " << total_size;
             return false;
         }
         else if (bytes_read < total_size)
         {
-            LOG(WARNING) << "Total bytes read is less than total size, bytes_read: " 
-                        << bytes_read << ", total_read: " << total_size;
+            LOG(WARNING) << "Total bytes read is less than total size, bytes_read: "
+                         << bytes_read << ", total_read: " << total_size;
         }
         LOG(INFO) << "----------All transfer read tasks validated successfully.----------------";
         return true;

@@ -31,6 +31,16 @@ namespace mooncake
         }
     };
 
+    // define operation type
+    enum class OperationType : uint8_t {
+        PUT,
+        GET,
+        REMOVE,
+        REPLICATE
+    };
+
+
+
     class DistributedObjectStore
     {
     public:
@@ -39,8 +49,12 @@ namespace mooncake
             // diff of replica
         };
 
-        struct PutContext {
+    
+        struct TaskContext {
+            TaskID task_id;
+            OperationType type;
             ObjectKey key;
+            TASK_STATUS task_status;
             Version version;
             BatchID batch_id;
             int replica_num;
@@ -71,7 +85,7 @@ namespace mooncake
 
         void checkAll();
 
-        std::vector<ReplicaStatus> getReplicaStatus(ObjectKey key, Version version = -1);
+        TASK_STATUS getTaskStatus(TaskID task_id);
 
         void generateWriteTransferRequests(
             const ReplicaInfo &replica_info,
@@ -91,7 +105,7 @@ namespace mooncake
 
     private:
 
-        bool updatePutStatus(ObjectKey key, Version version, std::vector<TransferStatusEnum>& status); 
+        TASK_STATUS updatePutStatus(TaskID task_id, std::vector<TransferStatusEnum>& status); 
 
         uint64_t calculateObjectSize(const std::vector<void *> &ptrs);
 
@@ -115,13 +129,14 @@ namespace mooncake
             const std::vector<TransferRequest> &transfer_tasks);
 
         void handlePutCompletion(
-    std::shared_ptr<PutContext> context,
+    std::shared_ptr<TaskContext> context,
         const std::vector<TransferStatusEnum>& status);
 
     private:
-        std::unordered_map<std::pair<ObjectKey, Version>, 
-            std::shared_ptr<PutContext>, 
-            PairHash> put_contexts_;
+        // define atomic taskid
+        std::atomic<TaskID> task_id_;
+        std::unordered_map<TaskID, 
+            std::shared_ptr<TaskContext>> task_contexts_;
 
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;

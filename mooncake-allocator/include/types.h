@@ -20,6 +20,8 @@ namespace mooncake
 
     enum class ERRNO : int64_t
     {
+        // ok
+        OK = 0,
         // for buffer alloc
         BUFFER_OVERFLOW = -1, // 无法开辟合适的空间
         // for select segment
@@ -39,6 +41,8 @@ namespace mooncake
         INVALID_WRITE = -9,
         INVALID_READ = -10,
         INVALID_REPLICA = -11,
+        // for transfer
+        TRANSFER_FAIL = -12,
 
     };
 
@@ -135,4 +139,12 @@ namespace mooncake
     // using ReplicaList = std::vector<ReplicaInfo>;
     using ReplicaList = std::unordered_map<uint32_t, ReplicaInfo>;
     using BufferResources = std::map<SegmentId, std::vector<std::shared_ptr<BufferAllocator>>>;
+
+    // define OperationStatus
+    enum class OperationStatus : uint8_t {
+        UNDEFINED = 0,
+        PENDING,
+        COMPLETE,
+    };
+    #define TASK_STATUS  std::pair<OperationStatus, ERRNO>
 }

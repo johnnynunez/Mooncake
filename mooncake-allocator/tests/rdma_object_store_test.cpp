@@ -78,23 +78,16 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
     LOG(ERROR) << "finish put......";
     //sleep(1);
 
-    std::vector<ReplicaStatus> status = store.getReplicaStatus(key, putVersion);
+    TASK_STATUS status = store.getTaskStatus(putVersion);
 
     // loop utile all status all completed
     while (true) {
-        bool all_completed = true;
-        for (auto s : status) {
-            if (s != ReplicaStatus::COMPLETE) {
-                // LOG(ERROR) << "replica status not completed: " << (uint64_t)s;
-                all_completed = false;
-                break;
-            }
-        }
-        if (all_completed) {
-            LOG(ERROR) << "replica status completed!";
+        status = store.getTaskStatus(putVersion);
+        if (status.first == OperationStatus::COMPLETE) {
             break;
+        } else {
+            sleep(1);
         }
-        status = store.getReplicaStatus(key, putVersion);
     }
 
     // 获取数据
@@ -105,7 +98,7 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
     std::vector<Slice> getSlices = {getSlice};
     
     TaskID getVersion = store.get(key, getSlices, 0, 0);
-    EXPECT_EQ(getVersion, putVersion);
+    //EXPECT_EQ(getVersion, putVersion);
 
     // 比较原始数据和获取的数据
     char* retrievedDataPtr = static_cast<char*>(getPtr);
