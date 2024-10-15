@@ -113,6 +113,12 @@ namespace mooncake
                     uint64_t length;
                     uint64_t buffer_id;
                 } nvmeof;
+                struct
+                {
+                    void *remote_filename;
+                    void *remote_addr;
+                    size_t remote_offset;
+                } cxl;
             };
         public:
             void markSuccess()

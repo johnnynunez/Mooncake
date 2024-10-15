@@ -16,6 +16,7 @@ set(CMAKE_BUILD_TYPE "Release")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_CUDA "option for using gpu" OFF)
+option(USE_CXL "option for using cxl" ON)
 option(USE_STATIC_ETCD_CPP_API "option for using statically-linked etcd cpp api" OFF)
 
 option(BUILD_TRANSFER_ENGINE "build transfer engine" ON)

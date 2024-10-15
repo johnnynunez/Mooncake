@@ -8,3 +8,8 @@ if (USE_CUDA)
   add_subdirectory(nvmeof_transport)
   target_sources(transport PUBLIC $<TARGET_OBJECTS:nvmeof_transport>)
 endif()
+
+if (USE_CXL)
+  add_subdirectory(cxl_transport)
+  target_sources(transport PUBLIC $<TARGET_OBJECTS:cxl_transport>)
+endif()
