@@ -12,7 +12,7 @@
 
 namespace mooncake
 {
-#define WRONG_VERSION 0
+    #define WRONG_VERSION 0
     using ObjectKey = std::string;
     using Version = int64_t;
     using SegmentId = int64_t;
@@ -20,6 +20,8 @@ namespace mooncake
 
     enum class ERRNO : int64_t
     {
+        // ok
+        OK = 0,
         // for buffer alloc
         BUFFER_OVERFLOW = -1, // 无法开辟合适的空间
         // for select segment
@@ -39,6 +41,8 @@ namespace mooncake
         INVALID_WRITE = -9,
         INVALID_READ = -10,
         INVALID_REPLICA = -11,
+        // for transfer
+        TRANSFER_FAIL = -12,
 
     };
 
@@ -69,7 +73,7 @@ namespace mooncake
     class BufHandle
     {
     public:
-        int segment_id;
+        SegmentId segment_id;
         uint64_t size;
         BufStatus status;
         MetaForReplica replica_meta;
@@ -95,7 +99,7 @@ namespace mooncake
 
     struct ReplicateConfig
     {
-        int replica_num;
+        size_t replica_num;
     };
 
     struct ReplicaInfo
@@ -135,4 +139,12 @@ namespace mooncake
     // using ReplicaList = std::vector<ReplicaInfo>;
     using ReplicaList = std::unordered_map<uint32_t, ReplicaInfo>;
     using BufferResources = std::map<SegmentId, std::vector<std::shared_ptr<BufferAllocator>>>;
+
+    // define OperationStatus
+    enum class OperationStatus : uint8_t {
+        UNDEFINED = 0,
+        PENDING,
+        COMPLETE,
+    };
+    #define TASK_STATUS  std::pair<OperationStatus, ERRNO>
 }

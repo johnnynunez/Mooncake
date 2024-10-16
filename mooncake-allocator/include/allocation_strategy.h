@@ -1,7 +1,7 @@
 #pragma once
 
 #include "buffer_allocator.h"
-#include "common_types.h"
+#include "types.h"
 #include <memory>
 #include <unordered_map>
 #include <vector>

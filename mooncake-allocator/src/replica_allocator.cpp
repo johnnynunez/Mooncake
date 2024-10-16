@@ -10,10 +10,8 @@ namespace mooncake
     ReplicaAllocator::ReplicaAllocator(size_t shard_size) : shard_size_(shard_size), global_version_(0)
     { // version从1开始
         auto config = std::make_shared<RandomAllocationStrategyConfig>();
-        config;
         allocation_strategy_ = std::make_unique<RandomAllocationStrategy>(config);
         max_select_num_ = 30;
-
         LOG(INFO) << "ReplicaAllocator initialized with shard size: " << shard_size;
     }
 
@@ -36,7 +34,7 @@ namespace mooncake
         const ObjectKey &key,
         ReplicaInfo &ret,
         Version ver,
-        size_t object_size,
+        uint64_t object_size,
         std::shared_ptr<AllocationStrategy> strategy)
     {
         ret.reset();
@@ -48,17 +46,12 @@ namespace mooncake
 
         std::unique_lock<std::shared_mutex> lock(object_meta_mutex_); // write lock
         if (object_meta_.count(key) == 0)
-        { // 不存在对应的key
+        {  // Key does not exist
             ver = -1;
         }
         auto &version_list = object_meta_[key];
 
         Version target_version = (ver != -1) ? ver : ++global_version_;
-
-        // 初始化目标版本的副本列表
-        // if (ver == -1) {
-        //     version_list.versions[target_version] = VersionInfo{};
-        // }
 
         auto &version_info = version_list.versions[target_version];
         auto &replicas = version_info.replicas;
@@ -70,7 +63,7 @@ namespace mooncake
             size = object_size;
         }
         else
-        { // 如果ver和object_size同时指定，以ver信息为准
+        { // If both ver and object_size are specified, use ver information
             if (replicas.size() == 0)
             {
                 LOG(ERROR) << "no completed replica for addonereplica, key: " << key << " ,version: " << ver;
@@ -87,14 +80,14 @@ namespace mooncake
             strategy = allocation_strategy_;
         }
 
-        int num_shards = (size + shard_size_ - 1) / shard_size_;
+        size_t num_shards = (size + shard_size_ - 1) / shard_size_;
         ret.handles.reserve(num_shards);
 
         LOG(INFO) << "Adding replica for key " << key << ", version " << target_version << ", size " << size
                   << ", num_shards " << num_shards;
 
-        // 为每个分片分配空间
-        for (int i = 0; i < num_shards; ++i)
+        // Allocate space for each shard
+        for (size_t i = 0; i < num_shards; ++i)
         {
             size_t shard_size;
             if (i == num_shards - 1)
@@ -102,7 +95,7 @@ namespace mooncake
                 shard_size = size % shard_size_;
                 if (shard_size == 0)
                 {
-                    shard_size = shard_size_; // 如果最后一个分片的大小为0，则设置为shard_size_
+                    shard_size = shard_size_; // If the last shard size is 0, set it to shard_size_
                 }
             }
             else
@@ -128,7 +121,7 @@ namespace mooncake
                     continue;
                 }
 
-                // 尝试在选定的段中分配空间
+                // Try to allocate space in the selected segment
                 for (size_t j = 0; j < buf_allocators_[segment_id].size(); ++j)
                 {
                     auto handle = allocateShard(segment_id, j, shard_size);
@@ -136,13 +129,11 @@ namespace mooncake
                     {
                         handle->replica_meta.object_name = key;
                         handle->replica_meta.version = target_version;
-                        // 放入之前赋值，不能size()-1
-                        // handle->replica_meta.replica_id = replicas.size();
                         handle->replica_meta.replica_id = new_replica_id;
                         handle->replica_meta.shard_id = ret.handles.size();
 
                         ret.handles.push_back(handle);
-                        handles_[segment_id][j].push_back(handle); // 便于索引全局handle
+                        handles_[segment_id][j].push_back(handle); // For global handle indexing
                         strategy->selected(segment_id, j, shard_size);
                         allocated = true;
                         LOG(INFO) << "Allocated shard " << i << " in segment " << segment_id << ", allocator " << j;
@@ -162,17 +153,15 @@ namespace mooncake
             return getError(ERRNO::BUFFER_OVERFLOW);
         }
 
-        // 添加新的副本信息
+        // Add new replica information
         ret.status = ReplicaStatus::INITIALIZED;
-        // uint32_t replica_id = replicas.size(); // 新增的副本id
-        uint32_t replica_id = new_replica_id; // 新增的副本id
+        uint32_t replica_id = new_replica_id;
         ret.replica_id = replica_id;
         replicas[replica_id] = ret;
         LOG(INFO) << "Added replica for key " << key << ", version " << target_version << ", replica_id: " << replica_id;
         return target_version;
     }
 
-    // TODO: 接口里面有目的信息， 选路时需要 （在strategy config中动态添加）
     Version ReplicaAllocator::getOneReplica(
         const ObjectKey &key,
         ReplicaInfo &ret,
@@ -222,7 +211,7 @@ namespace mooncake
                     throw std::runtime_error("Unable to select handle even after reset");
                 }
                 ret.handles.push_back(handle);
-                ret.replica_id = handle->replica_meta.replica_id; // replica_id暂时取第一个handle对应的replica_id
+                ret.replica_id = handle->replica_meta.replica_id; // Temporarily take the replica_id of the first handle
                 current_handle_index++;
             }
             catch (const std::exception &e)
@@ -246,12 +235,12 @@ namespace mooncake
 
         LOG(INFO) << "Reassigning replica for key " << key << ", version " << ver << ", replica_id " << replica_id;
 
-        // 重新分配或保留每个分片
+        // Reallocate or retain each shard
         for (size_t i = 0; i < old_replica.handles.size(); ++i)
         {
             if (old_replica.handles[i]->status == BufStatus::FAILED)
             {
-                // 重新分配这个分片
+                // Reallocate this shard
                 size_t shard_size = old_replica.handles[i]->size;
                 auto new_handle = allocateShard(-1, -1, shard_size);
                 ret.handles.push_back(new_handle);
@@ -263,7 +252,7 @@ namespace mooncake
                 LOG(INFO) << "Retained shard " << i;
             }
         }
-        // 更新副本信息
+        // Update replica information
         ret.status = ReplicaStatus::INITIALIZED;
         version_info.replicas[replica_id] = ret;
         LOG(INFO) << "Completed reassignment of replica for key " << key << ", version " << ver << ", replica_id "
@@ -304,14 +293,15 @@ namespace mooncake
     std::vector<std::shared_ptr<BufHandle>> ReplicaAllocator::unregister(SegmentId segment_id, uint64_t buffer_index)
     {
         std::unique_lock<std::shared_mutex> buf_lock(buf_allocators_mutex_); // write lock
-        // unregister时， 将replica里对应的bufhandle 释放为一个状态； 并且释放掉bufallocator
+
+        // Unregister the corresponding bufhandle in the replica and release the bufallocator
         std::vector<std::shared_ptr<BufHandle>> handles;
         if (buf_allocators_.count(segment_id) == 0 || buffer_index >= buf_allocators_[segment_id].size())
         {
             LOG(WARNING) << "Failed to unregister buffer for segment " << segment_id << ", buffer index " << buffer_index;
             return handles;
         }
-        // 遍历segment_id中的所有handle
+        // Iterate through all handles in segment_id
         for (auto &handle : handles_[segment_id][buffer_index])
         {
             if (!handle.expired())
@@ -325,7 +315,7 @@ namespace mooncake
                           << " , shard index: " << h->replica_meta.shard_id;
             }
         }
-        // buf_allocators_[segment_id]的整体销毁
+        // Destroy the entire buf_allocators_[segment_id]
         buf_allocators_[segment_id].erase(buf_allocators_[segment_id].begin() + buffer_index);
 
         LOG(INFO) << "Unregistered buffer for segment " << segment_id << ", buffer index " << buffer_index;
@@ -424,9 +414,6 @@ namespace mooncake
         }
         LOG(INFO) << "Recovery handles, size: " << handles.size();
         recovery(handles);
-
-        // 但是这里应该是写完才会调用的
-        // std::unique_lock<std::shared_mutex> lock(object_meta_mutex_);  // write lock
         for (auto &[key, versionlist] : object_meta_)
         {
             for (auto &[ver, versioninfo] : versionlist.versions)
@@ -495,7 +482,35 @@ namespace mooncake
         }
     }
 
-    std::shared_ptr<BufHandle> ReplicaAllocator::allocateShard(SegmentId segment_id, int allocator_index, size_t size)
+    std::vector<ReplicaStatus> ReplicaAllocator::getStatus(const ObjectKey &key, Version ver)
+    {
+        std::vector<ReplicaStatus> status;
+        if (object_meta_.count(key) == 0)
+        {
+            LOG(WARNING) << "Get status for non-existing key: " << key;
+            return status;
+        }
+        auto &version_list = object_meta_[key];
+        if (ver == -1)
+        {
+            ver = version_list.flushed_version;
+        }
+
+        if (version_list.versions.count(ver) == 0)
+        {
+            LOG(WARNING) << "Get status for non-existing version: " << ver;
+            return status;
+        }
+        size_t replica_num = version_list.versions[ver].replicas.size();
+
+        for (size_t i = 0; i < replica_num; i++)
+        {
+            status.push_back(version_list.versions[ver].replicas[i].status);
+        }
+        return status;
+    }
+
+    std::shared_ptr<BufHandle> ReplicaAllocator::allocateShard(SegmentId segment_id, uint64_t allocator_index, size_t size)
     {
         std::shared_ptr<BufHandle> handle;
         if (segment_id == -1 || allocator_index == -1)
@@ -539,7 +554,7 @@ namespace mooncake
         return object_meta_;
     }
 
-    Version ReplicaAllocator::getObjectVersion(ObjectKey key)
+    Version ReplicaAllocator::getObjectVersion(const ObjectKey& key)
     {
         if (object_meta_.count(key) == 0)
         {
@@ -548,7 +563,7 @@ namespace mooncake
         return object_meta_[key].flushed_version;
     }
 
-    ReplicateConfig ReplicaAllocator::getObjectReplicaConfig(ObjectKey key)
+    ReplicateConfig ReplicaAllocator::getObjectReplicaConfig(const ObjectKey& key)
     {
         ReplicateConfig config;
         config.replica_num = 0;
@@ -559,7 +574,7 @@ namespace mooncake
         return config;
     }
 
-    size_t ReplicaAllocator::getReplicaRealNumber(ObjectKey key, Version version)
+    size_t ReplicaAllocator::getReplicaRealNumber(const ObjectKey& key, Version version)
     {
         if (object_meta_.count(key) == 0)
         {
@@ -574,7 +589,7 @@ namespace mooncake
         return object_meta_[key].versions[version].complete_replicas.size();
     }
 
-    size_t ReplicaAllocator::cleanUncompleteReplica(ObjectKey key, Version version, int max_replica_num)
+    size_t ReplicaAllocator::cleanUncompleteReplica(const ObjectKey& key, Version version, int max_replica_num)
     {
         auto &version_info = object_meta_[key].versions[version];
         int real_replica_num = version_info.complete_replicas.size();

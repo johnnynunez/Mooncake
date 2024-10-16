@@ -9,11 +9,12 @@
 
 using namespace mooncake;
 
+thread_local std::random_device rd;
+thread_local std::mt19937 gen(rd());
+thread_local std::uniform_int_distribution<> dis('a', 'z');
+
 char randomChar()
 {
-    static std::random_device rd;
-    static std::mt19937 gen(rd());
-    static std::uniform_int_distribution<> dis('a', 'z'); // 假设随机字符的范围是 0-255
     return static_cast<char>(dis(gen));
 }
 
@@ -42,27 +43,23 @@ protected:
     {
         for (auto &meta : segment_and_index)
         {
-            // 暂时屏蔽
-            //testUnregisterBuffer(store, meta.first, meta.second);
+            // Temporarily disabled
+            // testUnregisterBuffer(store, meta.first, meta.second);
         }
     }
 
     uint64_t testRegisterBuffer(DistributedObjectStore &store, SegmentId segmentId)
     {
-        // size_t base = 0x100000000;
         size_t size = 1024 * 1024 * 4 * 200;
-        void *ptr = nullptr;
-        posix_memalign(&ptr, 4194304, size);
-        size_t base = reinterpret_cast<size_t>(ptr);
-        LOG(INFO) << "registerbuffer: " << (void *)base;
-        uint64_t index = store.registerBuffer(segmentId, base, size);
+        void *ptr = store.allocateLocalMemory(size);
+        LOG(INFO) << "registerbuffer: " << ptr;
+        uint64_t index = store.registerBuffer(segmentId, reinterpret_cast<size_t>(ptr), size);
         EXPECT_GE(index, 0);
         return index;
     }
 
     void testUnregisterBuffer(DistributedObjectStore &store, SegmentId segmentId, uint64_t index)
     {
-        // 会触发recovery 到后面会无法recovery成功
         store.unregisterBuffer(segmentId, index);
     }
 };
@@ -91,12 +88,11 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentPutTest)
 
     for (int i = 0; i < numThreads; ++i)
     {
-        threads.emplace_back([this, &keys, &data, &configs, &versions, i]() {
-            std::vector<void *> ptrs = {data[i].data()};
-            std::vector<void *> sizes = {reinterpret_cast<void *>(data[i].size())};
-            versions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
-            EXPECT_NE(versions[i], 0);
-        });
+        threads.emplace_back([this, &keys, &data, &configs, &versions, i]()
+                             {
+            std::vector<Slice> slices = {{data[i].data(), data[i].size()}};
+            versions[i] = store.put(keys[i], slices, configs[i]);
+            EXPECT_NE(versions[i], 0); });
     }
 
     for (auto &thread : threads)
@@ -109,7 +105,7 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentPutTest)
         EXPECT_GE(versions[i], 0);
     }
 
-    // 对versions排序，判断应该是依次顺序增长
+    // Sort versions and check if they are incrementing
     std::sort(versions.begin(), versions.end());
     for (int i = 1; i < numThreads; ++i)
     {
@@ -141,22 +137,20 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentGetTest)
 
     for (int i = 0; i < numThreads; ++i)
     {
-        std::vector<void *> ptrs = {data[i].data()};
-        std::vector<void *> sizes = {reinterpret_cast<void *>(data[i].size())};
-        versions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+        std::vector<Slice> slices = {{data[i].data(), data[i].size()}};
+        versions[i] = store.put(keys[i], slices, configs[i]);
         EXPECT_NE(versions[i], 0);
     }
 
     for (int i = 0; i < numThreads; ++i)
     {
-        threads.emplace_back([this, &keys, &data, &versions, i]() {
+        threads.emplace_back([this, &keys, &data, &versions, i]()
+                             {
             std::vector<char> retrievedData(data[i].size());
-            std::vector<void *> getPtrs = {retrievedData.data()};
-            std::vector<void *> getSizes = {reinterpret_cast<void *>(retrievedData.size())};
-            TaskID getVersion = store.get(keys[i], getPtrs, getSizes, versions[i], 0);
+            std::vector<Slice> getSlices = {{retrievedData.data(), retrievedData.size()}};
+            TaskID getVersion = store.get(keys[i], getSlices, versions[i], 0);
             EXPECT_EQ(getVersion, versions[i]);
-            EXPECT_EQ(data[i], retrievedData);
-        });
+            EXPECT_EQ(data[i], retrievedData); });
     }
 
     for (auto &thread : threads)
@@ -189,19 +183,17 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentPutAndGetTest)
 
     for (int i = 0; i < numThreads; ++i)
     {
-        threads.emplace_back([this, &keys, &data, &configs, &versions, i]() {
-            std::vector<void *> ptrs = {data[i].data()};
-            std::vector<void *> sizes = {reinterpret_cast<void *>(data[i].size())};
-            versions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+        threads.emplace_back([this, &keys, &data, &configs, &versions, i]()
+                             {
+            std::vector<Slice> putSlices = {{data[i].data(), data[i].size()}};
+            versions[i] = store.put(keys[i], putSlices, configs[i]);
             EXPECT_NE(versions[i], 0);
 
             std::vector<char> retrievedData(data[i].size());
-            std::vector<void *> getPtrs = {retrievedData.data()};
-            std::vector<void *> getSizes = {reinterpret_cast<void *>(retrievedData.size())};
-            TaskID getVersion = store.get(keys[i], getPtrs, getSizes, versions[i], 0);
+            std::vector<Slice> getSlices = {{retrievedData.data(), retrievedData.size()}};
+            TaskID getVersion = store.get(keys[i], getSlices, versions[i], 0);
             EXPECT_EQ(getVersion, versions[i]);
-            EXPECT_EQ(data[i], retrievedData);
-        });
+            EXPECT_EQ(data[i], retrievedData); });
     }
 
     for (auto &thread : threads)
@@ -234,28 +226,26 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentRemoveAndPutTest)
 
     for (int i = 0; i < numThreads; ++i)
     {
-        threads.emplace_back([this, &keys, &data, &configs, &versions, i]() {
-            std::vector<void *> ptrs = {data[i].data()};
-            std::vector<void *> sizes = {reinterpret_cast<void *>(data[i].size())};
-            versions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+        threads.emplace_back([this, &keys, &data, &configs, &versions, i]()
+                             {
+            std::vector<Slice> putSlices = {{data[i].data(), data[i].size()}};
+            versions[i] = store.put(keys[i], putSlices, configs[i]);
             EXPECT_NE(versions[i], 0);
 
             TaskID removeVersion = store.remove(keys[i], versions[i]);
             EXPECT_EQ(removeVersion, versions[i]);
 
             std::vector<char> retrievedData(data[i].size());
-            std::vector<void *> getPtrs = {retrievedData.data()};
-            std::vector<void *> getSizes = {reinterpret_cast<void *>(retrievedData.size())};
-            TaskID getVersion = store.get(keys[i], getPtrs, getSizes, versions[i], 0);
+            std::vector<Slice> getSlices = {{retrievedData.data(), retrievedData.size()}};
+            TaskID getVersion = store.get(keys[i], getSlices, versions[i], 0);
             EXPECT_LT(getVersion, 0);
 
-            versions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+            versions[i] = store.put(keys[i], putSlices, configs[i]);
             EXPECT_NE(versions[i], 0);
 
-            getVersion = store.get(keys[i], getPtrs, getSizes, versions[i], 0);
+            getVersion = store.get(keys[i], getSlices, versions[i], 0);
             EXPECT_EQ(getVersion, versions[i]);
-            EXPECT_EQ(data[i], retrievedData);
-        });
+            EXPECT_EQ(data[i], retrievedData); });
     }
 
     for (auto &thread : threads)
@@ -288,15 +278,15 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentReplicateAndGetTest)
 
     for (int i = 0; i < numThreads; ++i)
     {
-        std::vector<void *> ptrs = {data[i].data()};
-        std::vector<void *> sizes = {reinterpret_cast<void *>(data[i].size())};
-        versions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+        std::vector<Slice> putSlices = {{data[i].data(), data[i].size()}};
+        versions[i] = store.put(keys[i], putSlices, configs[i]);
         EXPECT_NE(versions[i], 0);
     }
 
     for (int i = 0; i < numThreads; ++i)
     {
-        threads.emplace_back([this, &keys, &data, &configs, &versions, i]() {
+        threads.emplace_back([this, &keys, &data, &configs, &versions, i]()
+                             {
             ReplicateConfig newConfig;
             newConfig.replica_num = configs[i].replica_num + 1;
             DistributedObjectStore::ReplicaDiff replicaDiff;
@@ -304,12 +294,10 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentReplicateAndGetTest)
             EXPECT_EQ(replicateVersion, versions[i]);
 
             std::vector<char> retrievedData(data[i].size());
-            std::vector<void *> getPtrs = {retrievedData.data()};
-            std::vector<void *> getSizes = {reinterpret_cast<void *>(retrievedData.size())};
-            TaskID getVersion = store.get(keys[i], getPtrs, getSizes, versions[i], 0);
+            std::vector<Slice> getSlices = {{retrievedData.data(), retrievedData.size()}};
+            TaskID getVersion = store.get(keys[i], getSlices, versions[i], 0);
             EXPECT_EQ(getVersion, versions[i]);
-            EXPECT_EQ(data[i], retrievedData);
-        });
+            EXPECT_EQ(data[i], retrievedData); });
     }
 
     for (auto &thread : threads)
@@ -346,9 +334,8 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
     std::vector<TaskID> initialVersions(numKeys);
     for (int i = 0; i < numKeys; ++i)
     {
-        std::vector<void *> ptrs = {initialData[i].data()};
-        std::vector<void *> sizes = {reinterpret_cast<void *>(initialData[i].size())};
-        initialVersions[i] = store.put(keys[i], ptrs, sizes, configs[i]);
+        std::vector<Slice> putSlices = {{initialData[i].data(), initialData[i].size()}};
+        initialVersions[i] = store.put(keys[i], putSlices, configs[i]);
         EXPECT_NE(initialVersions[i], 0);
     }
 
@@ -358,7 +345,8 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
 
     for (int i = 0; i < numThreads; ++i)
     {
-        threads.emplace_back([this, &keys, &initialData, &configs, &initialVersions, &start, &gen, &totalOperations, &sizeDist, &replicaDist, numKeys, numOperationsPerThread]() {
+        threads.emplace_back([this, &keys, &initialData, &configs, &initialVersions, &start, &gen, &totalOperations, &sizeDist, &replicaDist, numKeys, numOperationsPerThread]()
+                             {
             std::uniform_int_distribution<> keyDist(0, numKeys - 1);
             std::uniform_int_distribution<> opDist(0, 3); // 0: put, 1: get, 2: remove, 3: replicate
 
@@ -380,29 +368,25 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
                     {
                         std::vector<char> newData(sizeDist(gen));
                         std::generate(newData.begin(), newData.end(), randomChar);
-                        std::vector<void *> ptrs = {newData.data()};
-                        std::vector<void *> sizes = {reinterpret_cast<void *>(newData.size())};
-                        TaskID version = store.put(keys[keyIndex], ptrs, sizes, configs[keyIndex]);
+                        std::vector<Slice> putSlices = {{newData.data(), newData.size()}};
+                        TaskID version = store.put(keys[keyIndex], putSlices, configs[keyIndex]);
                         EXPECT_NE(version, 0);
                         break;
                     }
                     case 1: // get
                     {
                         std::vector<char> retrievedData(initialData[keyIndex].size());
-                        std::vector<void *> getPtrs = {retrievedData.data()};
-                        std::vector<void *> getSizes = {reinterpret_cast<void *>(retrievedData.size())};
-                        TaskID getVersion = store.get(keys[keyIndex], getPtrs, getSizes, 0, 0); // Get latest version
+                        std::vector<Slice> getSlices = {{retrievedData.data(), retrievedData.size()}};
+                        TaskID getVersion = store.get(keys[keyIndex], getSlices, 0, 0); // Get latest version
                         if (getVersion < 0)
                         {
                             LOG(ERROR) << "get key: " << keys[keyIndex] << " , ret: " << errnoToString(getVersion);
                         }
-                        // EXPECT_GE(getVersion, 0);
                         break;
                     }
                     case 2: // remove
                     {
                         TaskID removeVersion = store.remove(keys[keyIndex]); // Remove latest version
-                        // EXPECT_GE(removeVersion, 0);
                         if (removeVersion < 0)
                         {
                             LOG(ERROR) << "remove key: " << keys[keyIndex] << ", ret:" << errnoToString(removeVersion);
@@ -415,7 +399,6 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
                         newConfig.replica_num = replicaDist(gen);
                         DistributedObjectStore::ReplicaDiff replicaDiff;
                         TaskID replicateVersion = store.replicate(keys[keyIndex], newConfig, replicaDiff);
-                        // EXPECT_GE(replicateVersion, 0);
                         if (replicateVersion < 0)
                         {
                             LOG(ERROR) << "replica key: " << keys[keyIndex] << ", ret: " << errnoToString(replicateVersion);
@@ -429,8 +412,7 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
                 {
                     LOG(ERROR) << "Exception in thread " << std::this_thread::get_id() << ": " << e.what();
                 }
-            }
-        });
+            } });
     }
 
     start.store(true);
@@ -446,9 +428,8 @@ TEST_F(DistributedObjectStoreMultiThreadTest, ConcurrentMixedOperationsTest)
     for (int i = 0; i < numKeys; ++i)
     {
         std::vector<char> finalData(initialData[i].size());
-        std::vector<void *> getPtrs = {finalData.data()};
-        std::vector<void *> getSizes = {reinterpret_cast<void *>(finalData.size())};
-        TaskID finalVersion = store.get(keys[i], getPtrs, getSizes, 0, 0); // Get latest version
+        std::vector<Slice> getSlices = {{finalData.data(), finalData.size()}};
+        TaskID finalVersion = store.get(keys[i], getSlices, 0, 0); // Get latest version
 
         if (finalVersion >= 0)
         {
@@ -465,7 +446,6 @@ int main(int argc, char **argv)
 {
     google::InitGoogleLogging("test_log");
     google::SetLogDestination(google::INFO, "logs/log_info_");
-    // google::SetLogDestination(google::WARNING, "logs/log_warning_");
     ::testing::InitGoogleTest(&argc, argv);
     return RUN_ALL_TESTS();
 }

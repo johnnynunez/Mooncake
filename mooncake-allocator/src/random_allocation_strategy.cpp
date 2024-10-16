@@ -25,7 +25,7 @@ namespace mooncake
         std::unordered_set<SegmentId> existing_segments;
         for (const auto &[replica_id, replica] : replica_list)
         {
-            if (shard_index >= replica.handles.size())
+            if (shard_index >= (int)replica.handles.size())
             {
                 LOG(ERROR) << "wrong shard_index: " << shard_index << " in selectSegment";
                 return getError(ERRNO::SHARD_INDEX_OUT_OF_RANGE);
@@ -50,7 +50,7 @@ namespace mooncake
         {
             LOG(INFO) << "Available segment: " << segment_id;
         }
-
+        LOG(INFO) << "the failed segment size: " << failed_segment_ids.size();
         if (available_segments.empty())
         {
             LOG(WARNING) << "No available segments found";
@@ -67,6 +67,7 @@ namespace mooncake
     void RandomAllocationStrategy::selected(SegmentId segment_id, int buf_index, size_t size)
     {
         // Implement if needed
+        LOG(INFO) << "selected segment_id: " << segment_id << ", buf_index: " << buf_index << ", size: " << size;
         return;
     }
 
@@ -92,7 +93,7 @@ namespace mooncake
                 return selected_hendle;
             }
         }
-        LOG(ERROR) << "cannot select right handle, current_handle_index: " << current_handle_index;
+        LOG(ERROR) << "cannot select right handle, current_handle_index: " << current_handle_index << ", the failed_bufhandle size: " << failed_bufhandle.size();
         return nullptr;
     }
 
