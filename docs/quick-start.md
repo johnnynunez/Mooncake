@@ -79,7 +79,6 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
     ```bash
     ./transfer_engine_test --metadata_server=etcd_server_ip:2379
                            --segment_id=target_server_name[:port]
-                           [--local_server_name=server_name[:port]]
                            [--nic_priority_matrix=/path/to/json]
     ```
    各个参数的含义如下：
