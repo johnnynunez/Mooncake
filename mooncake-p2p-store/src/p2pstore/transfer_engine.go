@@ -1,6 +1,6 @@
 package p2pstore
 
-//#cgo LDFLAGS: -L../../../build/mooncake-transfer-engine/src -L../../../thirdparties/lib -ltransfer_engine -lstdc++ -lnuma -lglog -libverbs -ljsoncpp -letcd-cpp-api-core -lprotobuf -lgrpc++ -lgrpc
+//#cgo LDFLAGS: -L../../../build/mooncake-transfer-engine/src -L../../../thirdparties/lib -ltransfer_engine -lstdc++ -lnuma -lglog -libverbs -ljsoncpp -letcd-cpp-api -lprotobuf -lgrpc++ -lgrpc
 //#include "../../../mooncake-transfer-engine/include/transfer_engine_c.h"
 import "C"
 

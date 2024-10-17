@@ -2,7 +2,7 @@
 add_custom_target(build_p2p_store)
 add_custom_command(
     TARGET build_p2p_store
-    COMMAND make -f ${CMAKE_CURRENT_SOURCE_DIR}/src/Makefile
-    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/src
+    COMMAND bash build.sh ${CMAKE_CURRENT_BINARY_DIR}
+    WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 )
-add_executable(p2p_store IMPORTED build_p2p_store)
+set_property(TARGET build_p2p_store PROPERTY EXCLUDE_FROM_ALL FALSE)

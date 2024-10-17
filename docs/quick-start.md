@@ -66,8 +66,8 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
    各个参数的含义如下：
    - `--mode=target` 表示启动目标节点。目标节点不发起读写请求，只是被动按发起节点的要求供给或写入数据。
       > 注意：实际应用中可不区分目标节点和发起节点，每个节点可以向集群内其他节点自由发起读写请求。
-   - `--metadata_server` 为元数据服务器地址（etcd 服务的完整地址），如 `etcd_server_name:2379`。
-   - `--local_server_name` 表示本机器地址，大多数情况下无需设置。如果不设置该选项，则优先使用本机的主机名（即 `hostname(2)` ）并占用默认的带外通信 RPC 端口。集群内的其它节点会使用此地址尝试与该节点进行带外通信，从而建立 RDMA 连接。
+   - `--metadata_server` 为元数据服务器地址（etcd 服务的完整地址）。
+   - `--local_server_name` 表示本机器地址，大多数情况下无需设置。如果不设置该选项，则该值等同于本机的主机名（即 `hostname(2)` ）。集群内的其它节点会使用此地址尝试与该节点进行带外通信，从而建立 RDMA 连接。
       > 注意：若带外通信失败则连接无法建立。因此，若有必要需修改集群所有节点的 `/etc/hosts` 文件，使得可以通过主机名定位到正确的节点。
    - `--nic_priority_matrix` 表示网卡优先级矩阵。可传入网卡优先级矩阵字符串，或内容为上述字符串的文本文件路径。在实验环境中，网卡优先级矩阵的最简单格式如下：
         ```json
@@ -81,7 +81,7 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
                            --segment_id=target_server_name[:port]
                            [--nic_priority_matrix=/path/to/json]
     ```
-   各个参数的含义如下：
+   各个参数的含义如下（其余同前）：
    - `--segment_id` 可以简单理解为目标节点的主机名，需要和启动目标节点时 `--local_server_name` 传入的值（如果有）保持一致。
    
    正常情况下，发起节点将开始进行传输操作，等待 10s 后回显“Test completed”信息，表明测试完成。
@@ -91,4 +91,25 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
 
 
 ## P2P Store 使用与测试方法
-TBD
+按照上面步骤编译 P2P Store 成功后，可在 `build/mooncake-p2p-store` 目录下产生测试程序 `p2p-store-example`。该工具演示了 P2P Store 的使用方法。
+该演示工具模拟了训练节点完成训练任务后，将模型数据迁移到大量推理节点的过程。
+1. **启动 `etcd` 服务。** 这与 Transfer Engine Bench 所述的方法是一致的。
+   
+2. **启动模拟训练节点。** 该节点将创建模拟模型文件，并向集群内公开。
+   ```bash
+   ./p2p-store-example trainer    
+                       --metadata_server=etcd_server_ip:2379
+                       [--local_server_name=server_name[:port]]
+                       [--nic_priority_matrix=/path/to/json]
+   ```
+
+3. **启动模拟推理节点。** 该节点会从模拟训练节点或其他模拟推理节点拉取数据。
+   ```bash
+   ./p2p-store-example inferencer
+                       --metadata_server=etcd_server_ip:2379
+                       [--local_server_name=server_name[:port]]
+                       [--nic_priority_matrix=/path/to/json]
+   ```
+   测试完毕显示“ALL DONE”。
+
+上述过程中，模拟推理节点检索数据来源由 P2P Store 内部逻辑实现，因此不需要用户提供训练节点的 IP。同样地，需要保证其他节点可使用本机主机名 `hostname(2)` 或创建节点期间填充的 `--local_server_name` 来访问这台机器。
