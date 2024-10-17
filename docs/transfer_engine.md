@@ -344,39 +344,3 @@ extern "C" {
 ## 利用 TransferEngine 进行二次开发
 要利用 TransferEngine 进行二次开发，可使用编译好的静态库文件 `libtransfer_engine.a` 及 C 头文件 `transfer_engine_c.h`，不需要用到 `src/transfer_engine` 下的其他文件。
 
-
-## 样例程序使用
-样例程序的代码见 `tests/transfer_engine_test.cpp`。使用要点如下:
-
-1. 启动 etcd 服务，记录该服务的IP/域名及端口，如 `etcd_server_name:2379`。要求集群内所有服务器能通过该IP/域名:端口访问到 `etcd` 服务，因此若有必要需要设置集群所有节点的 `/etc/hosts` 文件，或者换用 IP 地址。
-
-    使用命令行直接启动 etcd，需设置 --listen-client-urls 参数为 0.0.0.0：
-    ```
-    bash
-    ./etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://<your-server-ip>:2379
-    ```
-
-2. 在一台服务器中启动 transfer_engine 服务，模式设置为 `target`，负责在测试中提供 Segment 源（实际环境中每个节点既可发出传输请求，也可作为传输数据源）
-
-    ```
-    ./transfer_engine_test --mode=target 
-                           --metadata_server=etcd_server_name:2379 
-                           --local_server_name=target_server_name[:port]
-    ```
-   
-    为了正确建立连接，一般需要设置下列通用选项：
-    - `metadata_server`：为开启 etcd 服务的 IP/域名:端口，如 `etcd_server_name:2379`。
-    - `local_server_name`：本机器IP/域名（可选端口作为 RPC 通信端口），如果不设置，则直接使用本机的主机名。本机内存形成的 Segment 名称与 `local_server_name` 一致。其他节点会直接使用 `local_server_name`（可为 IP 或域名形态）与本机进行 RDMA EndPoint 握手，若握手失败则无法完成后续通信。因此，务必需要保证填入的参数是有效的 IP 或域名，若有必要需要设置集群所有节点的 `/etc/hosts` 文件。
-    - nic_priority_matrix：网卡优先级矩阵。可传入网卡优先级矩阵字符串，或内容为上述字符串的文本文件路径。网卡优先级矩阵的最简单的形态如下：
-        ```
-        {  "cpu:0": [["mlx5_1", "mlx5_2", "mlx5_3", "mlx5_4"], []] }
-        ```
-        表示，对于登记类别（即 `registerMemory` 的 `location` 字段）为 `"cpu:0"` 的内存区域，优先从 `"mlx5_1", "mlx5_2", "mlx5_3", "mlx5_4"` 中随机选取一张网卡建立连接并传输。
-
-3. 再启动一个 `transfer_engine` 服务，用以发起 `transfer` 请求。`segment_id` 表示测试用 Segment 来源，在这里就是机器 `target_server` 的名称与端口号（可选）。
-    ```
-    ./transfer_engine_test --segment_id=target_server_name[:port]
-                           --metadata_server=etcd_server_name:2379
-    ```
-    此外还可以配置下列参数：`operation`（可为 `"read"` 或 `"write"`）、`batch_size`、`block_size`、`duration`、`threads` 等，其含义可程序参考帮助信息的说明。
-

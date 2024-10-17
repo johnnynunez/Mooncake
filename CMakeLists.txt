@@ -4,11 +4,12 @@ project(mooncake CXX C)
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
 
-set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall -Wextra")
-set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -Wextra")
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -g -Wall -Wextra -Wno-unused-parameter")
+set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -g -Wall -Wextra -Wno-unused-parameter")
 
 set(CMAKE_C_FLAGS_RELEASE "-O3")
 set(CMAKE_CXX_FLAGS_RELEASE "-O3")
+
 set(CMAKE_C_FLAGS_DEBUG "-O0")
 set(CMAKE_CXX_FLAGS_DEBUG "-O0")
 
@@ -19,27 +20,18 @@ set(CMAKE_BUILD_TYPE "Release")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-option(USE_CUDA "option for using gpu" OFF)
-option(USE_CXL "option for using cxl" ON)
-option(USE_STATIC_ETCD_CPP_API "option for using statically-linked etcd cpp api" OFF)
 
-option(BUILD_TRANSFER_ENGINE "build transfer engine" ON)
-option(BUILD_P2P_STORE "build p2p store" ON)
-option(BUILD_ALLOCATOR "build allocator" ON)
+option(USE_CUDA "option for using gpu direct" OFF)
+option(USE_CXL "option for using cxl protocol" ON)
 
-if (USE_STATIC_ETCD_CPP_API)
-  include_directories(thirdparties/include)
-  link_directories(thirdparties/lib)
-endif()
+option(WITH_P2P_STORE "build p2p store library and sample code" ON)
+option(WITH_ALLOCATOR "build allocator, component of managed store" ON)
 
-if (BUILD_TRANSFER_ENGINE)
-  add_subdirectory(mooncake-transfer-engine)
-endif()
-
-if (BUILD_P2P_STORE)
+add_subdirectory(mooncake-transfer-engine)
+if (WITH_P2P_STORE)
   add_subdirectory(mooncake-p2p-store)
 endif()
 
-if (BUILD_ALLOCATOR)
+if (WITH_ALLOCATOR)
   add_subdirectory(mooncake-allocator)
 endif()

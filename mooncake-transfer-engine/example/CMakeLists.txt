@@ -1,0 +1,2 @@
+add_executable(transfer_engine_bench transfer_engine_bench.cpp)
+target_link_libraries(transfer_engine_bench PUBLIC transfer_engine)

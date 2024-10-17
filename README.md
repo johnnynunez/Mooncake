@@ -1,60 +1,39 @@
-# Mooncake Store
+# Mooncake
 
-Mooncake Store 是在慢速的对象存储之上基于高速互联的 DRAM/SSD 资源构建的一个池化的多级缓存。和传统缓存比，Mooncake Store 的最大特点是能够基于 (GPUDirect) RDMA 技术尽可能零拷贝的从发起端的 DRAM/VRAM 拷贝至接受端的 DRAM/SSD，且尽可能最大化利用单机多网卡的资源。
+Mooncake 是面向长上下文大语言模型（LLM）的推理加速系统，与推理系统的其他模块保持松耦合。它采用以 KVCache 为中心的分离架构，不仅分离了预填充（prefill）和解码（decoding）集群，还实现集群中 CPU、GPU、DRAM、SSD 和 NIC 资源的充分利用。在长上下文场景中，Mooncake 能有效提高请求容量并符合 SLO 要求。目前 Mooncake 已在 Moonshot Kimi 中实际运行，每天可处理高达 100B 个 tokens，在 NVIDIA A800 和 H800 集群上处理请求效率分别比以前的系统高出 115% 和 107%。
 
-![mooncake](docs/fig/mooncake.png)
+要了解有关 Mooncake 的更多信息，请参阅我们的论文 [arXiv 2407.00079](https://arxiv.org/abs/2407.00079)。
 
-## Mooncake Store 的关键组件
+## 架构
+Mooncake 由以下部分组成：
 
-### Mooncake Transfer Engine
-> 子条目：[Mooncake Transfer Engine 概要](docs/transfer_engine.md)
+1. **Mooncake Transfer Engine**：高性能，零拷贝数据传输库。提供统一、高效、可靠的数据传输接口，支持 RDMA（含 GPUDirect RDMA）、NVMeOF 等传输协议，DRAM、GPU VRAM、NVMe SSD 等传输介质。支持带宽聚合、自动优选传输路径等功能。该部分用以支撑 Mooncake Store 的数据传输，也可独立用于各类应用高效的数据传输。
 
-Mooncake Transfer Engine 是一个围绕 `Segment` 和 `BatchTransfer` 两个核心抽象设计的高性能，零拷贝数据传输库。其中 `Segment` 代表一段可被远程读写的连续地址空间，实际后端可以是 DRAM 或 VRAM 提供的非持久化存储 `RAM Segment`，也可以是 NVMeof 提供的持久化存储 `NVMeof Segment`。`BatchTransfer` 则负责将一个 `Segment` 中非连续的一组数据空间的数据和另外一组 `Segment` 的对应空间进行数据同步，支持 `Read`/`Write` 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
+2. **Mooncake Store**：对象级别的数据存取引擎。面向 KVCache 等中小规模数据缓存需求，通过 **Managed Store** 接口实现副本数量及所在位置的灵活管理；面向模型分发等大规模数据缓存需求，通过 **P2P Store** 接口实现数据的共享读取。
+   > ℹ️ 正在逐步开源，敬请期待！
 
-相应的代码存放在 `mooncake-transfer-engine` 目录下。
+![mooncake-architecture.png](docs/fig/mooncake-architecture.png)
 
-![transfer_engine](docs/fig/transfer_engine.png)
+## 快速开始
+目前我们开源了 Transfer Engine 的完整实现，并提供了以下 3 个示例应用：
+1. 基本 I/O 读写操作测试工具 Transfer Engine Bench
+2. 点对点数据共享读取接口 P2P Store 及配套的样例程序
+3. TBD
 
-### Mooncake Managed Store (WIP)
-> 子条目：[Mooncake Managed Store 概要](docs/managed_store.md)
+具体的编译和使用说明参见 [快速开始指南](docs/quick-start.md)。
 
-在 Mooncake Transfer Engine 基础上，Mooncake Managed Store 实现由上层控制面和下层数据面组合而成的结构。上层控制面向 Client 提供 Object 级别的 Get/Put 等操作，下层数据面则是提供 VRAM/DRAM/NVM Buffer 层面的尽可能零拷贝和多网卡池化的数据传输。
+## 更进一步
+请参考 [开发者指南](docs/developer_guide.md) 以获取更多信息。
 
-![managed_store](docs/fig/managed_store.png)
+## 性能
+将 Transfer Engine 的 I/O 延迟与 Gloo （由 Distributed PyTorch 使用）和 TCP 进行比较，Transfer Engine 具有最低的延迟。
+在传输 40 GB 数据（相当于 LLaMA3-70B 模型下 128k token 所产生的 KVCache 大小）的情况下，Transfer Engine 在 4×200 Gbps 和 8×400 Gbps RoCE 的网络配置下分别提供高达 87 GB/s 和 190 GB/s 的带宽，**比 TCP 协议快约 2.4 倍和 4.6 倍**。
 
-### Mooncake P2P Store
-> 子条目：[Mooncake P2P Store 概要](docs/p2p_store.md)
+![transfer-engine-performance.png](docs/fig/transfer-engine-performance.png)
 
-和由 Master 统一管理空间分配并负责维护固定数量的多个副本的 Mooncake Managed Store 不同，Mooncake P2P Store 的定位是临时中转数据的分发，如 Checkpoint 等。
 
-Mooncake P2P Store 主要提供 `Register` 和 `GetReplica` 两个接口。
-Register 相当于 BT 中的做种，可将本地某个文件注册到全局元数据中去，此时并不会发生任何的数据传输仅仅是登记一个元数据。
-后续的节点则可以通过 `GetReplica` 去从 peer 拉取对应数据，拉取到的部分自动也变成一个种子供其它 peer 拉取。
+## 开源许可
+Mooncake 项目遵循 TBD 开源协议，详见 [LICENSE]()。
 
-Mooncake P2P Store 完全不保证可靠性，如果 peer 都丢了那数据就是丢了。同时也是 client-only 架构，没有统一的 master，只有一个 etcd 负责全局元数据的同步。
-
-相应的代码存放在 `mooncake-p2p-store` 目录下。
-
-## 编译
-1. 通过系统源下载安装下列第三方库
-   ```bash
-   apt-get install -y build-essential \
-                      cmake \
-                      libibverbs-dev \
-                      libgoogle-glog-dev \
-                      libgtest-dev \
-                      libjsoncpp-dev \
-                      libnuma-dev \
-   ```
-
-2. 安装 etcd-cpp-apiv3 库（ https://github.com/etcd-cpp-apiv3/etcd-cpp-apiv3 ），请参阅 `Build and install` 一节的说明，并确保 `make install` 执行成功
-
-3. 进入项目根目录，运行
-   ```bash
-   mkdir build
-   cd build
-   cmake .. # 可打开根目录下的 CMakeLists.txt 文件更改编译选项，如只编译部分组件
-   make -j
-   ```
-
-4. 如果编译成功，在项目 `build/mooncake-transfer-engine/tests` 目录下产生测试程序 `transfer_engine_test`，可结合[Mooncake Transfer Engine 概要](docs/transfer_engine.md)文档的描述进行测试。同时，可通过运行 `make build_p2p_store` 命令编译 P2P Store 组件。
+## 贡献
+我们欢迎社区的贡献！如果你有任何建议或发现问题，请通过 GitHub Issues 提交，或直接提交 Pull Request。
