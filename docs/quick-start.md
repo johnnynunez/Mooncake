@@ -77,10 +77,10 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
 1. **启动发起节点。**
     ```bash
     export MC_GID_INDEX=1
-    ./transfer_engine_test --metadata_server=localhost:2379 \
-                           --segment_id=localhost:12345 \
-                           --local_server_name=localhost:12346 \
-                           --device_name=erdma_1
+    ./transfer_engine_bench --metadata_server=localhost:2379 \
+                            --segment_id=localhost:12345 \
+                            --local_server_name=localhost:12346 \
+                            --device_name=erdma_1
     ```
    各个参数的含义如下（其余同前）：
    - `--segment_id` 可以简单理解为目标节点的主机名，需要和启动目标节点时 `--local_server_name` 传入的值（如果有）保持一致。

@@ -22,6 +22,7 @@ var (
 )
 
 func main() {
+	flag.StringVar(&command, "cmd", "trainer", "Command: trainer|inferencer")
 	flag.StringVar(&metadataServer, "metadata_server", "localhost:2379", "Metadata server address")
 	flag.StringVar(&localServerName, "local_server_name", "", "Local server name")
 	flag.StringVar(&deviceName, "device_name", "mlx5_2", "RNIC device name")
@@ -40,18 +41,15 @@ func main() {
 	}
 
 	args := flag.Args()
-	if len(args) != 2 {
-		fmt.Println(`
-Usage: ./p2p-store-example <trainer|inferencer> 
-		                   [--metadata_server=localhost:2379] 
-		                   [--local_server_name=localhost:12345] 
-						   [--device_name=mlx5_2] 
-						   [--file_size_mb=40960]
-		`)
+	if len(args) < 2 {
+		fmt.Println(`Usage: ./p2p-store-example --cmd=<trainer|inferencer> 
+                           --metadata_server=localhost:2379
+                           --local_server_name=localhost:12345
+                           --device_name=mlx5_2
+                           --file_size_mb=40960`)
 		os.Exit(1)
 	}
 
-	command = args[0]
 	switch command {
 	case "trainer":
 		trainer()
