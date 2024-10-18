@@ -1,5 +1,5 @@
 # Currently you have to manually execute makefile in the src subdirectory.
-add_custom_target(build_p2p_store)
+add_custom_target(build_p2p_store DEPENDS transfer_engine)
 add_custom_command(
     TARGET build_p2p_store
     COMMAND bash build.sh ${CMAKE_CURRENT_BINARY_DIR}

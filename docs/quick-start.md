@@ -99,7 +99,7 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
 2. **启动模拟训练节点。** 该节点将创建模拟模型文件，并向集群内公开。
    ```bash
    export MC_GID_INDEX=1
-   ./p2p-store-example trainer \
+   ./p2p-store-example --cmd=trainer \
                        --metadata_server=localhost:2379 \
                        --local_server_name=localhost:12345 \
                        --device_name=erdma_0
@@ -108,7 +108,7 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
 3. **启动模拟推理节点。** 该节点会从模拟训练节点或其他模拟推理节点拉取数据。
    ```bash
    export MC_GID_INDEX=1
-   ./p2p-store-example inferencer \
+   ./p2p-store-example --cmd=inferencer \
                        --metadata_server=localhost:2379 \
                        --local_server_name=localhost:12346 \
                        --device_name=erdma_1

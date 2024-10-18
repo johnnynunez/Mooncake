@@ -27,7 +27,7 @@ func main() {
 	flag.StringVar(&localServerName, "local_server_name", "", "Local server name")
 	flag.StringVar(&deviceName, "device_name", "mlx5_2", "RNIC device name")
 	flag.StringVar(&nicPriorityMatrixPath, "nic_priority_matrix", "", "Path to NIC priority matrix file (Advanced)")
-	flag.IntVar(&fileSize, "file_size_mb", 40960, "File size in MB")
+	flag.IntVar(&fileSize, "file_size_mb", 512, "File size in MB")
 	flag.Parse()
 
 	fileSize = fileSize * 1024 * 1024
@@ -38,16 +38,6 @@ func main() {
 			fmt.Fprintf(os.Stderr, "Error getting hostname: %v\n", err)
 			os.Exit(1)
 		}
-	}
-
-	args := flag.Args()
-	if len(args) < 2 {
-		fmt.Println(`Usage: ./p2p-store-example --cmd=<trainer|inferencer> 
-                           --metadata_server=localhost:2379
-                           --local_server_name=localhost:12345
-                           --device_name=mlx5_2
-                           --file_size_mb=40960`)
-		os.Exit(1)
 	}
 
 	switch command {
@@ -104,7 +94,7 @@ func doTrainer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 }
 
 func trainer() {
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Second)
 	defer cancel()
 
 	store, err := p2pstore.NewP2PStore(metadataServer, localServerName, getPriorityMatrix())
@@ -179,7 +169,7 @@ func doInferencer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 }
 
 func inferencer() {
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1000*time.Second)
 	defer cancel()
 
 	store, err := p2pstore.NewP2PStore(metadataServer, localServerName, getPriorityMatrix())
