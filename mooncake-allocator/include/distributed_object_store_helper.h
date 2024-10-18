@@ -1,22 +1,28 @@
 #include "distributed_object_store.h"
 
+#include <mutex>
+#include <map>
+
 using namespace mooncake;
 
-class PyDistributedObjectStore: public DistributedObjectStore {
-    public:
-        using DistributedObjectStore::DistributedObjectStore;
+class PyDistributedObjectStore {
+public:
+    PyDistributedObjectStore();
 
-        uint64_t registerBuffer(SegmentId segment_id, size_t base, size_t size);
+    ~PyDistributedObjectStore();
 
-        void unregisterBuffer(SegmentId segment_id, uint64_t index);
+    // 返回0表示成功，负数表示错误
+    int register_buffer(const std::string& segment_name, uint64_t start_addr, size_t size);
 
-        TaskID put(ObjectKey key, std::vector<void *> ptrs, std::vector<void *> sizes, ReplicateConfig config);
+    // 返回0表示失败，否则表示 version id
+    uint64_t put_object(const std::string& key, const std::string& data);
 
-        TaskID get(ObjectKey key, std::vector<void *> ptrs, std::vector<void *> sizes, Version min_version, size_t offset);
+    // 返回获取到的对象数据长度，如果失败则返回空字符串
+    std::string get_object(const std::string& key, size_t data_size, uint64_t min_version, uint64_t offset);
 
-        TaskID remove(ObjectKey key, Version version = -1);
-
-        TaskID replicate(ObjectKey key, ReplicateConfig new_config, ReplicaDiff &replica_diff);
-
-        void checkAll();
+private:
+    DistributedObjectStore *internal_;
+    void *start_addr_;
+    std::mutex mutex_;
+    std::map<std::string, SegmentId> segment_id_lookup_;
 };
