@@ -66,7 +66,7 @@ namespace mooncake
 
     bool DummyTransferAgent::doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status)
     {
-        for (auto &task : transfer_tasks)
+        for (size_t i = 0; i  < transfer_tasks.size(); ++i)
         {
             transfer_status.push_back(TransferStatusEnum::COMPLETED);
         }
@@ -74,10 +74,12 @@ namespace mooncake
     }
 
     BatchID DummyTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks)  {
+        LOG(INFO) << "task size: " << transfer_tasks.size();
         return 0;
     }
 
     void DummyTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status)  {
+        LOG(INFO) << "the batch_id: " << batch_id << " has " << task_count << " task status size: " << transfer_status.size();
         return;
     }
 } // namespace mooncake

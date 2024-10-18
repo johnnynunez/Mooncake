@@ -105,7 +105,6 @@ namespace mooncake
     {
         std::vector<TransferRequest> requests;
         int replica_num = config.replica_num;
-        int succeed_num = 0; // For logging purposes only
         uint64_t total_size = 0;
 
         for (const auto &slice : slices)
@@ -136,14 +135,14 @@ namespace mooncake
         {
             if (first_add)
             {
-                version = replica_allocator_.addOneReplica(key, replica_infos[index], -1, total_size, allocation_strategy_);
+                version = replica_allocator_.addOneReplica(key, replica_infos[index], DEFAULT_VALUE, total_size, allocation_strategy_);
             }
             else
             {
-                version = replica_allocator_.addOneReplica(key, replica_infos[index], version, -1, allocation_strategy_);
+                version = replica_allocator_.addOneReplica(key, replica_infos[index], version, DEFAULT_VALUE, allocation_strategy_);
             }
 
-            if (version < 0)
+            if (version > ERRNO_BASE)
             {
                 LOG(ERROR) << "Failed to put object " << key
                            << ", size: " << total_size
@@ -153,7 +152,7 @@ namespace mooncake
             generateWriteTransferRequests(replica_infos[index], slices, all_requests[index]);
         }
 
-        if (version < 0)
+        if (version > ERRNO_BASE)
         {
             // Cleanup if any replica addition failed
             for (int index = 0; index < replica_num; ++index)
@@ -186,7 +185,7 @@ namespace mooncake
         auto batch_id = transfer_agent_->submitTransfersAsync(combined_requests);
         context->batch_id = batch_id;
         LOG(ERROR) << "the batchid : " << context->batch_id;
-        if (batch_id == -1)
+        if (batch_id == getError(ERRNO::TRANSFER_FAIL))
         {
             // 清理已分配的副本
             for (int index = 0; index < replica_num; ++index)
@@ -264,7 +263,7 @@ namespace mooncake
         ReplicaInfo replica_info;
 
         ver = replica_allocator_.getOneReplica(key, replica_info, min_version, allocation_strategy_);
-        if (ver < 0)
+        if (ver > ERRNO_BASE)
         {
             LOG(ERROR) << "Cannot get replica, key: " << key;
             return ver;
@@ -307,7 +306,7 @@ namespace mooncake
         }
 
         ver = replica_allocator_.removeOneReplica(key, info, version);
-        while (replica_allocator_.removeOneReplica(key, info, version) >= 0)
+        while (replica_allocator_.removeOneReplica(key, info, version) <= ERRNO_BASE)
         {
             // Continue removing replicas
         }
@@ -321,7 +320,7 @@ namespace mooncake
         ReplicaDiff &replica_diff)
     {
         Version latest_version = replica_allocator_.getObjectVersion(key);
-        if (latest_version < 0)
+        if (latest_version > ERRNO_BASE)
         {
             LOG(ERROR) << "Cannot get version for key when replicating: " << key;
             return latest_version;
@@ -338,8 +337,11 @@ namespace mooncake
         // Compare new and old configurations
         if (new_config.replica_num > existed_replica_number)
         {
+            size_t add_replica_num = new_config.replica_num - existed_replica_number;
+            std::vector<std::vector<TransferRequest>> all_requests(add_replica_num);
+
             // Need to add replicas
-            for (size_t i = 0; i < new_config.replica_num - existed_replica_number; ++i)
+            for (size_t i = 0; i < add_replica_num; ++i)
             {
                 bool success = false;
                 uint32_t try_num = 0;
@@ -348,15 +350,15 @@ namespace mooncake
                 ReplicaInfo new_replica_info;
 
                 Version existed_version = replica_allocator_.getOneReplica(key, existed_replica_info, latest_version, allocation_strategy_);
-                if (existed_version < 0)
+                if (existed_version > ERRNO_BASE)
                 {
                     LOG(ERROR) << "Failed to get existed replica in replicate operation, key: "
                                << key << ", needed version: " << latest_version;
                     return existed_version;
                 }
 
-                Version add_version = replica_allocator_.addOneReplica(key, new_replica_info, existed_version, -1, allocation_strategy_);
-                if (add_version < 0)
+                Version add_version = replica_allocator_.addOneReplica(key, new_replica_info, existed_version, DEFAULT_VALUE, allocation_strategy_);
+                if (add_version > ERRNO_BASE)
                 {
                     LOG(ERROR) << "Failed to add replica in replicate operation, key: "
                                << key << ", needed version: " << latest_version;
@@ -370,6 +372,7 @@ namespace mooncake
                     LOG(ERROR) << "No transfer tasks generated in replicate operation, key: " << key;
                     return getError(ERRNO::INVALID_REPLICA);
                 }
+                // all_requests[i] = std::move(transfer_tasks);
 
                 while (!success && try_num < max_trynum_)
                 {

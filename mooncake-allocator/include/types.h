@@ -13,44 +13,45 @@
 namespace mooncake
 {
     #define WRONG_VERSION 0
+    #define DEFAULT_VALUE UINT64_MAX
     using ObjectKey = std::string;
-    using Version = int64_t;
-    using SegmentId = int64_t;
+    using Version = uint64_t;
+    using SegmentId = uint64_t;
     using TaskID = int64_t;
 
-    enum class ERRNO : int64_t
+    #define ERRNO_BASE DEFAULT_VALUE-1000
+    enum class ERRNO : uint64_t
     {
         // ok
-        OK = 0,
+        OK = ERRNO_BASE,
         // for buffer alloc
-        BUFFER_OVERFLOW = -1, // 无法开辟合适的空间
+        BUFFER_OVERFLOW, // 无法开辟合适的空间
         // for select segment
-        SHARD_INDEX_OUT_OF_RANGE = -2, // shard_index >= 副本handles个数
-        AVAILABLE_SEGMENT_EMPTY = -3,  //  available_segment为空
+        SHARD_INDEX_OUT_OF_RANGE, // shard_index >= 副本handles个数
+        AVAILABLE_SEGMENT_EMPTY,  //  available_segment为空
         // for select handle
-        NO_AVAILABLE_HANDLE = -4,
+        NO_AVAILABLE_HANDLE,
         // for version
-        INVALID_VERSION = -5,
+        INVALID_VERSION,
         // for key
-        INVALID_KEY = -6,
+        INVALID_KEY ,
         // for engine
-        WRITE_FAIL = -7,
+        WRITE_FAIL,
         // for params
-        INVALID_PARAMS = -8,
+        INVALID_PARAMS,
         // for engine operation
-        INVALID_WRITE = -9,
-        INVALID_READ = -10,
-        INVALID_REPLICA = -11,
+        INVALID_WRITE,
+        INVALID_READ,
+        INVALID_REPLICA ,
         // for transfer
-        TRANSFER_FAIL = -12,
-
+        TRANSFER_FAIL,
     };
 
     const std::string& errnoToString(const int64_t errnoValue);
 
     const std::string& errEnumToString(const ERRNO errno);
 
-    int64_t getError(ERRNO err);
+    uint64_t getError(ERRNO err);
 
     enum class BufStatus
     {
@@ -131,7 +132,7 @@ namespace mooncake
         // std::map<Version, std::set<uint32_t>> real_replica_index; // 一个Version有哪些replica是完整的
         std::map<Version, VersionInfo> versions;
 
-        int64_t flushed_version = -1;
+        uint64_t flushed_version = 0;
         ReplicateConfig config;
     };
 

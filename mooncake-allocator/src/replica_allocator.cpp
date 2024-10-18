@@ -38,27 +38,27 @@ namespace mooncake
         std::shared_ptr<AllocationStrategy> strategy)
     {
         ret.reset();
-        if (ver == -1 && object_size == -1)
+        if (ver == DEFAULT_VALUE && object_size == DEFAULT_VALUE)
         {
-            LOG(ERROR) << "Invalid arguments: ver and object_size cannot both be -1";
-            throw std::invalid_argument("ver and object_size cannot both be -1");
+            LOG(ERROR) << "Invalid arguments: ver and object_size cannot both be DEFAULT_VALUE";
+            throw std::invalid_argument("ver and object_size cannot both be DEFAULT_VALUE");
         }
 
         std::unique_lock<std::shared_mutex> lock(object_meta_mutex_); // write lock
         if (object_meta_.count(key) == 0)
         {  // Key does not exist
-            ver = -1;
+            ver = DEFAULT_VALUE;
         }
         auto &version_list = object_meta_[key];
 
-        Version target_version = (ver != -1) ? ver : ++global_version_;
+        Version target_version = (ver != DEFAULT_VALUE) ? ver : ++global_version_;
 
         auto &version_info = version_list.versions[target_version];
         auto &replicas = version_info.replicas;
         uint64_t new_replica_id = version_info.max_replica_id.fetch_add(1);
         size_t size = 0;
 
-        if (object_size != -1 && ver == -1)
+        if (object_size != DEFAULT_VALUE && ver == DEFAULT_VALUE)
         {
             size = object_size;
         }
@@ -242,7 +242,7 @@ namespace mooncake
             {
                 // Reallocate this shard
                 size_t shard_size = old_replica.handles[i]->size;
-                auto new_handle = allocateShard(-1, -1, shard_size);
+                auto new_handle = allocateShard(DEFAULT_VALUE, DEFAULT_VALUE, shard_size);
                 ret.handles.push_back(new_handle);
                 LOG(INFO) << "Reallocated shard " << i << " with size " << shard_size;
             }
@@ -263,7 +263,7 @@ namespace mooncake
     {
         std::unique_lock<std::shared_mutex> lock(object_meta_mutex_); // write lock
         auto &version_list = object_meta_[key];
-        Version target_version = (ver != -1) ? ver : version_list.flushed_version;
+        Version target_version = (ver != DEFAULT_VALUE) ? ver : version_list.flushed_version;
 
         auto &version_info = version_list.versions[target_version];
         auto &replicas = version_info.replicas;
@@ -453,7 +453,7 @@ namespace mooncake
             return;
         }
         auto &version_list = object_meta_[key];
-        if (ver == -1)
+        if (ver == DEFAULT_VALUE)
         {
             ver = version_list.flushed_version;
         }
@@ -463,7 +463,7 @@ namespace mooncake
             return;
         }
 
-        if (index == -1)
+        if (index == DEFAULT_VALUE)
         {
             index = version_list.versions[ver].replicas.size() - 1;
         }
@@ -491,7 +491,7 @@ namespace mooncake
             return status;
         }
         auto &version_list = object_meta_[key];
-        if (ver == -1)
+        if (ver == DEFAULT_VALUE)
         {
             ver = version_list.flushed_version;
         }
@@ -513,7 +513,7 @@ namespace mooncake
     std::shared_ptr<BufHandle> ReplicaAllocator::allocateShard(SegmentId segment_id, uint64_t allocator_index, size_t size)
     {
         std::shared_ptr<BufHandle> handle;
-        if (segment_id == -1 || allocator_index == -1)
+        if (segment_id == DEFAULT_VALUE || allocator_index == DEFAULT_VALUE)
         {
             std::shared_lock<std::shared_mutex> lock(buf_allocators_mutex_);
             // 选择一个可用的 allocator
@@ -529,6 +529,7 @@ namespace mooncake
                 }
             }
             LOG(ERROR) << "No available allocator found for shard of size " << size;
+            return nullptr;
         }
         else
         {

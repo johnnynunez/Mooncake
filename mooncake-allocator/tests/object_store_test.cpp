@@ -48,7 +48,11 @@ protected:
         // size_t base = 0x100000000;
         size_t size = 1024 * 1024 * 4 * 200;
         void *ptr = nullptr;
-        posix_memalign(&ptr, 4194304, size);
+        int result = posix_memalign(&ptr, 4194304, size);
+        if (result != 0) {
+            perror("posix_memalign failed");
+            return 0;
+        }
         size_t base = reinterpret_cast<size_t>(ptr);
         LOG(INFO) << "registerbuffer: " << (void *)base;
         uint64_t index = store.registerBuffer(segmentId, base, size);
