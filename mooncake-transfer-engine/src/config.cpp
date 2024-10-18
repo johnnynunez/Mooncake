@@ -104,7 +104,7 @@ namespace mooncake
         if (max_inline_env)
         {
             size_t val = atoi(max_inline_env);
-            if (val > 0 && val <= UINT16_MAX)
+            if (val >= 0 && val <= UINT16_MAX)
                 config.max_inline = val;
             else
                 LOG(WARNING) << "Ignore value from environment variable MC_MAX_INLINE";
@@ -221,5 +221,14 @@ namespace mooncake
         LOG(INFO) << "max_inline = " << config.max_inline;
         LOG(INFO) << "mtu_length = " << mtuLengthToString(config.mtu_length);
         LOG(INFO) << "verbose = " << (config.verbose ? "true" : "false");
+    }
+
+    GlobalConfig &globalConfig()
+    {
+        static GlobalConfig config;
+        static std::once_flag g_once_flag;
+        std::call_once(g_once_flag, []()
+                       { loadGlobalConfig(config); });
+        return config;
     }
 }
