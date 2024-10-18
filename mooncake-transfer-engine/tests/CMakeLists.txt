@@ -1,6 +1,3 @@
-add_executable(transfer_engine_daemon transfer_engine_daemon.cpp)
-target_link_libraries(transfer_engine_daemon PUBLIC transfer_engine)
-
 if (USE_CUDA)
   include_directories("/usr/local/cuda/include")
   # add_executable(gpu_test gpu_test.cpp)

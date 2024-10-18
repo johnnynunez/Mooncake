@@ -39,14 +39,7 @@ namespace mooncake
 
     void updateGlobalConfig(ibv_device_attr &device_attr);
 
-    static inline GlobalConfig &globalConfig()
-    {
-        static GlobalConfig config;
-        static std::once_flag g_once_flag;
-        std::call_once(g_once_flag, []()
-                       { loadGlobalConfig(config); });
-        return config;
-    }
+    GlobalConfig &globalConfig();
 }
 
 #endif // CONFIG_H

@@ -1,4 +1,4 @@
-// Sample transfer engine daemon
+// Memory Pool
 
 #include "transport/rdma_transport/rdma_transport.h"
 #include "transfer_engine.h"
@@ -28,7 +28,8 @@ static std::string getHostname()
 
 DEFINE_string(local_server_name, getHostname(), "Local server name for segment discovery");
 DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
-DEFINE_string(nic_priority_matrix, "{\"cpu:0\": [[\"mlx5_2\"], []], \"cpu:1\": [[\"mlx5_2\"], []]}", "NIC priority matrix");
+DEFINE_string(device_name, "mlx5_2", "Device name to use");
+DEFINE_string(nic_priority_matrix, "", "Path to NIC priority matrix file (Advanced)");
 
 using namespace mooncake;
 
@@ -38,10 +39,10 @@ static void *allocateMemoryPool(size_t size, int socket_id)
     start_addr = mmap((void *) BASE_ADDRESS_HINT, size, PROT_READ | PROT_WRITE,
                       MAP_ANON | MAP_PRIVATE,
                       -1, 0);
-    if (start_addr == MAP_FAILED)
+    if (start_addr != (void *) BASE_ADDRESS_HINT)
     {
-        PLOG(ERROR) << "Failed to allocate memory";
-        return nullptr;
+        PLOG(ERROR) << "Failed to allocate memory on specified address";
+        exit(1);
     }
     return start_addr;
 }
@@ -51,20 +52,20 @@ static void freeMemoryPool(void *addr, size_t size)
     munmap(addr, size);
 }
 
-std::string loadNicPriorityMatrix(const std::string &path)
+std::string loadNicPriorityMatrix()
 {
-    std::ifstream file(path);
-    if (file.is_open())
+    if (!FLAGS_nic_priority_matrix.empty())
     {
-        std::string content((std::istreambuf_iterator<char>(file)),
-                            std::istreambuf_iterator<char>());
-        file.close();
-        return content;
+        std::ifstream file(FLAGS_nic_priority_matrix);
+        if (file.is_open())
+        {
+            std::string content((std::istreambuf_iterator<char>(file)),
+                                std::istreambuf_iterator<char>());
+            file.close();
+            return content;
+        }
     }
-    else
-    {
-        return path;
-    }
+    return "{\"cpu:0\": [[\"" + FLAGS_device_name + "\"], []], \"cpu:1\": [[\"" + FLAGS_device_name + "\"], []]}";
 }
 
 int target()
@@ -72,13 +73,13 @@ int target()
     auto metadata_client = std::make_shared<TransferMetadata>(FLAGS_metadata_server);
     LOG_ASSERT(metadata_client);
 
-    auto nic_priority_matrix = loadNicPriorityMatrix(FLAGS_nic_priority_matrix);
+    auto nic_priority_matrix = loadNicPriorityMatrix();
 
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client);
 
     void** args = (void**) malloc(2 * sizeof(void*));
-    args[0] = (void*)FLAGS_nic_priority_matrix.c_str();
+    args[0] = (void*)nic_priority_matrix.c_str();
     args[1] = nullptr;
 
     const string& connectable_name = FLAGS_local_server_name;

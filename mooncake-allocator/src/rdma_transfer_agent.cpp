@@ -10,16 +10,6 @@ namespace mooncake
 {
     // for transfer engine
     #define BASE_ADDRESS_HINT (0x40000000000)
-    static std::string getHostname()
-    {
-        char hostname[256];
-        if (gethostname(hostname, 256))
-        {
-            PLOG(ERROR) << "Failed to get hostname";
-            return "";
-        }
-        return hostname;
-    }
 
     static void *allocateMemoryPool(size_t size, int socket_id)
     {
@@ -65,8 +55,6 @@ namespace mooncake
         auto local_server_name = configManager.get("local_server_name");
         auto metadata_server = configManager.get("metadata_server");
         auto nic_priority_matrix = configManager.get("nic_priority_matrix");
-        auto segment_id = configManager.get("segment_id");
-        auto batch_size = std::stoi(configManager.get("batch_size"));
 
         auto metadata_client = std::make_shared<TransferMetadata>(metadata_server);
         LOG_ASSERT(metadata_client);
