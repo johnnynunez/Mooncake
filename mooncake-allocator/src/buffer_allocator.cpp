@@ -6,7 +6,7 @@
 namespace mooncake
 {
 
-    BufHandle::BufHandle(std::shared_ptr<BufferAllocator> allocator, int segment_id, uint64_t size, void *buffer) : allocator_(allocator), segment_id(segment_id), size(size), status(BufStatus::INIT), buffer(buffer)
+    BufHandle::BufHandle(std::shared_ptr<BufferAllocator> allocator, int segment_id, uint64_t size, void *buffer) : segment_id(segment_id), size(size), status(BufStatus::INIT), buffer(buffer), allocator_(allocator)
     {
         LOG(INFO) << "Created BufHandle for segment " << segment_id << ", size " << size << ", buffer address: " << buffer;
     }

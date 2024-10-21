@@ -51,7 +51,7 @@ TEST_F(ReplicaAllocatorTest, AddOneReplica_Valid)
     Version ver = 1;
     size_t object_size = shard_size;
 
-    Version result = allocator->addOneReplica(key, ret, -1, object_size);
+    Version result = allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
     EXPECT_EQ(result, ver);
     EXPECT_EQ(ret.status, ReplicaStatus::INITIALIZED);
     EXPECT_EQ(ret.handles.size(), object_size / shard_size);
@@ -66,12 +66,12 @@ TEST_F(ReplicaAllocatorTest, AddOneReplica_Valid)
 
     key = "test_key_2";
     object_size = shard_size * 4 + 512;
-    result = allocator->addOneReplica(key, ret, -1, object_size);
+    result = allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
     EXPECT_EQ(ret.handles.size(), object_size / shard_size + 1);
 
     key = "test_key_3";
     object_size = shard_size / 2;
-    result = allocator->addOneReplica(key, ret, -1, object_size);
+    result = allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
     EXPECT_EQ(ret.handles.size(), object_size / shard_size + 1);
 }
 
@@ -79,8 +79,8 @@ TEST_F(ReplicaAllocatorTest, AddOneReplica_InvalidArgs)
 {
     ObjectKey key = "test_key";
     ReplicaInfo ret;
-    Version ver = -1;
-    size_t object_size = -1;
+    Version ver = DEFAULT_VALUE;
+    size_t object_size = DEFAULT_VALUE;
 
     EXPECT_THROW(allocator->addOneReplica(key, ret, ver, object_size), std::invalid_argument);
 }
@@ -91,7 +91,7 @@ TEST_F(ReplicaAllocatorTest, GetOneReplica_Valid)
     ReplicaInfo ret;
     size_t object_size = 1024;
 
-    Version ver = allocator->addOneReplica(key, ret, -1, object_size);
+    Version ver = allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
 
     ReplicaInfo get_ret;
     Version get_result = allocator->getOneReplica(key, get_ret, ver);
@@ -134,7 +134,7 @@ TEST_F(ReplicaAllocatorTest, ReassignReplica)
     Version ver = 1;
     size_t object_size = 1024;
 
-    allocator->addOneReplica(key, ret, -1, object_size);
+    allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
 
     ReplicaInfo reassigned_ret;
     allocator->reassignReplica(key, ver, ret.replica_id, reassigned_ret);
@@ -157,14 +157,14 @@ TEST_F(ReplicaAllocatorTest, RemoveOneReplica)
     ReplicaInfo ret;
     size_t object_size = 1024;
 
-    Version ver = allocator->addOneReplica(key, ret, -1, object_size);
+    Version ver = allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
     allocator->updateStatus(key, ReplicaStatus::COMPLETE, 0, ver);
     for (auto &handle : ret.handles)
     {
         handle->status = BufStatus::COMPLETE;
     }
 
-    ver = allocator->addOneReplica(key, ret, ver, -1);
+    ver = allocator->addOneReplica(key, ret, ver, DEFAULT_VALUE);
     allocator->updateStatus(key, ReplicaStatus::COMPLETE, 1, ver);
     for (auto &handle : ret.handles)
     {
@@ -192,10 +192,9 @@ TEST_F(ReplicaAllocatorTest, Recovery)
 {
     ObjectKey key = "test_key_recovery";
     ReplicaInfo ret;
-    Version ver = 1;
     size_t object_size = 1024 * 10 + 512;
 
-    allocator->addOneReplica(key, ret, -1, object_size);
+    allocator->addOneReplica(key, ret, DEFAULT_VALUE, object_size);
 
     std::vector<std::shared_ptr<BufHandle>> old_handles = ret.handles;
     size_t new_num = allocator->recovery(old_handles);
@@ -234,7 +233,7 @@ TEST_F(ReplicaAllocatorTest, UpdateStatus)
 {
     ObjectKey key = "test_key_update";
     ReplicaInfo ret;
-    Version ver = -1;
+    Version ver = DEFAULT_VALUE;
     size_t object_size = 1024;
 
     ver = allocator->addOneReplica(key, ret, ver, object_size);
@@ -248,13 +247,13 @@ TEST_F(ReplicaAllocatorTest, GetObjectVersion)
 {
     ObjectKey key = "test_key_version";
     ReplicaInfo ret;
-    Version ver = -1;
+    Version ver = DEFAULT_VALUE;
     size_t object_size = 1024;
 
     ver = allocator->addOneReplica(key, ret, ver, object_size);
 
     Version result = allocator->getObjectVersion(key);
-    EXPECT_EQ(result, -1);
+    EXPECT_EQ(result, DEFAULT_VALUE);
     allocator->updateStatus(key, ReplicaStatus::COMPLETE, 0, ver);
     result = allocator->getObjectVersion(key);
     EXPECT_EQ(result, ver);

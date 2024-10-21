@@ -18,7 +18,7 @@ Mooncake 由以下部分组成：
 目前我们开源了 Transfer Engine 的完整实现，并提供了以下 3 个示例应用：
 1. 基本 I/O 读写操作测试工具 Transfer Engine Bench
 2. 点对点数据共享读取接口 P2P Store 及配套的样例程序
-3. TBD
+3. vLLM Disaggregated Prefill & Decode 样例
 
 具体的编译和使用说明参见 [快速开始指南](docs/quick-start.md)。
 

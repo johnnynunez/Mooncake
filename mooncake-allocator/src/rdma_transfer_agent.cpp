@@ -145,7 +145,7 @@ namespace mooncake
         if (ret != 0) {
             LOG(ERROR) << "Failed to submit transfer, batch_id: " << batch_id;
             rdma_engine_->freeBatchID(batch_id);
-            return -1;
+            return getError(ERRNO::TRANSFER_FAIL);
         }
         return batch_id;
     }
