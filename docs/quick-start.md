@@ -12,7 +12,6 @@ Mooncake 目前仅支持 Linux 操作系统，并且依赖以下软件：
 1. 克隆源码仓库
    ```bash
    git clone https://github.com/kvcache-ai/mooncake-dev.git
-
    ```
 2. 进入源码目录
    ```bash

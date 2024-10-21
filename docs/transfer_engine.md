@@ -41,7 +41,7 @@ struct TransferRequest
 ### Transport::allocateBatchID
 
 ```cpp
-BatchID Transport::allocateBatchID(size_t batch_size);
+BatchID allocateBatchID(size_t batch_size);
 ```
 
 分配 `BatchID`。同一 `BatchID` 下最多可提交 `batch_size` 个 `TransferRequest`。
@@ -52,7 +52,7 @@ BatchID Transport::allocateBatchID(size_t batch_size);
 ### Transport::submitTransfer
 
 ```cpp
-int Transport::submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries);
+int submitTransfer(BatchID batch_id, const std::vector<TransferRequest> &entries);
 ```
 
 向 `batch_id` 追加提交新的 `TransferRequest` 任务。该任务被异步提交到后台线程池。同一 `batch_id` 下累计的 `entries` 数量不应超过创建时定义的 `batch_size`。
@@ -78,7 +78,7 @@ struct TransferStatus {
   TaskStatus s;
   size_t transferred; // 已成功传输了多少数据（不一定是准确值，确保是 lower bound）
 };
-int Transport::getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status)
+int getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status)
 ```
 
 获取 `batch_id` 中第 `task_id` 个 `TransferRequest` 的运行状态。
@@ -91,7 +91,7 @@ int Transport::getTransferStatus(BatchID batch_id, size_t task_id, TransferStatu
 ### Transport::freeBatchID
 
 ```cpp
-int Transport::freeBatchID(BatchID batch_id);
+int freeBatchID(BatchID batch_id);
 ```
 
 回收 `BatchID`，之后对此的 `submitTransfer` 及 `getTransferStatus` 操作均是未定义的。若 `BatchID` 内仍有 `TransferRequest` 未完成，则拒绝操作。
@@ -157,7 +157,7 @@ int uninstallTransport(const std::string& proto);
 ### TransferEngine::registerLocalMemory
 
 ```cpp
-int TransferEngine::registerLocalMemory(void *addr, size_t size, string location, bool remote_accessible);
+int registerLocalMemory(void *addr, size_t size, string location, bool remote_accessible);
 ```
 
 在本地 DRAM/VRAM 上注册起始地址为 `addr`，长度为 `size` 的空间。
@@ -171,7 +171,7 @@ int TransferEngine::registerLocalMemory(void *addr, size_t size, string location
 ### TransferEngine::unregisterLocalMemory
 
 ```cpp
-int TransferEngine::unregisterLocalMemory(void *addr);
+int unregisterLocalMemory(void *addr);
 ```
 
 解注册区域。
@@ -202,7 +202,7 @@ int closeSegment(SegmentHandle segment_id);
 // 删除：TransferEngine 被析构时。
 Key = mooncake/rpc_meta/[server_name]
 Value = {
-    'ip_or_host_name': 'optane20'
+    'ip_or_host_name': 'node01'
     'rpc_port': 12345
 }
 
@@ -246,7 +246,7 @@ Value = {
         'length': 1073741824,
         'file_path': "/mnt/nvme0" // 本机器上的文件路径
         'local_path_map': {
-            "optane13": "/mnt/transfer_engine/optane14/nvme0", // 挂载该文件的机器 -> 挂载机器上的文件路径
+            "node01": "/mnt/transfer_engine/node01/nvme0", // 挂载该文件的机器 -> 挂载机器上的文件路径
             ....
         },
      }，
@@ -254,7 +254,7 @@ Value = {
         'length': 1073741824,
         'file_path': "/mnt/nvme1", 
         'local_path_map': {
-            "optane13": "/mnt/transfer_engine/optane14/nvme1",
+            "node02": "/mnt/transfer_engine/node02/nvme1",
             ....
         },
      }
@@ -272,9 +272,10 @@ Value = {
 
 ```cpp
 TransferEngine(std::unique_ptr<TransferEngineMetadataClient> metadata_client);
+TransferMetadata(const std::string &metadata_server);
 ```
 
-- metadata_client：TransferEngineMetadataClient 对象指针，该对象将 TransferEngine 框架与元数据服务器/etcd 等带外通信逻辑抽取出来，以方便用户将其部署到不同的环境中。
+- metadata_client：TransferEngineMetadataClient 对象指针，该对象将 TransferEngine 框架与元数据服务器/etcd 等带外通信逻辑抽取出来，以方便用户将其部署到不同的环境中。metadata_server 表示 etcd 服务器的 IP 地址或主机名。
 
 为了便于异常处理，TransferEngine 在完成构造后需要调用init函数进行二次构造：
 ```cpp
@@ -344,6 +345,10 @@ extern "C" {
 ## 利用 TransferEngine 进行二次开发
 要利用 TransferEngine 进行二次开发，可使用编译好的静态库文件 `libtransfer_engine.a` 及 C 头文件 `transfer_engine_c.h`，不需要用到 `src/transfer_engine` 下的其他文件。
 
+### 参考实现：Transfer Engine Go
+
+TransferEngine 的 Go 封装见 `mooncake-p2p-store/src/p2pstore/transfer_engine.go`。
+
 ### 参考实现：Transfer Engine Rust
 
-在 `mooncake-transfer-engine/example/rust-example` 下给出了 Transfer Engine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 cargo 等依赖，并在 cmake 命令中添加 -DWITH_RUST_EXAMPLE=ON 。
+在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 cargo 等依赖，并在 cmake 命令中添加 -DWITH_RUST_EXAMPLE=ON 。
