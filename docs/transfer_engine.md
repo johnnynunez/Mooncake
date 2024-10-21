@@ -344,3 +344,6 @@ extern "C" {
 ## 利用 TransferEngine 进行二次开发
 要利用 TransferEngine 进行二次开发，可使用编译好的静态库文件 `libtransfer_engine.a` 及 C 头文件 `transfer_engine_c.h`，不需要用到 `src/transfer_engine` 下的其他文件。
 
+### 参考实现：Transfer Engine Rust
+
+在 `mooncake-transfer-engine/example/rust-example` 下给出了 Transfer Engine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。
