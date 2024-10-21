@@ -73,9 +73,9 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
 
     // 存储数据
     TaskID putVersion = store.put(key, slices, config);
-    EXPECT_NE(putVersion, 0);
+    EXPECT_LT(putVersion, DEFAULT_VALUE);
     
-    LOG(ERROR) << "finish put......";
+    LOG(ERROR) << "finish put.";
     //sleep(1);
 
     TASK_STATUS status = store.getTaskStatus(putVersion);
@@ -98,8 +98,7 @@ TEST_F(RdmaDistributedObjectStoreTest, PutGetTest)
     std::vector<Slice> getSlices = {getSlice};
     
     TaskID getVersion = store.get(key, getSlices, 0, 0);
-    //EXPECT_EQ(getVersion, putVersion);
-
+    LOG(INFO) << "the getVersion: " << getVersion;
     // 比较原始数据和获取的数据
     char* retrievedDataPtr = static_cast<char*>(getPtr);
     retrievedDataPtr[dataSize - 1] = '\0';

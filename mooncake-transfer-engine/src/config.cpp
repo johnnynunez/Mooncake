@@ -104,7 +104,7 @@ namespace mooncake
         if (max_inline_env)
         {
             size_t val = atoi(max_inline_env);
-            if (val >= 0 && val <= UINT16_MAX)
+            if (val <= UINT16_MAX)
                 config.max_inline = val;
             else
                 LOG(WARNING) << "Ignore value from environment variable MC_MAX_INLINE";

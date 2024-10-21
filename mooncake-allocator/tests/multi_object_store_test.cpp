@@ -43,6 +43,7 @@ protected:
     {
         for (auto &meta : segment_and_index)
         {
+            LOG(INFO) << "meta info, segment_id: " << meta.first << ", buffer size: " << meta.second.size();
             // Temporarily disabled
             // testUnregisterBuffer(store, meta.first, meta.second);
         }

@@ -7,7 +7,7 @@ Mooncake 是面向长上下文大语言模型（LLM）的推理加速系统，�
 ## 架构
 Mooncake 由以下部分组成：
 
-1. **Mooncake Transfer Engine**：高性能，零拷贝数据传输库。提供统一、高效、可靠的数据传输接口，支持 RDMA（含 GPUDirect RDMA）、NVMeOF 等传输协议，DRAM、GPU VRAM、NVMe SSD 等传输介质。支持带宽聚合、自动优选传输路径等功能。该部分用以支撑 Mooncake Store 的数据传输，也可独立用于各类应用高效的数据传输。
+1. **[Mooncake Transfer Engine](docs/transfer_engine.md)**：高性能，零拷贝数据传输库。提供统一、高效、可靠的数据传输接口，支持 RDMA（含 GPUDirect RDMA）、NVMeOF 等传输协议，DRAM、GPU VRAM、NVMe SSD 等传输介质。支持带宽聚合、自动优选传输路径等功能。该部分用以支撑 Mooncake Store 的数据传输，也可独立用于各类应用高效的数据传输。
 
 2. **Mooncake Store**：对象级别的数据存取引擎。面向 KVCache 等中小规模数据缓存需求，通过 **Managed Store** 接口实现副本数量及所在位置的灵活管理；面向模型分发等大规模数据缓存需求，通过 **P2P Store** 接口实现数据的共享读取。
    > ℹ️ 正在逐步开源，敬请期待！
@@ -18,12 +18,12 @@ Mooncake 由以下部分组成：
 目前我们开源了 Transfer Engine 的完整实现，并提供了以下 3 个示例应用：
 1. 基本 I/O 读写操作测试工具 Transfer Engine Bench
 2. 点对点数据共享读取接口 P2P Store 及配套的样例程序
-3. TBD
+3. vLLM Disaggregated Prefill & Decode 样例
 
 具体的编译和使用说明参见 [快速开始指南](docs/quick-start.md)。
 
 ## 更进一步
-请参考 [开发者指南](docs/developer_guide.md) 以获取更多信息。
+请参考 [Mooncake 开发文档](docs/) 以获取更多信息。
 
 ## 性能
 将 Transfer Engine 的 I/O 延迟与 Gloo （由 Distributed PyTorch 使用）和 TCP 进行比较，Transfer Engine 具有最低的延迟。
