@@ -26,6 +26,7 @@ option(USE_CXL "option for using cxl protocol" ON)
 
 option(WITH_P2P_STORE "build p2p store library and sample code" ON)
 option(WITH_ALLOCATOR "build allocator, component of managed store" ON)
+option(WITH_RUST_EXAMPLE "build the Rust interface and sample code for the transfer engine" OFF)
 
 add_subdirectory(mooncake-transfer-engine)
 if (WITH_P2P_STORE)
