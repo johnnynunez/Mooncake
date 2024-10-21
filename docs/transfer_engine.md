@@ -346,4 +346,4 @@ extern "C" {
 
 ### 参考实现：Transfer Engine Rust
 
-在 `mooncake-transfer-engine/example/rust-example` 下给出了 Transfer Engine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。
+在 `mooncake-transfer-engine/example/rust-example` 下给出了 Transfer Engine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 cargo 等依赖，并在 cmake 命令中添加 -DWITH_RUST_EXAMPLE=ON 。
