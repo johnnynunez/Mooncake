@@ -51,8 +51,6 @@ namespace mooncake
 
         int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list) override { return 0; }
 
-        void addSliceToTask(void *source_addr, uint64_t slice_len, uint64_t target_start, TransferRequest::OpCode op, TransferTask &task, const char *file_path);
-
         const char *getName() const override { return "cxl"; }
     };
 }

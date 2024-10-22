@@ -56,9 +56,4 @@ namespace mooncake
     {
         return 0;
     }
-
-    void CxlTransport::addSliceToTask(void *source_addr, uint64_t slice_len, uint64_t target_start, TransferRequest::OpCode op, TransferTask &task, const char *file_path)
-    {
-        // TODO
-    }
 }

@@ -107,6 +107,10 @@ namespace mooncake
                 } local;
                 struct
                 {
+                    uint64_t dest_addr;
+                } tcp;
+                struct
+                {
                     const char *file_path;
                     uint64_t start;
                     uint64_t length;

@@ -1,4 +1,5 @@
 #include "transfer_engine.h"
+#include "transport/tcp_transport/tcp_transport.h"
 #include "transport/rdma_transport/rdma_transport.h"
 #include "transport/transport.h"
 #ifdef USE_CUDA
@@ -167,6 +168,10 @@ namespace mooncake
         if (std::string(proto) == "rdma")
         {
             return new RdmaTransport();
+        }
+        else if (std::string(proto) == "tcp")
+        {
+            return new TcpTransport();
         }
 #ifdef USE_CUDA
         else if (std::string(proto) == "nvmeof")
