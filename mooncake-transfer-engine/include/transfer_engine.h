@@ -49,16 +49,17 @@ namespace mooncake
 
         int unregisterLocalMemoryBatch(const std::vector<void *> &addr_list);
 
-        int syncSegmentCache() 
-        { 
-            return metadata_->syncSegmentCache(); 
+        int syncSegmentCache()
+        {
+            return metadata_->syncSegmentCache();
         }
 
     private:
-        struct MemoryRegion {
-            void* addr;
+        struct MemoryRegion
+        {
+            void *addr;
             uint64_t length;
-            const char* location;
+            const char *location;
             bool remote_accessible;
         };
 
@@ -76,7 +77,7 @@ namespace mooncake
     using TransferStatus = Transport::TransferStatus;
     using TransferStatusEnum = Transport::TransferStatusEnum;
     using SegmentID = Transport::SegmentID;
-    using BatchID = Transport::BatchID; 
+    using BatchID = Transport::BatchID;
     using BufferEntry = Transport::BufferEntry;
 }
 

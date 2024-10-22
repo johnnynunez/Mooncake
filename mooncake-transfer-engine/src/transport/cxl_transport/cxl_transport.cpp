@@ -16,11 +16,11 @@ namespace mooncake
 {
     CxlTransport::CxlTransport()
     {
-        //TODO
+        // TODO
     }
 
     CxlTransport::~CxlTransport() {}
-    
+
     CxlTransport::BatchID CxlTransport::allocateBatchID(size_t batch_size)
     {
         auto batch_id = Transport::allocateBatchID(batch_size);

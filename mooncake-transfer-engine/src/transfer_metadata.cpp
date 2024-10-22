@@ -296,7 +296,7 @@ namespace mooncake
     int TransferMetadata::syncSegmentCache()
     {
         RWSpinlock::WriteGuard guard(segment_lock_);
-        for (auto &entry: segment_id_to_desc_map_)
+        for (auto &entry : segment_id_to_desc_map_)
         {
             if (entry.first == LOCAL_SEGMENT_ID)
                 continue;
@@ -549,7 +549,8 @@ namespace mooncake
 
         listener_running_ = true;
         listener_ = std::thread(
-            [this, listen_fd, on_receive_handshake]() {
+            [this, listen_fd, on_receive_handshake]()
+            {
                 while (listener_running_)
                 {
                     sockaddr_in addr;

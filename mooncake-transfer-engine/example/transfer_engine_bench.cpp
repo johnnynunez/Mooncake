@@ -1,5 +1,5 @@
-#include "transport/rdma_transport/rdma_transport.h"
 #include "transfer_engine.h"
+#include "transport/rdma_transport/rdma_transport.h"
 #include "transport/transport.h"
 
 #include <cstdlib>
@@ -139,7 +139,7 @@ int initiatorWorker(RdmaTransport *engine, SegmentID segment_id, int thread_id, 
                     completed = true;
             }
         }
-        
+
         ret = engine->freeBatchID(batch_id);
         LOG_ASSERT(!ret);
         batch_count++;
@@ -174,13 +174,13 @@ int initiator()
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client);
 
-    void** args = (void**) malloc(2 * sizeof(void*));
-    args[0] = (void*)nic_priority_matrix.c_str();
+    void **args = (void **)malloc(2 * sizeof(void *));
+    args[0] = (void *)nic_priority_matrix.c_str();
     args[1] = nullptr;
 
-    const string& connectable_name = FLAGS_local_server_name;
+    const string &connectable_name = FLAGS_local_server_name;
     engine->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
-    RdmaTransport* xport = static_cast<RdmaTransport*>(engine->installOrGetTransport("rdma", args));
+    RdmaTransport *xport = static_cast<RdmaTransport *>(engine->installOrGetTransport("rdma", args));
 
     LOG_ASSERT(engine);
 
@@ -240,11 +240,11 @@ int target()
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client);
 
-    void** args = (void**) malloc(2 * sizeof(void*));
-    args[0] = (void*)nic_priority_matrix.c_str();
+    void **args = (void **)malloc(2 * sizeof(void *));
+    args[0] = (void *)nic_priority_matrix.c_str();
     args[1] = nullptr;
 
-    const string& connectable_name = FLAGS_local_server_name;
+    const string &connectable_name = FLAGS_local_server_name;
     engine->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(), 12345);
     engine->installOrGetTransport("rdma", args);
 

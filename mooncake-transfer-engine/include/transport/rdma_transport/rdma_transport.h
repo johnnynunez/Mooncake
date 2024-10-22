@@ -29,7 +29,7 @@ namespace mooncake
     class WorkerPool;
 
     // OldTransferEngine
-    class RdmaTransport: public Transport
+    class RdmaTransport : public Transport
     {
         friend class RdmaContext;
         friend class RdmaEndPoint;
@@ -143,7 +143,6 @@ namespace mooncake
         static int selectDevice(SegmentDesc *desc, uint64_t offset, size_t length, int &buffer_id, int &device_id, int retry_cnt = 0);
 
     private:
-
         std::vector<std::string> device_name_list_;
         std::vector<std::shared_ptr<RdmaContext>> context_list_;
         std::unordered_map<std::string, int> device_name_to_index_map_;

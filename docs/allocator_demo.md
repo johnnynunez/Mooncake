@@ -37,7 +37,7 @@
       exit(1)
 
    output = store.get_object("foo", 12, 0, 0)
-   if len(output == 0):
+   if len(output) == 0:
       exit(1)
 
    print("Output: ", output)

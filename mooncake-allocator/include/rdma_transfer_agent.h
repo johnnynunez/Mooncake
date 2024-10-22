@@ -1,14 +1,14 @@
 #pragma once
 
-#include <vector>
 #include "types.h"
+#include <vector>
 
 #include "transfer_agent.h"
 #include "transport/rdma_transport/rdma_transport.h"
 
 namespace mooncake
 {
-    
+
     class RdmaTransferAgent : public TransferAgent
     {
     public:
@@ -21,13 +21,13 @@ namespace mooncake
         bool doWrite(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) override;
         bool doRead(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) override;
         bool doReplica(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) override;
-        
+
         bool doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status) override;
 
-        BatchID submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks);
+        BatchID submitTransfersAsync(const std::vector<TransferRequest> &transfer_tasks);
 
     private:
-        void monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status);
+        void monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum> &transfer_status);
 
     private:
         std::unique_ptr<TransferEngine> transfer_engine_;

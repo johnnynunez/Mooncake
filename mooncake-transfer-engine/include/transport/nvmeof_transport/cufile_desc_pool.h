@@ -3,15 +3,17 @@
 
 #include "transfer_engine.h"
 #include <atomic>
-#include <cstddef>
 #include <bitset>
+#include <cstddef>
 #include <cstdint>
 #include <cufile.h>
 #include <mutex>
 #include <vector>
 
-namespace mooncake {
-    class CUFileDescPool {
+namespace mooncake
+{
+    class CUFileDescPool
+    {
     public:
         explicit CUFileDescPool();
         ~CUFileDescPool();
@@ -49,6 +51,5 @@ namespace mooncake {
     };
 
 }
-
 
 #endif
