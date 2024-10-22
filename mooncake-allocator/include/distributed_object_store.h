@@ -22,24 +22,25 @@ namespace mooncake
         size_t size;
     };
 
-    struct PairHash {
+    struct PairHash
+    {
         template <class T1, class T2>
-        std::size_t operator() (const std::pair<T1, T2>& p) const {
+        std::size_t operator()(const std::pair<T1, T2> &p) const
+        {
             auto h1 = std::hash<T1>{}(p.first);
             auto h2 = std::hash<T2>{}(p.second);
-            return h1 ^ (h2 << 1); 
+            return h1 ^ (h2 << 1);
         }
     };
 
     // define operation type
-    enum class OperationType : uint8_t {
+    enum class OperationType : uint8_t
+    {
         PUT,
         GET,
         REMOVE,
         REPLICATE
     };
-
-
 
     class DistributedObjectStore
     {
@@ -49,8 +50,8 @@ namespace mooncake
             // diff of replica
         };
 
-    
-        struct TaskContext {
+        struct TaskContext
+        {
             TaskID task_id;
             OperationType type;
             ObjectKey key;
@@ -104,8 +105,7 @@ namespace mooncake
             std::vector<TransferRequest> &transfer_tasks);
 
     private:
-
-        TASK_STATUS updatePutStatus(TaskID task_id, std::vector<TransferStatusEnum>& status); 
+        TASK_STATUS updatePutStatus(TaskID task_id, std::vector<TransferStatusEnum> &status);
 
         uint64_t calculateObjectSize(const std::vector<void *> &ptrs);
 
@@ -129,14 +129,15 @@ namespace mooncake
             const std::vector<TransferRequest> &transfer_tasks);
 
         void handlePutCompletion(
-    std::shared_ptr<TaskContext> context,
-        const std::vector<TransferStatusEnum>& status);
+            std::shared_ptr<TaskContext> context,
+            const std::vector<TransferStatusEnum> &status);
 
     private:
         // define atomic taskid
         std::atomic<TaskID> task_id_;
-        std::unordered_map<TaskID, 
-            std::shared_ptr<TaskContext>> task_contexts_;
+        std::unordered_map<TaskID,
+                           std::shared_ptr<TaskContext>>
+            task_contexts_;
 
         ReplicaAllocator replica_allocator_;
         std::shared_ptr<AllocationStrategy> allocation_strategy_;

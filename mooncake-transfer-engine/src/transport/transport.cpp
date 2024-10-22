@@ -1,16 +1,18 @@
 #include "transport/transport.h"
-#include "transfer_engine.h"
 #include "error.h"
+#include "transfer_engine.h"
 
-namespace mooncake {
-    Transport::BatchID Transport::allocateBatchID(size_t batch_size) {
+namespace mooncake
+{
+    Transport::BatchID Transport::allocateBatchID(size_t batch_size)
+    {
         auto batch_desc = new BatchDesc();
         if (!batch_desc)
             return -1;
         batch_desc->id = BatchID(batch_desc);
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
-        batch_desc->context = NULL; 
+        batch_desc->context = NULL;
 #ifdef CONFIG_USE_BATCH_DESC_SET
         batch_desc_lock_.lock();
         batch_desc_set_[batch_desc->id] = batch_desc;
@@ -19,7 +21,8 @@ namespace mooncake {
         return batch_desc->id;
     }
 
-    int Transport::freeBatchID(BatchID batch_id) {
+    int Transport::freeBatchID(BatchID batch_id)
+    {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();
         for (size_t task_id = 0; task_id < task_count; task_id++)
@@ -38,7 +41,8 @@ namespace mooncake {
         return 0;
     }
 
-    int Transport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void** args) {
+    int Transport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args)
+    {
         local_server_name_ = local_server_name;
         metadata_ = meta;
         return 0;

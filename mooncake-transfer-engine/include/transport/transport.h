@@ -29,7 +29,6 @@ namespace mooncake
         using SegmentID = uint64_t;
         using SegmentHandle = SegmentID;
 
-
         using BatchID = uint64_t;
         const static BatchID INVALID_BATCH_ID = UINT64_MAX;
 
@@ -108,6 +107,10 @@ namespace mooncake
                 } local;
                 struct
                 {
+                    uint64_t dest_addr;
+                } tcp;
+                struct
+                {
                     const char *file_path;
                     uint64_t start;
                     uint64_t length;
@@ -120,6 +123,7 @@ namespace mooncake
                     size_t remote_offset;
                 } cxl;
             };
+
         public:
             void markSuccess()
             {
@@ -157,7 +161,7 @@ namespace mooncake
             BatchID id;
             size_t batch_size;
             std::vector<TransferTask> task_list;
-            void* context; // for transport implementers.
+            void *context; // for transport implementers.
         };
 
     public:
@@ -177,7 +181,7 @@ namespace mooncake
         /// @return Return 1 on completed (either success or failure); 0 if still in progress.
         virtual int getTransferStatus(BatchID batch_id, size_t task_id, TransferStatus &status) = 0;
 
-        std::shared_ptr<TransferMetadata>& meta() { return metadata_; }
+        std::shared_ptr<TransferMetadata> &meta() { return metadata_; }
 
         struct BufferEntry
         {
@@ -186,7 +190,7 @@ namespace mooncake
         };
 
     protected:
-        virtual int install(std::string& local_server_name, std::shared_ptr<TransferMetadata> meta,  void **args);
+        virtual int install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args);
 
         std::string local_server_name_;
         std::shared_ptr<TransferMetadata> metadata_;

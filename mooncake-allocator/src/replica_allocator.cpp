@@ -46,7 +46,7 @@ namespace mooncake
 
         std::unique_lock<std::shared_mutex> lock(object_meta_mutex_); // write lock
         if (object_meta_.count(key) == 0)
-        {  // Key does not exist
+        { // Key does not exist
             ver = DEFAULT_VALUE;
         }
         auto &version_list = object_meta_[key];
@@ -555,7 +555,7 @@ namespace mooncake
         return object_meta_;
     }
 
-    Version ReplicaAllocator::getObjectVersion(const ObjectKey& key)
+    Version ReplicaAllocator::getObjectVersion(const ObjectKey &key)
     {
         if (object_meta_.count(key) == 0)
         {
@@ -564,7 +564,7 @@ namespace mooncake
         return object_meta_[key].flushed_version;
     }
 
-    ReplicateConfig ReplicaAllocator::getObjectReplicaConfig(const ObjectKey& key)
+    ReplicateConfig ReplicaAllocator::getObjectReplicaConfig(const ObjectKey &key)
     {
         ReplicateConfig config;
         config.replica_num = 0;
@@ -575,7 +575,7 @@ namespace mooncake
         return config;
     }
 
-    size_t ReplicaAllocator::getReplicaRealNumber(const ObjectKey& key, Version version)
+    size_t ReplicaAllocator::getReplicaRealNumber(const ObjectKey &key, Version version)
     {
         if (object_meta_.count(key) == 0)
         {
@@ -590,7 +590,7 @@ namespace mooncake
         return object_meta_[key].versions[version].complete_replicas.size();
     }
 
-    size_t ReplicaAllocator::cleanUncompleteReplica(const ObjectKey& key, Version version, int max_replica_num)
+    size_t ReplicaAllocator::cleanUncompleteReplica(const ObjectKey &key, Version version, int max_replica_num)
     {
         auto &version_info = object_meta_[key].versions[version];
         int real_replica_num = version_info.complete_replicas.size();

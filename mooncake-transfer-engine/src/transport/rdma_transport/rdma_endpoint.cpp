@@ -16,7 +16,7 @@ namespace mooncake
 
     RdmaEndPoint::RdmaEndPoint(RdmaContext &context)
         : context_(context),
-          status_(INITIALIZING), 
+          status_(INITIALIZING),
           active_(true) {}
 
     RdmaEndPoint::~RdmaEndPoint()

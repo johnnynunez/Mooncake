@@ -80,7 +80,7 @@ namespace mooncake
         int val = std::atoi(port_str.c_str());
         if (val <= 0 || val > 65535)
             PLOG(WARNING) << "Illegal port number in " << server_name
-                            << ". Use default port " << port << " instead";
+                          << ". Use default port " << port << " instead";
         else
             port = (uint16_t)val;
         return std::make_pair(trimmed_server_name, port);
@@ -189,7 +189,7 @@ namespace mooncake
 
     static inline bool overlap(const void *a, size_t a_len, const void *b, size_t b_len)
     {
-        return (a >= b && a < (char*)b + b_len) || (b >= a && b < (char*)a + a_len);
+        return (a >= b && a < (char *)b + b_len) || (b >= a && b < (char *)a + a_len);
     }
 
     class RWSpinlock

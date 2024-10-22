@@ -157,10 +157,22 @@ namespace mooncake
             }
             serverJSON["priority_matrix"] = priorityMatrixJSON;
         }
+        else if (serverJSON["protocol"] == "tcp")
+        {
+            Json::Value buffersJSON(Json::arrayValue);
+            for (const auto &buffer : desc.buffers)
+            {
+                Json::Value bufferJSON;
+                bufferJSON["name"] = buffer.name;
+                bufferJSON["addr"] = static_cast<Json::UInt64>(buffer.addr);
+                bufferJSON["length"] = static_cast<Json::UInt64>(buffer.length);
+                buffersJSON.append(bufferJSON);
+            }
+            serverJSON["buffers"] = buffersJSON;
+        }
         else
         {
-            // For NVMeoF, the transfer engine should not modify the metadata.
-            assert(false);
+            assert(0 && "For NVMeoF, the transfer engine should not modify the metadata");
         }
 
         if (!impl_->set(ServerDescPrefix + server_name, serverJSON))
@@ -267,7 +279,18 @@ namespace mooncake
                 }
             }
         }
-        else
+        else if (desc->protocol == "tcp")
+        {
+            for (const auto &bufferJSON : serverJSON["buffers"])
+            {
+                BufferDesc buffer;
+                buffer.name = bufferJSON["name"].asString();
+                buffer.addr = bufferJSON["addr"].asUInt64();
+                buffer.length = bufferJSON["length"].asUInt64();
+                desc->buffers.push_back(buffer);
+            }
+        }
+        else if (desc->protocol == "nvmeof")
         {
             for (const auto &bufferJSON : serverJSON["buffers"])
             {
@@ -296,7 +319,7 @@ namespace mooncake
     int TransferMetadata::syncSegmentCache()
     {
         RWSpinlock::WriteGuard guard(segment_lock_);
-        for (auto &entry: segment_id_to_desc_map_)
+        for (auto &entry : segment_id_to_desc_map_)
         {
             if (entry.first == LOCAL_SEGMENT_ID)
                 continue;
@@ -549,7 +572,8 @@ namespace mooncake
 
         listener_running_ = true;
         listener_ = std::thread(
-            [this, listen_fd, on_receive_handshake]() {
+            [this, listen_fd, on_receive_handshake]()
+            {
                 while (listener_running_)
                 {
                     sockaddr_in addr;

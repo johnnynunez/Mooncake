@@ -1,8 +1,8 @@
 #ifndef ENDPOINT_STORE_H_
 #define ENDPOINT_STORE_H_
 
-#include "rdma_endpoint.h"
 #include "rdma_context.h"
+#include "rdma_endpoint.h"
 #include <atomic>
 #include <infiniband/verbs.h>
 #include <memory>

@@ -1,15 +1,15 @@
 #ifndef CUFILE_CONTEXT_H_
 #define CUFILE_CONTEXT_H_
 
+#include "cufile.h"
 #include <cassert>
 #include <cstddef>
-#include <glog/logging.h>
-#include <unistd.h>
-#include "cufile.h"
 #include <cstring>
+#include <fcntl.h>
+#include <glog/logging.h>
 #include <string>
 #include <system_error>
-#include <fcntl.h>
+#include <unistd.h>
 
 static inline const char *GetCuErrorString(CUresult curesult)
 {
@@ -33,14 +33,14 @@ static std::string cuFileGetErrorString(CUfileError_t status)
     return errStr;
 }
 
-#define CUFILE_CHECK(e)                                                                                            \
-    do                                                                                                             \
-    {                                                                                                              \
-        if (e.err != CU_FILE_SUCCESS)                                                                              \
-        {                                                                                                          \
+#define CUFILE_CHECK(e)                                                                                                                                           \
+    do                                                                                                                                                            \
+    {                                                                                                                                                             \
+        if (e.err != CU_FILE_SUCCESS)                                                                                                                             \
+        {                                                                                                                                                         \
             throw std::runtime_error("Error Code: " + std::to_string(e.err) + " " + cuFileGetErrorString(e) + " @ " + __FILE__ + ":" + std::to_string(__LINE__)); \
-            assert(false);                                                                                         \
-        }                                                                                                          \
+            assert(false);                                                                                                                                        \
+        }                                                                                                                                                         \
     } while (0)
 
 class CuFileContext
@@ -52,7 +52,7 @@ public:
     CUfileHandle_t getHandle() const { return handle; }
 
     /// Create a GDS segment from file name. Return NULL on error.
-    explicit CuFileContext(const char* filename)
+    explicit CuFileContext(const char *filename)
     {
         // LOG(INFO) << "construct " << filename;
         int fd = open(filename, O_RDWR | O_DIRECT, 0664);
@@ -68,7 +68,7 @@ public:
 
     ~CuFileContext()
     {
-        
+
         if (handle)
         {
             cuFileHandleDeregister(handle);

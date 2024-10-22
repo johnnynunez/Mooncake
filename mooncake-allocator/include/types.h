@@ -12,29 +12,29 @@
 
 namespace mooncake
 {
-    #define WRONG_VERSION 0
-    #define DEFAULT_VALUE UINT64_MAX
+#define WRONG_VERSION 0
+#define DEFAULT_VALUE UINT64_MAX
     using ObjectKey = std::string;
     using Version = uint64_t;
     using SegmentId = uint64_t;
     using TaskID = int64_t;
 
-    #define ERRNO_BASE DEFAULT_VALUE-1000
+#define ERRNO_BASE DEFAULT_VALUE - 1000
     enum class ERRNO : uint64_t
     {
         // ok
         OK = ERRNO_BASE,
         // for buffer alloc
-        BUFFER_OVERFLOW, // 无法开辟合适的空间
-        // for select segment
+        BUFFER_OVERFLOW,          // 无法开辟合适的空间
+                                  // for select segment
         SHARD_INDEX_OUT_OF_RANGE, // shard_index >= 副本handles个数
         AVAILABLE_SEGMENT_EMPTY,  //  available_segment为空
-        // for select handle
+                                  // for select handle
         NO_AVAILABLE_HANDLE,
         // for version
         INVALID_VERSION,
         // for key
-        INVALID_KEY ,
+        INVALID_KEY,
         // for engine
         WRITE_FAIL,
         // for params
@@ -42,14 +42,14 @@ namespace mooncake
         // for engine operation
         INVALID_WRITE,
         INVALID_READ,
-        INVALID_REPLICA ,
+        INVALID_REPLICA,
         // for transfer
         TRANSFER_FAIL,
     };
 
-    const std::string& errnoToString(const int64_t errnoValue);
+    const std::string &errnoToString(const int64_t errnoValue);
 
-    const std::string& errEnumToString(const ERRNO errno);
+    const std::string &errEnumToString(const ERRNO errno);
 
     uint64_t getError(ERRNO err);
 
@@ -142,10 +142,11 @@ namespace mooncake
     using BufferResources = std::map<SegmentId, std::vector<std::shared_ptr<BufferAllocator>>>;
 
     // define OperationStatus
-    enum class OperationStatus : uint8_t {
+    enum class OperationStatus : uint8_t
+    {
         UNDEFINED = 0,
         PENDING,
         COMPLETE,
     };
-    #define TASK_STATUS  std::pair<OperationStatus, ERRNO>
+#define TASK_STATUS std::pair<OperationStatus, ERRNO>
 }

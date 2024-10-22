@@ -3,13 +3,13 @@
 #include <iostream>
 #include <random>
 
-#include "rdma_transfer_agent.h"
 #include "config.h"
+#include "rdma_transfer_agent.h"
 
 namespace mooncake
 {
-    // for transfer engine
-    #define BASE_ADDRESS_HINT (0x40000000000)
+// for transfer engine
+#define BASE_ADDRESS_HINT (0x40000000000)
 
     static void *allocateMemoryPool(size_t size, int socket_id)
     {
@@ -51,7 +51,7 @@ namespace mooncake
     void RdmaTransferAgent::init()
     {
         // 使用 ConfigManager 获取配置值
-        auto& configManager = ConfigManager::getInstance();
+        auto &configManager = ConfigManager::getInstance();
         auto local_server_name = configManager.get("local_server_name");
         auto metadata_server = configManager.get("metadata_server");
         auto nic_priority_matrix = configManager.get("nic_priority_matrix");
@@ -128,7 +128,8 @@ namespace mooncake
                     failed = true;
             }
             transfer_status[task_id] = status.s;
-            if (failed) {
+            if (failed)
+            {
                 LOG(ERROR) << "doTransfers failed";
                 return false;
             }
@@ -139,10 +140,12 @@ namespace mooncake
     }
 
     // 异步提交传输请求
-    BatchID RdmaTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks) {
+    BatchID RdmaTransferAgent::submitTransfersAsync(const std::vector<TransferRequest> &transfer_tasks)
+    {
         auto batch_id = rdma_engine_->allocateBatchID(transfer_tasks.size());
         int ret = rdma_engine_->submitTransfer(batch_id, transfer_tasks);
-        if (ret != 0) {
+        if (ret != 0)
+        {
             LOG(ERROR) << "Failed to submit transfer, batch_id: " << batch_id;
             rdma_engine_->freeBatchID(batch_id);
             return getError(ERRNO::TRANSFER_FAIL);
@@ -150,22 +153,30 @@ namespace mooncake
         return batch_id;
     }
 
-    void RdmaTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status) {
+    void RdmaTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum> &transfer_status)
+    {
         // std::vector<TransferStatusEnum> transfer_status(task_count, TransferStatusEnum::PENDING);
         size_t completed_count = 0;
 
-        while (completed_count < task_count) {
-            for (size_t task_id = 0; task_id < task_count; ++task_id) {
-                if (transfer_status[task_id] == TransferStatusEnum::PENDING) {
+        while (completed_count < task_count)
+        {
+            for (size_t task_id = 0; task_id < task_count; ++task_id)
+            {
+                if (transfer_status[task_id] == TransferStatusEnum::PENDING)
+                {
                     TransferStatus status;
                     int ret = rdma_engine_->getTransferStatus(batch_id, task_id, status);
-                    if (ret == 0) {
-                        if (status.s == TransferStatusEnum::COMPLETED || status.s == TransferStatusEnum::FAILED) {
+                    if (ret == 0)
+                    {
+                        if (status.s == TransferStatusEnum::COMPLETED || status.s == TransferStatusEnum::FAILED)
+                        {
                             transfer_status[task_id] = status.s;
                             ++completed_count;
                         }
                         LOG(ERROR) << "the task_id: " << task_id << " , status: " << status.s;
-                    } else {
+                    }
+                    else
+                    {
                         LOG(ERROR) << "Failed to get transfer status, batch_id: " << batch_id << ", task_id: " << task_id;
                     }
                 }
@@ -176,6 +187,5 @@ namespace mooncake
         rdma_engine_->freeBatchID(batch_id);
         // callback(transfer_status); // 调用回调函数，通知上层所有传输已完成
     }
-
 
 } // namespace mooncake

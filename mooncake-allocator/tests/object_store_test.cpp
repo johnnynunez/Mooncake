@@ -36,7 +36,8 @@ protected:
         for (auto &meta : segment_and_index)
         {
             // 暂时屏蔽
-            for (size_t index = 0; index < meta.second.size(); ++index) {
+            for (size_t index = 0; index < meta.second.size(); ++index)
+            {
                 testUnregisterBuffer(store, meta.first, meta.second[index]);
             }
         }
@@ -49,7 +50,8 @@ protected:
         size_t size = 1024 * 1024 * 4 * 200;
         void *ptr = nullptr;
         int result = posix_memalign(&ptr, 4194304, size);
-        if (result != 0) {
+        if (result != 0)
+        {
             perror("posix_memalign failed");
             return 0;
         }

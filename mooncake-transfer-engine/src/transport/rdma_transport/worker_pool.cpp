@@ -11,7 +11,7 @@
 #include "transport/rdma_transport/worker_pool.h"
 
 // 为了进一步刷性能可开启下面两个选项实现 Per-thread 的 SegmentDesc 和 EndPoint 缓存
-// 
+//
 // #define CONFIG_CACHE_SEGMENT_DESC
 // #define CONFIG_CACHE_ENDPOINT
 
@@ -67,13 +67,14 @@ namespace mooncake
             if (!segment_desc_map.count(target_id))
             {
                 segment_desc_map[target_id] = context_.engine().meta()->getSegmentDescByID(target_id);
-                if (!segment_desc_map[target_id]) {
+                if (!segment_desc_map[target_id])
+                {
                     segment_desc_map.clear();
                     return ERR_INVALID_ARGUMENT;
                 }
             }
         }
-#else 
+#else
         std::unordered_map<SegmentID, std::shared_ptr<RdmaTransport::SegmentDesc>> segment_desc_map;
         for (auto &slice : slice_list)
         {
@@ -155,7 +156,8 @@ namespace mooncake
 
         // 检测到错误时，重新分发 Slice 到不同 EndPoint 并赋予新的 rkey，从而应对暂态连接错误
         thread_local int tl_redispatch_counter = 0;
-        if (tl_redispatch_counter < redispatch_counter_.load(std::memory_order_relaxed)) {
+        if (tl_redispatch_counter < redispatch_counter_.load(std::memory_order_relaxed))
+        {
             tl_redispatch_counter = redispatch_counter_.load(std::memory_order_relaxed);
             auto local_slice_queue_clone = local_slice_queue;
             local_slice_queue.clear();
@@ -229,7 +231,7 @@ namespace mooncake
 
         if (!failed_slice_list.empty())
         {
-            for (auto &slice: failed_slice_list)
+            for (auto &slice : failed_slice_list)
                 slice->rdma.retry_cnt++;
             redispatch(failed_slice_list, thread_id);
         }
@@ -276,8 +278,8 @@ namespace mooncake
                     {
                         slice->markFailed();
                         processed_slice_count_++;
-                    } 
-                    else 
+                    }
+                    else
                     {
                         collective_slice_queue_[thread_id][slice->peer_nic_path].push_back(slice);
                         redispatch_counter_++;
@@ -373,11 +375,7 @@ namespace mooncake
                   << " for context " << context_.deviceName();
         // IBV_EVENT_DEVICE_FATAL 事件下，本次运行将永久停止该 context 的使用
         // 而在 IBV_EVENT_PORT_ERR 事件下只是暂停，后续收到 IBV_EVENT_PORT_ACTIVE 就可恢复
-        if (event.event_type == IBV_EVENT_DEVICE_FATAL 
-            || event.event_type == IBV_EVENT_CQ_ERR
-            || event.event_type == IBV_EVENT_WQ_FATAL
-            || event.event_type == IBV_EVENT_PORT_ERR
-            || event.event_type == IBV_EVENT_LID_CHANGE)
+        if (event.event_type == IBV_EVENT_DEVICE_FATAL || event.event_type == IBV_EVENT_CQ_ERR || event.event_type == IBV_EVENT_WQ_FATAL || event.event_type == IBV_EVENT_PORT_ERR || event.event_type == IBV_EVENT_LID_CHANGE)
         {
             context_.set_active(false);
             LOG(INFO) << "Context " << context_.deviceName() << " is inactive";

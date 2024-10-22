@@ -16,11 +16,11 @@ namespace mooncake
 {
     CxlTransport::CxlTransport()
     {
-        //TODO
+        // TODO
     }
 
     CxlTransport::~CxlTransport() {}
-    
+
     CxlTransport::BatchID CxlTransport::allocateBatchID(size_t batch_size)
     {
         auto batch_id = Transport::allocateBatchID(batch_size);
@@ -55,10 +55,5 @@ namespace mooncake
     int CxlTransport::unregisterLocalMemory(void *addr, bool update_metadata)
     {
         return 0;
-    }
-
-    void CxlTransport::addSliceToTask(void *source_addr, uint64_t slice_len, uint64_t target_start, TransferRequest::OpCode op, TransferTask &task, const char *file_path)
-    {
-        // TODO
     }
 }

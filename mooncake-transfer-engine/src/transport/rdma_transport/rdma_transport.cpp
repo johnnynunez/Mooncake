@@ -1,11 +1,11 @@
 // transfer_engine.cpp
 // Copyright (C) 2024 Feng Ren
 
+#include "transport/rdma_transport/rdma_transport.h"
 #include "common.h"
 #include "config.h"
 #include "transport/rdma_transport/rdma_context.h"
 #include "transport/rdma_transport/rdma_endpoint.h"
-#include "transport/rdma_transport/rdma_transport.h"
 
 #include <cassert>
 #include <cstddef>
@@ -32,7 +32,8 @@ namespace mooncake
         context_list_.clear();
     }
 
-    int RdmaTransport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args) {
+    int RdmaTransport::install(std::string &local_server_name, std::shared_ptr<TransferMetadata> meta, void **args)
+    {
         const std::string nic_priority_matrix = static_cast<char *>(args[0]);
         bool dry_run = args[1] ? *static_cast<bool *>(args[1]) : false;
         TransferMetadata::PriorityMatrix local_priority_matrix;
@@ -42,7 +43,7 @@ namespace mooncake
 
         metadata_ = meta;
         local_server_name_ = local_server_name;
-        
+
         int ret = metadata_->parseNicPriorityMatrix(nic_priority_matrix, local_priority_matrix, device_name_list_);
         if (ret)
         {
@@ -90,7 +91,7 @@ namespace mooncake
 
     int RdmaTransport::registerLocalMemory(void *addr, size_t length, const std::string &name, bool remote_accessible, bool update_metadata)
     {
-        (void) remote_accessible;
+        (void)remote_accessible;
         BufferDesc buffer_desc;
         buffer_desc.name = name;
         buffer_desc.addr = (uint64_t)addr;
@@ -147,7 +148,7 @@ namespace mooncake
     }
 
     int RdmaTransport::registerLocalMemoryBatch(const std::vector<RdmaTransport::BufferEntry> &buffer_list,
-                                                 const std::string &location)
+                                                const std::string &location)
     {
         std::vector<std::future<int>> results;
         for (auto &buffer : buffer_list)
@@ -247,7 +248,7 @@ namespace mooncake
     }
 
     int RdmaTransport::getTransferStatus(BatchID batch_id,
-                                          std::vector<TransferStatus> &status)
+                                         std::vector<TransferStatus> &status)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();
@@ -276,7 +277,7 @@ namespace mooncake
     }
 
     int RdmaTransport::getTransferStatus(BatchID batch_id, size_t task_id,
-                                          TransferStatus &status)
+                                         TransferStatus &status)
     {
         auto &batch_desc = *((BatchDesc *)(batch_id));
         const size_t task_count = batch_desc.task_list.size();

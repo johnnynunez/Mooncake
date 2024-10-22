@@ -1,9 +1,8 @@
-#include <random>
 #include <cstring>
 #include <iostream>
+#include <random>
 
 #include "dummy_transfer_agent.h"
-
 
 namespace mooncake
 {
@@ -66,19 +65,21 @@ namespace mooncake
 
     bool DummyTransferAgent::doTransfers(const std::vector<TransferRequest> &transfer_tasks, std::vector<TransferStatusEnum> &transfer_status)
     {
-        for (size_t i = 0; i  < transfer_tasks.size(); ++i)
+        for (size_t i = 0; i < transfer_tasks.size(); ++i)
         {
             transfer_status.push_back(TransferStatusEnum::COMPLETED);
         }
         return true;
     }
 
-    BatchID DummyTransferAgent::submitTransfersAsync(const std::vector<TransferRequest>& transfer_tasks)  {
+    BatchID DummyTransferAgent::submitTransfersAsync(const std::vector<TransferRequest> &transfer_tasks)
+    {
         LOG(INFO) << "task size: " << transfer_tasks.size();
         return 0;
     }
 
-    void DummyTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum>& transfer_status)  {
+    void DummyTransferAgent::monitorTransferStatus(BatchID batch_id, size_t task_count, std::vector<TransferStatusEnum> &transfer_status)
+    {
         LOG(INFO) << "the batch_id: " << batch_id << " has " << task_count << " task status size: " << transfer_status.size();
         return;
     }

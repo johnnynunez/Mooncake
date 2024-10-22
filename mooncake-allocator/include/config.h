@@ -2,17 +2,20 @@
 #define CONFIG_H
 
 #include <iostream>
-#include <string>
 #include <map>
+#include <string>
 
 // 配置项结构体
-struct Config {
+struct Config
+{
     std::map<std::string, std::string> settings;
 
     // 添加获取配置值的方法
-    std::string get(const std::string& key, const std::string& defaultValue = "") const {
+    std::string get(const std::string &key, const std::string &defaultValue = "") const
+    {
         auto it = settings.find(key);
-        if (it != settings.end()) {
+        if (it != settings.end())
+        {
             return it->second;
         }
         std::cerr << "use defaultValue, key: " << key << ", defaultvalue: " << defaultValue << std::endl;
@@ -21,17 +24,20 @@ struct Config {
 };
 
 // 单例类用于管理配置
-class ConfigManager {
+class ConfigManager
+{
 public:
-    static ConfigManager& getInstance() {
+    static ConfigManager &getInstance()
+    {
         static ConfigManager instance;
         return instance;
     }
 
-    bool loadConfig(const std::string& filename);
+    bool loadConfig(const std::string &filename);
 
     // 添加获取配置值的方法
-    std::string get(const std::string& key, const std::string& defaultValue = "") const {
+    std::string get(const std::string &key, const std::string &defaultValue = "") const
+    {
         return config.get(key, defaultValue);
     }
 

@@ -60,7 +60,6 @@ namespace mooncake
     */
 
     const static uint16_t kDefaultServerPort = 12001;
-    
 
     struct TransferMetadataImpl;
 
@@ -145,11 +144,11 @@ namespace mooncake
 
         int removeSegmentDesc(const std::string &server_name);
 
-        int addLocalMemoryBuffer(const BufferDesc& buffer_desc, bool update_metadata);
+        int addLocalMemoryBuffer(const BufferDesc &buffer_desc, bool update_metadata);
 
         int removeLocalMemoryBuffer(void *addr, bool update_metadata);
 
-        int addLocalSegment(SegmentID segment_id, const string& server_name, std::shared_ptr<SegmentDesc>&& desc);
+        int addLocalSegment(SegmentID segment_id, const string &server_name, std::shared_ptr<SegmentDesc> &&desc);
 
         using OnReceiveHandShake = std::function<int(const HandShakeDesc &peer_desc, HandShakeDesc &local_desc)>;
         int startHandshakeDaemon(OnReceiveHandShake on_receive_handshake,

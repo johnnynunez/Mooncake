@@ -1,11 +1,11 @@
+#include "cuda.h"
+#include "cuda_runtime.h"
+#include "transfer_engine_c.h"
+
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "cuda.h"
-#include "cuda_runtime.h"
-
-#include "transfer_engine_c.h"
 
 #define WRITE 1
 #define READ 0
@@ -15,7 +15,7 @@ int main(void)
     char *metadata = "etcd_server:2379";
     char *server_name = "optane10";
     transfer_engine_t *engine = createTransferEngine(metadata);
-    void** args = (void**)malloc(sizeof(void*));
+    void **args = (void **)malloc(sizeof(void *));
     // args[0] = malloc(16);
     args[0] = "/mnt/nvme0n1/dsf/gds.txt";
     // strcpy(args[0], "matrix");
@@ -37,7 +37,7 @@ int main(void)
 
     // memset(buf, 1, 1024 * batch_size);
     registerLocalMemory(engine, buf, length, "", 0);
- 
+
     struct transfer_request rdma_transfers[batch_size], nvmeof_transfers[batch_size];
     for (int i = 0; i < batch_size; i++)
     {

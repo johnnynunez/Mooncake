@@ -20,3 +20,6 @@ endif()
   
 # add_executable(gpu_test_client gpu_test.cpp)
 # target_link_libraries(gpu_test_client PUBLIC transfer_engine)
+
+add_executable(tcp_transport_test tcp_transport_test.cpp)
+target_link_libraries(tcp_transport_test PUBLIC transfer_engine)

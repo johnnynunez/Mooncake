@@ -12,9 +12,11 @@
 #include "allocation_strategy.h"
 #include "buffer_allocator.h"
 
-namespace mooncake {
+namespace mooncake
+{
 
-    class ReplicaAllocator {
+    class ReplicaAllocator
+    {
     public:
         ReplicaAllocator(size_t shard_size);
         ~ReplicaAllocator();
@@ -98,12 +100,11 @@ namespace mooncake {
             ReplicaStatus status,
             size_t index = -1,
             Version ver = -1);
-        
+
         // Gets the status of the replica for the given object key.
         std::vector<ReplicaStatus> getStatus(
             const ObjectKey &key,
-            Version ver = -1
-        );
+            Version ver = -1);
 
         // Checks if the given object key exists.
         bool ifExist(const ObjectKey &key);

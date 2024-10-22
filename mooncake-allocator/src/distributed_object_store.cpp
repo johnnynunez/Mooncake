@@ -497,15 +497,17 @@ namespace mooncake
         {
             handlePutCompletion(context, status);
             // 判断在status中是否有TransferStatusEnum::FAILED, 如果有一个则ERRNO为TRANSFER_FAIL 并返回
-            auto op_status =  std::make_pair<OperationStatus, ERRNO>(OperationStatus::COMPLETE,
-            std::any_of(status.begin(), status.end(),
-            [](TransferStatusEnum s) { return s == TransferStatusEnum::FAILED; }) ? 
-            ERRNO::TRANSFER_FAIL : ERRNO::OK);
+            auto op_status = std::make_pair<OperationStatus, ERRNO>(OperationStatus::COMPLETE,
+                                                                    std::any_of(status.begin(), status.end(),
+                                                                                [](TransferStatusEnum s)
+                                                                                { return s == TransferStatusEnum::FAILED; })
+                                                                        ? ERRNO::TRANSFER_FAIL
+                                                                        : ERRNO::OK);
             it->second->task_status = op_status;
             return op_status;
         }
         // 返回PENDING状态
-        auto op_status =  std::make_pair<OperationStatus, ERRNO>(OperationStatus::PENDING, ERRNO::OK);
+        auto op_status = std::make_pair<OperationStatus, ERRNO>(OperationStatus::PENDING, ERRNO::OK);
         it->second->task_status = op_status;
         return op_status;
     }
