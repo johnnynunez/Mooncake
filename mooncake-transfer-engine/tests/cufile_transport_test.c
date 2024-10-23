@@ -43,7 +43,7 @@ void *worker(void *args_)
     worker_args_t *args = (worker_args_t *)args_;
     transport_t xport = args->xport;
     segment_handle_t seg = args->seg;
-    int thread_id = args->thread_id;
+    // int thread_id = args->thread_id;
     void *addr = args->addr; // Per Thread Buffer, should be registered
     // uint64_t start_offset = thread_id * block_size * batch_size;
     // void* start_addr = addr + start_offset;

@@ -44,9 +44,11 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
 - `-DUSE_CXL=[ON|OFF]`：编译 Transfer Engine 时启用或关闭 CXL 协议的支持。默认关闭。
 - `-DWITH_P2P_STORE=[ON|OFF]`：编译 P2P Store 及示例程序，默认开启。
 - `-DWITH_ALLOCATOR=[ON|OFF]`：编译 Managed Store 所用的中心分配器模块，默认开启。
+- `-DWITH_WITH_RUST_EXAMPLE=[ON|OFF]`：编译 Transfer Engine 时启用或关闭 Rust 语言支持，默认关闭。
+
 
 ## Transfer Engine Bench 使用方法
-按照上面步骤编译 Transfer Engine 成功后，可在 `build/mooncake-transfer-engine/example` 目录下产生测试程序 `transfer_engine_bench`。该工具通过调用 Transfer Engine 接口，发起节点从目标节点的 DRAM 处反复读取/写入数据块，以展示 Transfer Engine 的基本用法，并可用于测量读写吞吐率。目前 Transfer Engine Bench 工具仅用于 RDMA 协议。
+按照上面步骤编译 Transfer Engine 成功后，可在 `build/mooncake-transfer-engine/example` 目录下产生测试程序 `transfer_engine_bench`。该工具通过调用 Transfer Engine 接口，发起节点从目标节点的 DRAM 处反复读取/写入数据块，以展示 Transfer Engine 的基本用法，并可用于测量读写吞吐率。目前 Transfer Engine Bench 工具可用于 RDMA 协议（GPUDirect 正在测试） 及 TCP 协议。
 
 1. **启动 `etcd` 服务。** 该服务用于 Mooncake 各类元数据的集中高可用管理，包括 Transfer Engine 的内部连接状态等。需确保发起节点和目标节点都能顺利通达该 etcd 服务，因此需要注意：
    - etcd 服务的监听 IP 不应为 127.0.0.1，需结合网络环境确定。在实验环境中，可使用 0.0.0.0。例如，可使用下列命令行启动合要求的服务：
@@ -70,8 +72,9 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
    - `--metadata_server` 为元数据服务器地址（etcd 服务的完整地址）。
    - `--local_server_name` 表示本机器地址，大多数情况下无需设置。如果不设置该选项，则该值等同于本机的主机名（即 `hostname(2)` ）。集群内的其它节点会使用此地址尝试与该节点进行带外通信，从而建立 RDMA 连接。
       > 注意：若带外通信失败则连接无法建立。因此，若有必要需修改集群所有节点的 `/etc/hosts` 文件，使得可以通过主机名定位到正确的节点。
-   - `--device_name` 表示传输过程使用的网卡名称。
+   - `--device_name` 表示传输过程使用的 RDMA 网卡名称。
       > 提示：高级用户还可通过 `--nic_priority_matrix` 传入网卡优先级矩阵 JSON 文件，详细参考 Transfer Engine 的开发者手册。
+   - 在仅支持 TCP 的网络环境中，可使用 `--protocol=tcp` 参数，此时不需要指定 `--device_name` 参数。
 
 1. **启动发起节点。**
     ```bash
@@ -91,8 +94,8 @@ Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
 
 
 ## P2P Store 使用与测试方法
-按照上面步骤编译 P2P Store 成功后，可在 `build/mooncake-p2p-store` 目录下产生测试程序 `p2p-store-example`。该工具演示了 P2P Store 的使用方法。
-该演示工具模拟了训练节点完成训练任务后，将模型数据迁移到大量推理节点的过程。
+按照上面步骤编译 P2P Store 成功后，可在 `build/mooncake-p2p-store` 目录下产生测试程序 `p2p-store-example`。该工具演示了 P2P Store 的使用方法，模拟了训练节点完成训练任务后，将模型数据迁移到大量推理节点的过程。目前仅支持 RDMA 协议。
+
 1. **启动 `etcd` 服务。** 这与 Transfer Engine Bench 所述的方法是一致的。
    
 2. **启动模拟训练节点。** 该节点将创建模拟模型文件，并向集群内公开。

@@ -15,12 +15,13 @@
 namespace mooncake
 {
     using tcpsocket = boost::asio::ip::tcp::socket;
+    const static size_t kDefaultBufferSize = 65536;
 
     struct SessionHeader 
     {
-        size_t size;
-        uintptr_t addr;
-        int opcode;
+        uint64_t size;
+        uint64_t addr;
+        uint8_t opcode;
     };
 
     struct Session : public std::enable_shared_from_this<Session>
@@ -38,9 +39,9 @@ namespace mooncake
         {
             session_mutex_.lock();
             local_buffer_ = (char *) buffer;
-            header_.addr = dest_addr;
-            header_.size = size;
-            header_.opcode = (int) opcode;
+            header_.addr = htole64(dest_addr);
+            header_.size = htole64(size);
+            header_.opcode = (uint8_t) opcode;
             total_transferred_bytes_ = 0;
             writeHeader();
         }
@@ -66,7 +67,7 @@ namespace mooncake
                         session_mutex_.unlock();
                         return;
                     }
-                    if (header_.opcode == (int) TransferRequest::WRITE)
+                    if (header_.opcode == (uint8_t) TransferRequest::WRITE)
                         writeBody();
                     else
                         readBody();
@@ -87,8 +88,8 @@ namespace mooncake
                         return;
                     }
                     
-                    local_buffer_ = (char *) header_.addr;
-                    if (header_.opcode == (int) TransferRequest::WRITE)
+                    local_buffer_ = (char *) (le64toh(header_.addr));
+                    if (header_.opcode == (uint8_t) TransferRequest::WRITE)
                         readBody();
                     else
                         writeBody();
@@ -98,10 +99,9 @@ namespace mooncake
         void writeBody()
         {
             auto self(shared_from_this());
-            uint32_t size = header_.size;
+            uint64_t size = le64toh(header_.size);
             char *addr = local_buffer_;
 
-            const size_t kDefaultBufferSize = 65536;
             size_t buffer_size = std::min(kDefaultBufferSize, size - total_transferred_bytes_);
             if (buffer_size == 0) 
             {
@@ -129,10 +129,9 @@ namespace mooncake
         void readBody()
         {
             auto self(shared_from_this());
-            uint32_t size = header_.size;
+            uint64_t size = le64toh(header_.size);
             char *addr = local_buffer_;
 
-            const size_t kDefaultBufferSize = 65536;
             size_t buffer_size = std::min(kDefaultBufferSize, size - total_transferred_bytes_);
             if (buffer_size == 0) 
             {
