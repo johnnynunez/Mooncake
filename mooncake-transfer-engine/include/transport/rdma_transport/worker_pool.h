@@ -18,7 +18,7 @@ namespace mooncake
 
         ~WorkerPool();
 
-        // 由 Transport 调用，向队列添加 Slice
+        // Add slices to queue, called by Transport
         int submitPostSend(const std::vector<Transport::Slice *> &slice_list);
 
     private:

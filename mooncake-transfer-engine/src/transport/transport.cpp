@@ -8,7 +8,7 @@ namespace mooncake
     {
         auto batch_desc = new BatchDesc();
         if (!batch_desc)
-            return -1;
+            return ERR_MEMORY;
         batch_desc->id = BatchID(batch_desc);
         batch_desc->batch_size = batch_size;
         batch_desc->task_list.reserve(batch_size);
@@ -30,7 +30,7 @@ namespace mooncake
             if (!batch_desc.task_list[task_id].is_finished)
             {
                 LOG(ERROR) << "BatchID cannot be freed until all tasks are done";
-                return -1;
+                return ERR_BATCH_BUSY;
             }
         }
         delete &batch_desc;

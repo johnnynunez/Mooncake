@@ -1,10 +1,10 @@
 // transfer_metadata.cpp
 // Copyright (C) 2024 Feng Ren
 
-#include "transfer_metadata.h"
 #include "common.h"
 #include "config.h"
 #include "error.h"
+#include "transfer_metadata.h"
 
 #include <arpa/inet.h>
 #include <bits/stdint-uintn.h>
@@ -16,7 +16,6 @@
 
 namespace mooncake
 {
-
     const static std::string ServerDescPrefix = "mooncake/ram/";
     const static std::string ServerDescPrefixForNvmeOF = "mooncake/nvmeof/";
 
@@ -172,7 +171,8 @@ namespace mooncake
         }
         else
         {
-            assert(0 && "For NVMeoF, the transfer engine should not modify the metadata");
+            LOG(FATAL) << "For NVMeoF, the transfer engine should not modify the metadata";
+            return ERR_METADATA;
         }
 
         if (!impl_->set(ServerDescPrefix + server_name, serverJSON))
@@ -305,14 +305,6 @@ namespace mooncake
                 desc->nvmeof_buffers.push_back(buffer);
             }
         }
-        // LOG(INFO) << "name " << desc->name << " protocol " << desc->protocol;
-        // LOG(INFO) << "devices " << desc->devices.size() << " buffers " << desc->buffers.size();
-        // for (const auto& nvmebuf : desc->nvmeof_buffers) {
-        //     LOG(INFO) << "file_path " << nvmebuf.file_path << " length " << nvmebuf.length;
-        //     for (const auto& entry : nvmebuf.local_path_map) {
-        //         LOG(INFO) << "local_path_map " << entry.first << " " << entry.second;
-        //     }
-        // }
         return desc;
     }
 
@@ -392,7 +384,7 @@ namespace mooncake
         if (!server_desc)
             return -1;
         SegmentID id = next_segment_id_.fetch_add(1);
-        LOG(INFO) << "put " << id;
+        // LOG(INFO) << "put " << id;
         segment_id_to_desc_map_[id] = server_desc;
         segment_name_to_id_map_[segment_name] = id;
         return id;
@@ -520,6 +512,7 @@ namespace mooncake
             if (inet_ntop(addr->sa_family, &(sock_addr->sin6_addr), ip, INET6_ADDRSTRLEN) != NULL)
                 return ip;
         }
+        LOG(ERROR) << "Invalid address, cannot convert to string";
         return "<unknown>";
     }
 

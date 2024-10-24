@@ -352,3 +352,23 @@ TransferEngine 的 Go 封装见 `mooncake-p2p-store/src/p2pstore/transfer_engine
 ### 参考实现：Transfer Engine Rust
 
 在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 cargo 等依赖，并在 cmake 命令中添加 -DWITH_RUST_EXAMPLE=ON 。
+
+## 高级运行时选项
+对于高级用户，TransferEngine 提供了如下所示的高级运行时选项，均可通过 **环境变量（environment variable）** 方式传入。
+
+- `MC_NUM_CQ_PER_CTX` 每个设备实例创建的 CQ 数量，默认值 1
+- `MC_NUM_COMP_CHANNELS_PER_CTX` 每个设备实例创建的 Completion Channel 数量，默认值 1
+- `MC_IB_PORT` 每个设备实例使用的 IB 端口号，默认值 1
+- `MC_GID_INDEX` 每个设备实例使用的 GID 序号，默认值 3（对于 IB/RoCEv2 这是有效值）
+- `MC_MAX_CQE_PER_CTX` 每个设备实例中 CQ 缓冲区大小，默认值 4096
+- `MC_MAX_EP_PER_CTX` 每个设备实例中活跃 EndPoint 数量上限，默认值 256
+- `MC_NUM_QP_PER_EP` 每个 EndPoint 中 QP 数量，数量越多则细粒度 I/O 性能越好，默认值 2
+- `MC_MAX_SGE` 每个 QP 最大可支持的 SGE 数量，默认值 4（或平台支持的最高值）
+- `MC_MAX_WR` 每个 QP 最大可支持的 Work Request 数量，默认值 256（或平台支持的最高值）
+- `MC_MAX_INLINE` 每个 QP 最大可支持的 Inline 写数据量（字节），默认值 64（或平台支持的最高值）
+- `MC_MTU` 每个设备实例使用的 MTU 长度，可为 512、1024、2048、4096，默认值 4096（或平台支持的最大长度）
+- `MC_WORKERS_PER_CTX` 每个设备实例对应的异步工作线程数量
+- `MC_SLICE_SIZE` Transfer Engine 中用户请求的切分粒度
+- `MC_RETRY_CNT` Transfer Engine 中最大重试次数
+- `MC_VERBOSE` 若设置此选项，则在运行时会输出更详细的日志
+

@@ -10,21 +10,19 @@
 
 namespace mooncake
 {
-    // RdmaEndPoint 表示本地 NIC1 (由所属的 RdmaContext 确定) 与远端 NIC2 (由 peer_nic_path 确定) 之间的所有 QP 连接
-    // 构造完毕后（RdmaEndPoint::RdmaEndPoint() 和 RdmaEndPoint::construct()），相应资源被分配，但不指定对端
+
+    // RdmaEndPoint represents all QP connections between the local NIC1 (identified by its RdmaContext) 
+    // and the remote NIC2 (identified by peer_nic_path).
+    // 1. After ctor, resources are allocated without specifying the peers.
+    // 2. Handshake information needs to be exchanged with remote RdmaEndPoint.
+    //    - Local side calls the setupConnectionsByActive() function, passing in the peer_nic_path of the remote side
+    //      peer_nic_path := peer_server_name@nic_name, e.g. optane20@mlx5_3, 
+    //      which can be obtained from RdmaContext::nicPath() on the remote side
+    //    - Remote side calls the setupConnectionsByPassive() function in its RPC service.
+    //   After above steps, the RdmaEndPoint state is set to CONNECTED
     //
-    // 随后需要与对手方交换 Handshake 信息，RdmaEndPoint 才能正确发送工作请求。
-    //
-    // 主动发起握手的一方，调用 setupConnectionsByActive 函数，传入对端的 peer_nic_path
-    // peer_nic_path := peer_server_name@nic_name，如 optane20@mlx5_3，可由对端 RdmaContext::nicPath() 取得
-    //
-    // 被动触发握手的一方，由 TransferMetadata 监听线程调用 setupConnectionsByPassive 函数。对端的 peer_nic_path
-    // 位于 peer_desc.local_nic_path 内
-    //
-    // 完成上述操作后，RdmaEndPoint 状态被设置为 CONNECTED
-    //
-    // 用户主动调用 disconnect() 或内部检测到错误时，连接作废，RdmaEndPoint 状态被设置为 UNCONNECTED
-    // 此时可以重新触发握手流程
+    // If the user initiates a disconnect() call or an error is detected internally, the connection is closed and
+    // the RdmaEndPoint state is set to UNCONNECTED. The handshake can be restarted at this point.
     class RdmaEndPoint
     {
     public:
@@ -40,7 +38,6 @@ namespace mooncake
 
         ~RdmaEndPoint();
 
-        // 进一步构造 ibv_qp * 等内部对象，需要在调用 RdmaEndPoint::RdmaEndPoint() 构造函数后调用其一次
         int construct(ibv_cq *cq,
                       size_t num_qp_list = 2,
                       size_t max_sge = 4,
@@ -48,7 +45,6 @@ namespace mooncake
                       size_t max_inline = 64);
 
     private:
-        // 被 RdmaEndPoint::~RdmaEndPoint() 自动调用
         int deconstruct();
 
     public:
@@ -72,21 +68,16 @@ namespace mooncake
         void set_active(bool flag) { active_ = flag; }
 
     public:
-        // 连接状态管理
-
-        // 连接建立返回 true，否则返回 false
         bool connected() const
         {
             return status_.load(std::memory_order_relaxed) == CONNECTED;
         }
 
-        // 中断连接，可由用户触发或者内部检错逻辑调用，在途的传输将会被中断
-        // 调用此函数后，可再次调用 setupConnections 系列函数恢复连接
-        // 下一次可以连接到不同的远端 NIC（本地 NIC 固定）
+        // Interrupts the connection, which can be triggered by user or by internal error.
+        // Use setupConnectionsByActive or setupConnectionsByPassive to reconnect
         void disconnect();
 
-        // 只有 QP 被 destroy 之后，与之关联的 CQ 才能被 destroy
-        // 在 RdmaContext 的析构函数 destroy CQ 之前需要先手动调用该函数 destroy 掉 QP
+        // Destroy QPs before CQs (in RDMA Context)
         int destroyQP();
 
     private:
@@ -96,7 +87,9 @@ namespace mooncake
         const std::string toString() const;
 
     public:
-        // 提交并执行其中的部分工作请求，已提交的任务会从 slice_list 中删除，提交失败的任务会加入 failed_slice_list。
+        // Submit some work requests to HW
+        // Submitted tasks (success/failed) are removed in slice_list 
+        // Failed tasks (which must be submitted) are inserted in failed_slice_list
         int submitPostSend(std::vector<Transport::Slice *> &slice_list,
                            std::vector<Transport::Slice *> &failed_slice_list);
 

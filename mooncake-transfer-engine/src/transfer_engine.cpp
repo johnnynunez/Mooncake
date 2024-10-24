@@ -12,7 +12,7 @@ namespace mooncake
     int TransferEngine::init(const char *server_name, const char *connectable_name, uint64_t rpc_port)
     {
         local_server_name_ = server_name;
-        // TODO: write to meta server
+        // N.B. Metadata has initialized during ctor
         return 0;
     }
 
@@ -20,10 +20,9 @@ namespace mooncake
     {
         while (!installed_transports_.empty())
         {
-            if (uninstallTransport(installed_transports_.back()->getName()) < 0)
-            {
-                return -1;
-            }
+            auto proto = installed_transports_.back()->getName();
+            if (uninstallTransport(proto) < 0)
+                LOG(ERROR) << "Failed to uninstall transport " << proto;
         }
         return 0;
     }
@@ -33,23 +32,20 @@ namespace mooncake
         Transport *xport = initTransport(proto);
         if (!xport)
         {
-            errno = ENOMEM;
-            return NULL;
+            LOG(ERROR) << "Failed to initialize transport " << proto;
+            return nullptr;
         }
 
         if (xport->install(local_server_name_, metadata_, args) < 0)
-        {
             goto fail;
-        }
+
         installed_transports_.emplace_back(xport);
         for (const auto &mem : local_memory_regions_)
-        {
             if (xport->registerLocalMemory(mem.addr, mem.length, mem.location, mem.remote_accessible) < 0)
-            {
                 goto fail;
-            }
-        }
+
         return xport;
+
     fail:
         delete xport;
         return NULL;
@@ -66,13 +62,11 @@ namespace mooncake
                 return 0;
             }
         }
-        errno = EINVAL;
-        return -1;
+        return ERR_INVALID_ARGUMENT;
     }
 
     Transport::SegmentHandle TransferEngine::openSegment(const char *segment_name)
     {
-// return metadata_->getSegmentDesc(segment_name);
 #ifdef USE_LOCAL_DESC
         return 0;
 #else
@@ -93,15 +87,14 @@ namespace mooncake
             if (overlap(addr, length, local_memory_region.addr, local_memory_region.length))
             {
                 LOG(ERROR) << "Memory region overlap";
-                return -1;
+                return ERR_ADDRESS_OVERLAPPED;
             }
         }
         for (auto &xport : installed_transports_)
         {
-            if (xport->registerLocalMemory(addr, length, location, remote_accessible, update_metadata) < 0)
-            {
-                return -1;
-            }
+            int ret = xport->registerLocalMemory(addr, length, location, remote_accessible, update_metadata);
+            if (ret < 0)
+                return ret;
         }
         local_memory_regions_.push_back({addr, length, location.c_str(), remote_accessible});
         return 0;
@@ -116,9 +109,7 @@ namespace mooncake
                 for (auto &xport : installed_transports_)
                 {
                     if (xport->unregisterLocalMemory(addr, update_metadata) < 0)
-                    {
-                        return -1;
-                    }
+                        return ERR_MEMORY;
                 }
                 local_memory_regions_.erase(it);
                 break;
@@ -131,10 +122,9 @@ namespace mooncake
     {
         for (auto &xport : installed_transports_)
         {
-            if (xport->registerLocalMemoryBatch(buffer_list, location) < 0)
-            {
-                return -1;
-            }
+            int ret = xport->registerLocalMemoryBatch(buffer_list, location);
+            if (ret < 0)
+                return ret;
         }
         return 0;
     }
@@ -143,10 +133,9 @@ namespace mooncake
     {
         for (auto &xport : installed_transports_)
         {
-            if (xport->unregisterLocalMemoryBatch(addr_list) < 0)
-            {
-                return -1;
-            }
+            int ret = xport->unregisterLocalMemoryBatch(addr_list);
+            if (ret < 0)
+                return ret;
         }
         return 0;
     }
@@ -156,11 +145,9 @@ namespace mooncake
         for (const auto &xport : installed_transports_)
         {
             if (strncmp(xport->getName(), name, n) == 0)
-            {
                 return xport;
-            }
         }
-        return NULL;
+        return nullptr;
     }
 
     Transport *TransferEngine::initTransport(const char *proto)

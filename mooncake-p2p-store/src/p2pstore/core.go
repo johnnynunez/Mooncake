@@ -6,12 +6,13 @@ import (
 	"sync"
 )
 
-// 当用户传入 Payload 粒度大于 MAX_CHUNK_SIZE 字节时，可在内部自动拆分成 Buffer 并行注册，从而提高内存注册操作效率
-// 警告：内存注册操作是慢速操作
-// MAX_CHUNK_SIZE 参数必须是 2 的整数幂，接口参数 maxShardSize 也必须是 2 的整数幂，并可整除 MAX_CHUNK_SIZE
-// 即 MAX_CHUNK_SIZE % maxShardSize == 0
+// When the data size larger than MAX_CHUNK_SIZE bytes, we split them into multiple buffers and registered seperately.
+// Warning: Memory registration is a SLOW operation.
+// MAX_CHUNK_SIZE must be an integer power of 2.
+// maxShardSize must be an integer power of 2, divisible by MAX_CHUNK_SIZE.
+// i.e. MAX_CHUNK_SIZE % maxShardSize == 0
 const MAX_CHUNK_SIZE uint64 = 4096 * 1024 * 1024
-const METADATA_KEY_PREFIX string = "moonshot/checkpoint/"
+const METADATA_KEY_PREFIX string = "mooncake/checkpoint/"
 
 type P2PStore struct {
 	metadataUri      string
@@ -173,10 +174,10 @@ func (store *P2PStore) Unregister(ctx context.Context, name string) error {
 }
 
 type PayloadInfo struct {
-	Name         string   // Checkpoint 文件的完整名称
-	MaxShardSize uint64   // Register 传入的 maxShardSize
-	TotalSize    uint64   // Register 传入的 sizeList 累加起来的总长度
-	SizeList     []uint64 // Register 传入的 sizeList
+	Name         string   // Full name of checkpoint file
+	MaxShardSize uint64   // 
+	TotalSize    uint64   // 
+	SizeList     []uint64 // 
 }
 
 func (store *P2PStore) List(ctx context.Context, namePrefix string) ([]PayloadInfo, error) {
@@ -197,7 +198,7 @@ func (store *P2PStore) List(ctx context.Context, namePrefix string) ([]PayloadIn
 	return result, nil
 }
 
-// 该接口不允许对相同的 name 调用两次，如果第二次调用会报告 ErrInvalidArgument 错误。
+// Get replica for same name multiple times in one P2P store will return ErrPayloadOpened
 func (store *P2PStore) GetReplica(ctx context.Context, name string, addrList []uintptr, sizeList []uint64) error {
 	if len(addrList) != len(sizeList) || len(addrList) == 0 {
 		return ErrInvalidArgument
