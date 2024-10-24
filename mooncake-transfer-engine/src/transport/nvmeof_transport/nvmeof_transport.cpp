@@ -74,10 +74,7 @@ namespace mooncake
         assert(slice_num == 1);
 #endif
 
-        // LOG(INFO) << "cufile events buf nr " << nvmeof_desc.cufile_events_buf.size();
-        // for (int i = 0; i < nvmeof_desc.cufile_events_buf.size(); ++i) {
-        //     LOG(INFO) << i << " status " << nvmeof_desc.cufile_events_buf[i].status <<  " ret " << nvmeof_desc.cufile_events_buf[i].ret;
-        // }
+        auto [slice_id, slice_num] = nvmeof_desc.task_to_slices[task_id];
         for (size_t i = slice_id; i < slice_id + slice_num; ++i)
         {
             // LOG(INFO) << "task " << task_id << " i " << i << " upper bound " << slice_num;

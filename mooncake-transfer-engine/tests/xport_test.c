@@ -39,7 +39,7 @@ int main(void)
     registerLocalMemory(engine, buf, length, "", 0);
 
     struct transfer_request rdma_transfers[batch_size], nvmeof_transfers[batch_size];
-    for (int i = 0; i < batch_size; i++)
+    for (size_t i = 0; i < batch_size; i++)
     {
         rdma_transfers[i] = (struct transfer_request){
             .opcode = WRITE,
@@ -59,7 +59,7 @@ int main(void)
     submitTransfer(rdma_xport, rdma_batch, rdma_transfers, batch_size);
     submitTransfer(nvmeof_xport, nvmeof_batch, nvmeof_transfers, batch_size);
 
-    for (int i = 0; i < batch_size; i++)
+    for (size_t i = 0; i < batch_size; i++)
     {
         struct transfer_status status;
         int ret;
@@ -72,7 +72,7 @@ int main(void)
         {
             // busy waiting for rdma
         };
-        printf("transfer %d: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
+        printf("transfer %ld: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
     }
 
     unregisterLocalMemory(engine, buf);

@@ -4,6 +4,9 @@ target_link_libraries(transfer_engine_bench PUBLIC transfer_engine)
 add_executable(memory_pool memory_pool.cpp)
 target_link_libraries(memory_pool PUBLIC transfer_engine)
 
+add_executable(vllm_integration vllm_integration.cpp)
+target_link_libraries(vllm_integration PUBLIC transfer_engine)
+
 if (WITH_RUST_EXAMPLE)
   add_subdirectory(rust-example)
 endif()
