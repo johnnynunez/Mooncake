@@ -10,8 +10,7 @@
 #include "transport/rdma_transport/rdma_transport.h"
 #include "transport/rdma_transport/worker_pool.h"
 
-// 为了进一步刷性能可开启下面两个选项实现 Per-thread 的 SegmentDesc 和 EndPoint 缓存
-//
+// Experimental: Per-thread SegmentDesc & EndPoint Caches
 // #define CONFIG_CACHE_SEGMENT_DESC
 // #define CONFIG_CACHE_ENDPOINT
 

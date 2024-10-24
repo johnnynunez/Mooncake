@@ -17,7 +17,6 @@
 #include <unordered_map>
 
 #include "common.h"
-// #include "transfer_engine.h"
 #include "rdma_transport.h"
 #include "transport/transport.h"
 
@@ -29,7 +28,8 @@ namespace mooncake
     class WorkerPool;
     class EndpointStore;
 
-    // RdmaContext 表示本地每个 NIC 所掌控的资源集合，具体包括 Memory Region、CQ、EndPoint（实质是 QP）等
+    // RdmaContext represents the set of resources controlled by each local NIC,
+    // including Memory Region, CQ, EndPoint (QPs), etc.
     class RdmaContext
     {
     public:
@@ -48,7 +48,7 @@ namespace mooncake
         int deconstruct();
 
     public:
-        // Memory Region 管理，负责维护当前 Context 下的 memory_region_list_ 列表
+        // Memory Region Management
         int registerMemoryRegion(void *addr, size_t length, int access);
 
         int unregisterMemoryRegion(void *addr);
@@ -57,25 +57,25 @@ namespace mooncake
 
         uint32_t lkey(void *addr);
 
+    public:
         bool active() const { return active_; }
 
         void set_active(bool flag) { active_ = flag; }
 
     public:
-        // EndPoint 管理
+        // EndPoint Management
         std::shared_ptr<RdmaEndPoint> endpoint(const std::string &peer_nic_path);
 
         int deleteEndpoint(const std::string &peer_nic_path);
 
     public:
-        // 显示设备名称，如：mlx5_3
+        // Device name, such as `mlx5_3`
         std::string deviceName() const { return device_name_; }
 
-        // 显示 NIC Path，如：optane20@mlx5_3
+        // NIC Path, such as `optane20@mlx5_3`
         std::string nicPath() const;
 
     public:
-        // 关键参数的 Getter
         uint16_t lid() const { return lid_; }
 
         std::string gid() const;

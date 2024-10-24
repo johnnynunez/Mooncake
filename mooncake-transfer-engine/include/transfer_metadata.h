@@ -21,44 +21,6 @@
 
 namespace mooncake
 {
-
-    // 在 TransferEngine 运行期间需要元数据服务器或外部存储系统维护集群内各节点的可用性及 RDMA
-    // 参数等， 相关逻辑由被此类抽象，便于与既有系统的集成。 当前基于 memcached/etcd 实现。
-
-    /*
-        ETCD/MEMCACHED 存放的 Segment 元数据信息
-
-        key = mooncake/[server_name]
-        value = {
-            'name': 'optane20'
-            'devices': [
-                { 'name': 'mlx5_2', 'lid': 17, 'gid': 'fe:00:...' },
-                { 'name': 'mlx5_3', 'lid': 22, 'gid': 'fe:00:...' }
-            ],
-            'priority_matrix': {
-                "cpu:0": [["mlx5_2"], ["mlx5_3"]],
-                "cpu:1": [["mlx5_3"], ["mlx5_2"]],
-                "cuda:0": [["mlx5_2"], ["mlx5_3"]],
-            },
-            'buffers': [
-                {
-                    'name': 'cpu:0',
-                    'addr': 0x7fa16bdf5000,
-                    'length': 1073741824,
-                    'rkey': [1fe000, 1fdf00, ...],
-                },
-            ],
-        }
-
-        节点之间两两互传的 QP_NUM 信息
-
-        value = {
-            'local_nic_path': 'optane20@mlx5_2',
-            'peer_nic_path': 'optane21@mlx5_2',
-            'qp_num': [xxx, yyy]
-        }
-    */
-
     const static uint16_t kDefaultServerPort = 12001;
 
     struct TransferMetadataImpl;
@@ -100,7 +62,6 @@ namespace mooncake
         using PriorityMatrix = std::unordered_map<std::string, PriorityItem>;
         using SegmentID = uint64_t;
 
-        // const static SegmentID LOCAL_SEGMENT_ID = 0;  // TO modify
         struct SegmentDesc
         {
             std::string name;
