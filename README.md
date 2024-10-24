@@ -1,6 +1,6 @@
 # Mooncake
 
-Mooncake 是面向长上下文大语言模型（LLM）的推理加速系统，与推理系统的其他模块保持松耦合。它采用以 KVCache 为中心的分离架构，不仅分离了预填充（prefill）和解码（decoding）集群，还实现集群中 CPU、GPU、DRAM、SSD 和 NIC 资源的充分利用。在长上下文场景中，Mooncake 能有效提高请求容量并符合 SLO 要求。目前 Mooncake 已在 Moonshot Kimi 中实际运行，每天可处理高达 100B 个 tokens，在 NVIDIA A800 和 H800 集群上处理请求效率分别比以前的系统高出 115% 和 107%。
+Mooncake 是面向长上下文大语言模型（LLM）的推理加速系统，与推理系统的其他模块保持松耦合。它采用以 KVCache 为中心的分离架构，不仅分离了预填充（prefill）和解码（decoding）集群，还实现集群中 CPU、GPU、DRAM、SSD 和 NIC 资源的充分利用。在长上下文场景中，Mooncake 能有效提高请求容量并符合 SLO 要求。目前 Mooncake 已在 Moonshot Kimi 中实际运行，在 NVIDIA A800 和 H800 集群上处理请求效率分别比以前的系统高出 115% 和 107%。
 
 要了解有关 Mooncake 的更多信息，请参阅我们的论文 [arXiv 2407.00079](https://arxiv.org/abs/2407.00079)。
 
