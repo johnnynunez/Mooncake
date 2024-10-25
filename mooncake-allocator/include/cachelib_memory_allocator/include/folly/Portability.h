@@ -16,10 +16,10 @@
 
 #pragma once
 
-#include <cstddef>
-
 #include <folly/CPortability.h>
 #include <folly/portability/Config.h>
+
+#include <cstddef>
 
 #if defined(_MSC_VER)
 #define FOLLY_CPLUSPLUS _MSVC_LANG
@@ -44,7 +44,7 @@ constexpr bool kHasUnalignedAccess = true;
 #else
 constexpr bool kHasUnalignedAccess = false;
 #endif
-} // namespace folly
+}  // namespace folly
 
 // compiler specific attribute translation
 // msvc should come first, so if clang is in msvc mode it gets the right defines
@@ -56,13 +56,13 @@ constexpr bool kHasUnalignedAccess = false;
 #endif
 /* nolint */
 #define _USE_ATTRIBUTES_FOR_SAL 1
-#include <sal.h> // @manual
+#include <sal.h>  // @manual
 #define FOLLY_PRINTF_FORMAT _Printf_format_string_
 #define FOLLY_PRINTF_FORMAT_ATTR(format_param, dots_param) /**/
 #else
 #define FOLLY_PRINTF_FORMAT /**/
 #define FOLLY_PRINTF_FORMAT_ATTR(format_param, dots_param) \
-  __attribute__((__format__(__printf__, format_param, dots_param)))
+    __attribute__((__format__(__printf__, format_param, dots_param)))
 #endif
 
 // warn unused result
@@ -125,7 +125,7 @@ constexpr bool kIsArchAmd64 = FOLLY_X64 == 1;
 constexpr bool kIsArchAArch64 = FOLLY_AARCH64 == 1;
 constexpr bool kIsArchPPC64 = FOLLY_PPC64 == 1;
 constexpr bool kIsArchS390X = FOLLY_S390X == 1;
-} // namespace folly
+}  // namespace folly
 
 namespace folly {
 
@@ -164,7 +164,7 @@ constexpr bool kIsSanitize = true;
 #else
 constexpr bool kIsSanitize = false;
 #endif
-} // namespace folly
+}  // namespace folly
 
 // packing is very ugly in msvc
 #ifdef _MSC_VER
@@ -174,11 +174,11 @@ constexpr bool kIsSanitize = false;
 #elif defined(__GNUC__)
 #define FOLLY_PACK_ATTR __attribute__((__packed__))
 #define FOLLY_PACK_PUSH /**/
-#define FOLLY_PACK_POP /**/
+#define FOLLY_PACK_POP  /**/
 #else
 #define FOLLY_PACK_ATTR /**/
 #define FOLLY_PACK_PUSH /**/
-#define FOLLY_PACK_POP /**/
+#define FOLLY_PACK_POP  /**/
 #endif
 
 // It turns out that GNU libstdc++ and LLVM libc++ differ on how they implement
@@ -196,7 +196,7 @@ constexpr bool kIsSanitize = false;
 // some types, e.g. std::list.
 #if defined(_GLIBCXX_USE_CXX11_ABI) && _GLIBCXX_USE_CXX11_ABI
 #define FOLLY_GLIBCXX_NAMESPACE_CXX11_BEGIN \
-  inline _GLIBCXX_BEGIN_NAMESPACE_CXX11
+    inline _GLIBCXX_BEGIN_NAMESPACE_CXX11
 #define FOLLY_GLIBCXX_NAMESPACE_CXX11_END _GLIBCXX_END_NAMESPACE_CXX11
 #else
 #define FOLLY_GLIBCXX_NAMESPACE_CXX11_BEGIN
@@ -216,7 +216,7 @@ constexpr bool kIsSanitize = false;
 #ifndef __clang__
 #if !defined(_M_ARM) && !defined(_M_ARM64)
 #define __SSE4_2__ 1
-#endif // !defined(_M_ARM) && !defined(_M_ARM64)
+#endif  // !defined(_M_ARM) && !defined(_M_ARM64)
 
 // Hide a GCC specific thing that breaks MSVC if left alone.
 #define __extension__
@@ -235,17 +235,17 @@ constexpr bool kIsSanitize = false;
 #elif __GNUC__
 #if defined(__EXCEPTIONS) && __EXCEPTIONS
 #define FOLLY_HAS_EXCEPTIONS 1
-#else // __EXCEPTIONS
+#else  // __EXCEPTIONS
 #define FOLLY_HAS_EXCEPTIONS 0
-#endif // __EXCEPTIONS
+#endif  // __EXCEPTIONS
 #elif FOLLY_MICROSOFT_ABI_VER
 #if _CPPUNWIND
 #define FOLLY_HAS_EXCEPTIONS 1
-#else // _CPPUNWIND
+#else  // _CPPUNWIND
 #define FOLLY_HAS_EXCEPTIONS 0
-#endif // _CPPUNWIND
+#endif  // _CPPUNWIND
 #else
-#define FOLLY_HAS_EXCEPTIONS 1 // default assumption for unknown platforms
+#define FOLLY_HAS_EXCEPTIONS 1  // default assumption for unknown platforms
 #endif
 
 // Debug
@@ -255,7 +255,7 @@ constexpr auto kIsDebug = false;
 #else
 constexpr auto kIsDebug = true;
 #endif
-} // namespace folly
+}  // namespace folly
 
 // Exceptions
 namespace folly {
@@ -264,7 +264,7 @@ constexpr auto kHasExceptions = true;
 #else
 constexpr auto kHasExceptions = false;
 #endif
-} // namespace folly
+}  // namespace folly
 
 // Endianness
 namespace folly {
@@ -279,7 +279,7 @@ constexpr auto kIsLittleEndian = true;
 constexpr auto kIsLittleEndian = __BYTE_ORDER__ == __ORDER_LITTLE_ENDIAN__;
 #endif
 constexpr auto kIsBigEndian = !kIsLittleEndian;
-} // namespace folly
+}  // namespace folly
 
 // Weak
 namespace folly {
@@ -288,7 +288,7 @@ constexpr auto kHasWeakSymbols = true;
 #else
 constexpr auto kHasWeakSymbols = false;
 #endif
-} // namespace folly
+}  // namespace folly
 
 #ifndef FOLLY_SSE
 #if defined(__SSE4_2__)
@@ -324,7 +324,7 @@ constexpr auto kHasWeakSymbols = false;
 #endif
 
 #define FOLLY_SSE_PREREQ(major, minor) \
-  (FOLLY_SSE > major || FOLLY_SSE == major && FOLLY_SSE_MINOR >= minor)
+    (FOLLY_SSE > major || FOLLY_SSE == major && FOLLY_SSE_MINOR >= minor)
 
 #ifndef FOLLY_NEON
 #if (defined(__ARM_NEON) || defined(__ARM_NEON__)) && !defined(__CUDACC__)
@@ -352,7 +352,7 @@ constexpr auto kHasWeakSymbols = false;
 
 namespace folly {
 constexpr bool const kHasRtti = FOLLY_HAS_RTTI;
-} // namespace folly
+}  // namespace folly
 
 #if defined(__APPLE__) || defined(_MSC_VER)
 #define FOLLY_STATIC_CTOR_PRIORITY_MAX
@@ -430,7 +430,7 @@ constexpr auto kIsGlibcxx = true;
 constexpr auto kIsGlibcxx = false;
 #endif
 
-#if defined(__GLIBCXX__) && _GLIBCXX_RELEASE // major version, 7+
+#if defined(__GLIBCXX__) && _GLIBCXX_RELEASE  // major version, 7+
 constexpr auto kGlibcxxVer = _GLIBCXX_RELEASE;
 #else
 constexpr auto kGlibcxxVer = 0;
@@ -487,7 +487,7 @@ constexpr auto kCpplibVer = _CPPLIB_VER;
 #else
 constexpr auto kCpplibVer = 0;
 #endif
-} // namespace folly
+}  // namespace folly
 
 //  MSVC does not permit:
 //
@@ -556,9 +556,8 @@ constexpr auto kCpplibVer = 0;
 // NOTE: MSVC 2017 does not currently support the full Coroutines TS since it
 // does not yet support symmetric-transfer.
 #define FOLLY_HAS_COROUTINES 0
-#elif (                                                                    \
-    (defined(__cpp_coroutines) && __cpp_coroutines >= 201703L) ||          \
-    (defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L)) && \
+#elif ((defined(__cpp_coroutines) && __cpp_coroutines >= 201703L) ||          \
+       (defined(__cpp_impl_coroutine) && __cpp_impl_coroutine >= 201902L)) && \
     (__has_include(<coroutine>) || __has_include(<experimental/coroutine>))
 #define FOLLY_HAS_COROUTINES 1
 // This is mainly to workaround bugs triggered by LTO, when stack allocated
@@ -569,8 +568,8 @@ constexpr auto kCpplibVer = 0;
 #endif
 #else
 #define FOLLY_HAS_COROUTINES 0
-#endif // FOLLY_CPLUSPLUS >= 201703L
-#endif // FOLLY_CFG_NO_COROUTINES
+#endif  // FOLLY_CPLUSPLUS >= 201703L
+#endif  // FOLLY_CFG_NO_COROUTINES
 
 // MSVC 2017.5 && C++17
 #if __cpp_noexcept_function_type >= 201510 || \

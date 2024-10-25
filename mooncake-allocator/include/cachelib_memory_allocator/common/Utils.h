@@ -24,10 +24,10 @@ namespace util {
 template <typename T>
 std::enable_if_t<std::is_arithmetic<T>::value, T> getAlignedSize(
     T size, uint32_t alignment) {
-  const T rem = size % alignment;
-  return rem == 0 ? size : size + alignment - rem;
+    const T rem = size % alignment;
+    return rem == 0 ? size : size + alignment - rem;
 }
 
-} // namespace util
-} // namespace cachelib
-} // namespace facebook
+}  // namespace util
+}  // namespace cachelib
+}  // namespace facebook
