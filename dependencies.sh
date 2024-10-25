@@ -22,14 +22,16 @@ mkdir ${REPO_ROOT}/thirdparties
 cd ${REPO_ROOT}/thirdparties
 git clone ${GITHUB_PROXY}/microsoft/cpprestsdk.git
 cd cpprestsdk
-mkdir build && cd build
+mkdir -p build
+cd build
 cmake .. -DCPPREST_EXCLUDE_WEBSOCKETS=ON
 make -j$(nproc) && sudo make install
 
 cd ${REPO_ROOT}/thirdparties
 git clone ${GITHUB_PROXY}/etcd-cpp-apiv3/etcd-cpp-apiv3.git
 cd etcd-cpp-apiv3
-mkdir build && cd build
+mkdir -p build
+cd build
 cmake ..
 make -j$(nproc) && sudo make install
 
