@@ -21,6 +21,7 @@ int VLLMAdaptor::initialize(const char *local_hostname,
                             const char *protocol,
                             const char *device_name)
 {
+    LOG(INFO) << "local_hostname: " << local_hostname;
     auto metadata_client = std::make_shared<TransferMetadata>(metadata_server);
     if (!metadata_client)
         return -1;
@@ -76,32 +77,33 @@ int VLLMAdaptor::initialize(const char *local_hostname,
     return 0;
 }
 
-void *VLLMAdaptor::allocateManagedBuffer(size_t length)
+uintptr_t VLLMAdaptor::allocateManagedBuffer(size_t length)
 {
     std::lock_guard<std::mutex> guard(mutex_);
     if (length > kMaxBufferSize)
     {
         void *buffer = malloc(length);
         if (!buffer)
-            return nullptr;
+            return 0;
         int ret = engine_->registerLocalMemory(managed_buffer_, length, "cpu:0");
         if (ret) 
         {
             free(buffer);
-            return nullptr;
+            return 0;
         }
         buffer_list_.insert(buffer);
-        return buffer;
+        return (uintptr_t) buffer;
     }
     if (!next_free_)
-        return nullptr;
+        return 0;
     auto buffer = next_free_;
     next_free_ = *(void **) next_free_;
-    return buffer;
+    return (uintptr_t) buffer;
 }
 
-int VLLMAdaptor::freeManagedBuffer(void *buffer, size_t length)
+int VLLMAdaptor::freeManagedBuffer(uintptr_t buffer_addr, size_t length)
 {
+    void *buffer = (void *)buffer_addr;
     std::lock_guard<std::mutex> guard(mutex_);
     if (length > kMaxBufferSize)
     {
@@ -118,8 +120,9 @@ int VLLMAdaptor::freeManagedBuffer(void *buffer, size_t length)
     return 0;
 }
 
-int VLLMAdaptor::transferSync(const char *target_hostname, void *buffer, uint64_t peer_buffer_address, size_t length)
+int VLLMAdaptor::transferSync(const char *target_hostname, uintptr_t buffer, uintptr_t peer_buffer_address, size_t length)
 {
+    LOG(INFO) << target_hostname << " " << buffer << " " << peer_buffer_address << " " << length;
     if ((uintptr_t) buffer < (uintptr_t) managed_buffer_ || (uintptr_t) buffer > (uintptr_t) managed_buffer_ + kBufferCount * kMaxBufferSize)
     {
         LOG(ERROR) << "buffer must be managed";
@@ -143,7 +146,7 @@ int VLLMAdaptor::transferSync(const char *target_hostname, void *buffer, uint64_
     TransferRequest entry;
     entry.opcode = TransferRequest::READ;
     entry.length = length;
-    entry.source = buffer;
+    entry.source = (void *) buffer;
     entry.target_id = handle;
     entry.target_offset = peer_buffer_address;
 

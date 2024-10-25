@@ -26,11 +26,11 @@ public:
                    const char *protocol,
                    const char *device_name);
 
-    void *allocateManagedBuffer(size_t length);
+    uintptr_t allocateManagedBuffer(size_t length);
 
-    int freeManagedBuffer(void *user_tensor, size_t length);
+    int freeManagedBuffer(uintptr_t user_tensor, size_t length);
 
-    int transferSync(const char *target_hostname, void *buffer, uint64_t peer_buffer_address, size_t length);
+    int transferSync(const char *target_hostname, uintptr_t buffer, uintptr_t peer_buffer_address, size_t length);
 
 private:
     std::shared_ptr<TransferEngine> engine_;
