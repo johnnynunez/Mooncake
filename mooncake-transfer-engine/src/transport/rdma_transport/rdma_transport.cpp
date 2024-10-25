@@ -330,11 +330,10 @@ int RdmaTransport::initializeRdmaResources() {
 }
 
 int RdmaTransport::startHandshakeDaemon(std::string &local_server_name) {
-    auto hostname_port = parseHostNameWithPort(local_server_name);
     return metadata_->startHandshakeDaemon(
         std::bind(&RdmaTransport::onSetupRdmaConnections, this,
                   std::placeholders::_1, std::placeholders::_2),
-        hostname_port.second);
+        metadata_->localRpcMeta().rpc_port);
 }
 
 int RdmaTransport::selectDevice(SegmentDesc *desc, uint64_t offset,

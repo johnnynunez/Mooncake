@@ -17,8 +17,17 @@
 #include "error.h"
 
 namespace mooncake {
-const static std::string ServerDescPrefix = "mooncake/ram/";
-const static std::string ServerDescPrefixForNvmeOF = "mooncake/nvmeof/";
+
+const static std::string kRpcMetaPrefix = "mooncake/rpc_meta/";
+// mooncake/segments/[...]
+static inline std::string getFullMetadataKey(const std::string &segment_name) {
+    const static std::string keyPrefix = "mooncake/";
+    auto pos = segment_name.find("/");
+    if (pos == segment_name.npos)
+        return keyPrefix + "ram/" + segment_name;
+    else
+        return keyPrefix + segment_name;
+}
 
 struct TransferMetadataImpl {
     TransferMetadataImpl(const std::string &metadata_uri)
@@ -39,7 +48,7 @@ struct TransferMetadataImpl {
         auto json_file = resp.value().as_string();
         if (!reader.parse(json_file, value)) return false;
         if (globalConfig().verbose)
-            LOG(INFO) << "Get ServerDesc, key=" << key
+            LOG(INFO) << "Get segment desc, key=" << key
                       << ", value=" << json_file;
         return true;
     }
@@ -48,7 +57,7 @@ struct TransferMetadataImpl {
         Json::FastWriter writer;
         const std::string json_file = writer.write(value);
         if (globalConfig().verbose)
-            LOG(INFO) << "Put ServerDesc, key=" << key
+            LOG(INFO) << "Put segment desc, key=" << key
                       << ", value=" << json_file;
         auto resp = client_.put(key, json_file);
         if (!resp.is_ok()) {
@@ -91,13 +100,13 @@ TransferMetadata::~TransferMetadata() {
     }
 }
 
-int TransferMetadata::updateSegmentDesc(const std::string &server_name,
+int TransferMetadata::updateSegmentDesc(const std::string &segment_name,
                                         const SegmentDesc &desc) {
-    Json::Value serverJSON;
-    serverJSON["name"] = desc.name;
-    serverJSON["protocol"] = desc.protocol;
+    Json::Value segmentJSON;
+    segmentJSON["name"] = desc.name;
+    segmentJSON["protocol"] = desc.protocol;
 
-    if (serverJSON["protocol"] == "rdma") {
+    if (segmentJSON["protocol"] == "rdma") {
         Json::Value devicesJSON(Json::arrayValue);
         for (const auto &device : desc.devices) {
             Json::Value deviceJSON;
@@ -106,7 +115,7 @@ int TransferMetadata::updateSegmentDesc(const std::string &server_name,
             deviceJSON["gid"] = device.gid;
             devicesJSON.append(deviceJSON);
         }
-        serverJSON["devices"] = devicesJSON;
+        segmentJSON["devices"] = devicesJSON;
 
         Json::Value buffersJSON(Json::arrayValue);
         for (const auto &buffer : desc.buffers) {
@@ -122,7 +131,7 @@ int TransferMetadata::updateSegmentDesc(const std::string &server_name,
             bufferJSON["lkey"] = lkeyJSON;
             buffersJSON.append(bufferJSON);
         }
-        serverJSON["buffers"] = buffersJSON;
+        segmentJSON["buffers"] = buffersJSON;
 
         Json::Value priorityMatrixJSON;
         for (auto &entry : desc.priority_matrix) {
@@ -137,8 +146,8 @@ int TransferMetadata::updateSegmentDesc(const std::string &server_name,
             priorityItemJSON.append(availableRnicListJSON);
             priorityMatrixJSON[entry.first] = priorityItemJSON;
         }
-        serverJSON["priority_matrix"] = priorityMatrixJSON;
-    } else if (serverJSON["protocol"] == "tcp") {
+        segmentJSON["priority_matrix"] = priorityMatrixJSON;
+    } else if (segmentJSON["protocol"] == "tcp") {
         Json::Value buffersJSON(Json::arrayValue);
         for (const auto &buffer : desc.buffers) {
             Json::Value bufferJSON;
@@ -147,34 +156,34 @@ int TransferMetadata::updateSegmentDesc(const std::string &server_name,
             bufferJSON["length"] = static_cast<Json::UInt64>(buffer.length);
             buffersJSON.append(bufferJSON);
         }
-        serverJSON["buffers"] = buffersJSON;
+        segmentJSON["buffers"] = buffersJSON;
     } else {
         LOG(FATAL)
             << "For NVMeoF, the transfer engine should not modify the metadata";
         return ERR_METADATA;
     }
 
-    if (!impl_->set(ServerDescPrefix + server_name, serverJSON)) {
-        LOG(ERROR) << "Failed to put description of " << server_name;
+    if (!impl_->set(getFullMetadataKey(segment_name), segmentJSON)) {
+        LOG(ERROR) << "Failed to put description of " << segment_name;
         return ERR_METADATA;
     }
 
     return 0;
 }
 
-int TransferMetadata::removeSegmentDesc(const std::string &server_name) {
-    if (!impl_->remove(ServerDescPrefix + server_name)) {
-        LOG(ERROR) << "Failed to remove description of " << server_name;
+int TransferMetadata::removeSegmentDesc(const std::string &segment_name) {
+    if (!impl_->remove(getFullMetadataKey(segment_name))) {
+        LOG(ERROR) << "Failed to remove description of " << segment_name;
         return ERR_METADATA;
     }
     return 0;
 }
 
 std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
-    const std::string &server_name) {
-    Json::Value serverJSON;
-    if (!impl_->get(ServerDescPrefix + server_name, serverJSON)) {
-        LOG(ERROR) << "Failed to get description of " << server_name;
+    const std::string &segment_name) {
+    Json::Value segmentJSON;
+    if (!impl_->get(getFullMetadataKey(segment_name), segmentJSON)) {
+        LOG(ERROR) << "Failed to get description of " << segment_name;
         return nullptr;
     }
 
@@ -183,11 +192,11 @@ std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
         LOG(ERROR) << "Failed to allocate SegmentDesc object";
         return nullptr;
     }
-    desc->name = serverJSON["name"].asString();
-    desc->protocol = serverJSON["protocol"].asString();
+    desc->name = segmentJSON["name"].asString();
+    desc->protocol = segmentJSON["protocol"].asString();
 
     if (desc->protocol == "rdma") {
-        for (const auto &deviceJSON : serverJSON["devices"]) {
+        for (const auto &deviceJSON : segmentJSON["devices"]) {
             DeviceDesc device;
             device.name = deviceJSON["name"].asString();
             device.lid = deviceJSON["lid"].asUInt();
@@ -195,7 +204,7 @@ std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
             desc->devices.push_back(device);
         }
 
-        for (const auto &bufferJSON : serverJSON["buffers"]) {
+        for (const auto &bufferJSON : segmentJSON["buffers"]) {
             BufferDesc buffer;
             buffer.name = bufferJSON["name"].asString();
             buffer.addr = bufferJSON["addr"].asUInt64();
@@ -207,7 +216,7 @@ std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
             desc->buffers.push_back(buffer);
         }
 
-        auto priorityMatrixJSON = serverJSON["priority_matrix"];
+        auto priorityMatrixJSON = segmentJSON["priority_matrix"];
         for (const auto &key : priorityMatrixJSON.getMemberNames()) {
             const Json::Value &value = priorityMatrixJSON[key];
             if (value.isArray() && value.size() == 2) {
@@ -242,7 +251,7 @@ std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
             }
         }
     } else if (desc->protocol == "tcp") {
-        for (const auto &bufferJSON : serverJSON["buffers"]) {
+        for (const auto &bufferJSON : segmentJSON["buffers"]) {
             BufferDesc buffer;
             buffer.name = bufferJSON["name"].asString();
             buffer.addr = bufferJSON["addr"].asUInt64();
@@ -250,7 +259,7 @@ std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
             desc->buffers.push_back(buffer);
         }
     } else if (desc->protocol == "nvmeof") {
-        for (const auto &bufferJSON : serverJSON["buffers"]) {
+        for (const auto &bufferJSON : segmentJSON["buffers"]) {
             NVMeoFBufferDesc buffer;
             buffer.file_path = bufferJSON["file_path"].asString();
             buffer.length = bufferJSON["length"].asUInt64();
@@ -268,8 +277,8 @@ int TransferMetadata::syncSegmentCache() {
     RWSpinlock::WriteGuard guard(segment_lock_);
     for (auto &entry : segment_id_to_desc_map_) {
         if (entry.first == LOCAL_SEGMENT_ID) continue;
-        auto server_desc = getSegmentDesc(entry.second->name);
-        if (server_desc) entry.second = server_desc;
+        auto segment_desc = getSegmentDesc(entry.second->name);
+        if (segment_desc) entry.second = segment_desc;
     }
     return 0;
 }
@@ -291,11 +300,11 @@ TransferMetadata::getSegmentDescByName(const std::string &segment_name,
         segment_id = iter->second;
     else
         segment_id = next_segment_id_.fetch_add(1);
-    auto server_desc = this->getSegmentDesc(segment_name);
-    if (!server_desc) return nullptr;
-    segment_id_to_desc_map_[segment_id] = server_desc;
+    auto segment_desc = this->getSegmentDesc(segment_name);
+    if (!segment_desc) return nullptr;
+    segment_id_to_desc_map_[segment_id] = segment_desc;
     segment_name_to_id_map_[segment_name] = segment_id;
-    return server_desc;
+    return segment_desc;
 }
 
 std::shared_ptr<TransferMetadata::SegmentDesc>
@@ -303,10 +312,10 @@ TransferMetadata::getSegmentDescByID(SegmentID segment_id, bool force_update) {
     if (force_update) {
         RWSpinlock::WriteGuard guard(segment_lock_);
         if (!segment_id_to_desc_map_.count(segment_id)) return nullptr;
-        auto server_desc =
+        auto segment_desc =
             getSegmentDesc(segment_id_to_desc_map_[segment_id]->name);
-        if (!server_desc) return nullptr;
-        segment_id_to_desc_map_[segment_id] = server_desc;
+        if (!segment_desc) return nullptr;
+        segment_id_to_desc_map_[segment_id] = segment_desc;
         return segment_id_to_desc_map_[segment_id];
     } else {
         RWSpinlock::ReadGuard guard(segment_lock_);
@@ -326,11 +335,11 @@ TransferMetadata::SegmentID TransferMetadata::getSegmentID(
     RWSpinlock::WriteGuard guard(segment_lock_);
     if (segment_name_to_id_map_.count(segment_name))
         return segment_name_to_id_map_[segment_name];
-    auto server_desc = this->getSegmentDesc(segment_name);
-    if (!server_desc) return -1;
+    auto segment_desc = this->getSegmentDesc(segment_name);
+    if (!segment_desc) return -1;
     SegmentID id = next_segment_id_.fetch_add(1);
     // LOG(INFO) << "put " << id;
-    segment_id_to_desc_map_[id] = server_desc;
+    segment_id_to_desc_map_[id] = segment_desc;
     segment_name_to_id_map_[segment_name] = id;
     return id;
 }
@@ -342,11 +351,11 @@ int TransferMetadata::updateLocalSegmentDesc(uint64_t segment_id) {
 }
 
 int TransferMetadata::addLocalSegment(SegmentID segment_id,
-                                      const string &server_name,
+                                      const string &segment_name,
                                       std::shared_ptr<SegmentDesc> &&desc) {
     RWSpinlock::WriteGuard guard(segment_lock_);
     segment_id_to_desc_map_[segment_id] = desc;
-    segment_name_to_id_map_[server_name] = segment_id;
+    segment_name_to_id_map_[segment_name] = segment_id;
     return 0;
 }
 
@@ -395,6 +404,48 @@ int TransferMetadata::removeLocalMemoryBuffer(void *addr,
         return 0;
     }
     return ERR_ADDRESS_NOT_REGISTERED;
+}
+
+int TransferMetadata::addRpcMetaEntry(const std::string &server_name,
+                                      RpcMetaDesc &desc) {
+    Json::Value rpcMetaJSON;
+    rpcMetaJSON["ip_or_host_name"] = desc.ip_or_host_name;
+    rpcMetaJSON["rpc_port"] = static_cast<Json::UInt64>(desc.rpc_port);
+    if (!impl_->set(kRpcMetaPrefix + server_name, rpcMetaJSON)) {
+        LOG(ERROR) << "Failed to insert rpc meta of " << server_name;
+        return ERR_METADATA;
+    }
+    local_rpc_meta_ = desc;
+    return 0;
+}
+
+int TransferMetadata::removeRpcMetaEntry(const std::string &server_name) {
+    if (!impl_->remove(kRpcMetaPrefix + server_name)) {
+        LOG(ERROR) << "Failed to remove rpc meta of " << server_name;
+        return ERR_METADATA;
+    }
+    return 0;
+}
+
+int TransferMetadata::getRpcMetaEntry(const std::string &server_name,
+                                      RpcMetaDesc &desc) {
+    {
+        RWSpinlock::ReadGuard guard(rpc_meta_lock_);
+        if (rpc_meta_map_.count(server_name)) {
+            desc = rpc_meta_map_[server_name];
+            return 0;
+        }
+    }
+    RWSpinlock::WriteGuard guard(rpc_meta_lock_);
+    Json::Value rpcMetaJSON;
+    if (!impl_->get(kRpcMetaPrefix + server_name, rpcMetaJSON)) {
+        LOG(ERROR) << "Failed to get rpc meta of " << server_name;
+        return ERR_METADATA;
+    }
+    desc.ip_or_host_name = rpcMetaJSON["ip_or_host_name"].asString();
+    desc.rpc_port = (uint16_t) rpcMetaJSON["rpc_port"].asUInt();
+    rpc_meta_map_[server_name] = desc;
+    return 0;
 }
 
 std::string TransferMetadata::encode(const HandShakeDesc &desc) {
@@ -558,10 +609,15 @@ int TransferMetadata::sendHandshake(const std::string &peer_server_name,
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
 
-    auto hostname_port = parseHostNameWithPort(peer_server_name);
+    RpcMetaDesc desc;
+    if (getRpcMetaEntry(peer_server_name, desc)) {
+        PLOG(ERROR) << "Cannot find rpc meta entry for " << peer_server_name;
+        return ERR_METADATA;
+    }
+
     char service[16];
-    sprintf(service, "%u", hostname_port.second);
-    if (getaddrinfo(hostname_port.first.c_str(), service, &hints, &result)) {
+    sprintf(service, "%u", desc.rpc_port);
+    if (getaddrinfo(desc.ip_or_host_name.c_str(), service, &hints, &result)) {
         PLOG(ERROR)
             << "Failed to get IP address of peer server " << peer_server_name
             << ", check DNS and /etc/hosts, or use IPv4 address instead";

@@ -210,9 +210,8 @@ int initiator() {
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client);
 
-    const string &connectable_name = FLAGS_local_server_name;
-    engine->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(),
-                 12345);
+    auto hostname_port = parseHostNameWithPort(FLAGS_local_server_name);
+    engine->init(FLAGS_local_server_name.c_str(), hostname_port.first.c_str(), hostname_port.second);
 
     Transport *xport = nullptr;
     if (FLAGS_protocol == "rdma") {
@@ -280,9 +279,8 @@ int target() {
     const size_t dram_buffer_size = 1ull << 30;
     auto engine = std::make_unique<TransferEngine>(metadata_client);
 
-    const string &connectable_name = FLAGS_local_server_name;
-    engine->init(FLAGS_local_server_name.c_str(), connectable_name.c_str(),
-                 12345);
+    auto hostname_port = parseHostNameWithPort(FLAGS_local_server_name);
+    engine->init(FLAGS_local_server_name.c_str(), hostname_port.first.c_str(), hostname_port.second);
 
     if (FLAGS_protocol == "rdma") {
         auto nic_priority_matrix = loadNicPriorityMatrix();

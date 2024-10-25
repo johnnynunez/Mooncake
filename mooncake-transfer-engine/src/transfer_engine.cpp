@@ -12,8 +12,11 @@ namespace mooncake {
 int TransferEngine::init(const char *server_name, const char *connectable_name,
                          uint64_t rpc_port) {
     local_server_name_ = server_name;
-    // N.B. Metadata has initialized during ctor
-    return 0;
+    assert(metadata_);
+    TransferMetadata::RpcMetaDesc desc;
+    desc.ip_or_host_name = connectable_name;
+    desc.rpc_port = rpc_port;
+    return metadata_->addRpcMetaEntry(server_name, desc);
 }
 
 int TransferEngine::freeEngine() {
@@ -22,6 +25,7 @@ int TransferEngine::freeEngine() {
         if (uninstallTransport(proto) < 0)
             LOG(ERROR) << "Failed to uninstall transport " << proto;
     }
+    metadata_->removeRpcMetaEntry(local_server_name_);
     return 0;
 }
 
@@ -64,7 +68,14 @@ Transport::SegmentHandle TransferEngine::openSegment(const char *segment_name) {
 #ifdef USE_LOCAL_DESC
     return 0;
 #else
-    return metadata_->getSegmentID(segment_name);
+    if (!segment_name)
+        return ERR_INVALID_ARGUMENT;
+    std::string trimmed_segment_name = segment_name;
+    while (!trimmed_segment_name.empty() && trimmed_segment_name[0] == '/')
+        trimmed_segment_name.erase(0, 1);
+    if (trimmed_segment_name.empty())
+        return ERR_INVALID_ARGUMENT;
+    return metadata_->getSegmentID(trimmed_segment_name);
 #endif
 }
 

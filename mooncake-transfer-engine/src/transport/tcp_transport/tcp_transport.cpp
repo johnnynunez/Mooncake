@@ -204,8 +204,7 @@ int TcpTransport::install(std::string &local_server_name,
         return -1;
     }
 
-    auto hostname_port = parseHostNameWithPort(local_server_name);
-    context_ = new TcpContext(hostname_port.second);
+    context_ = new TcpContext(meta->localRpcMeta().rpc_port);
     running_ = true;
     thread_ = std::thread(&TcpTransport::worker, this);
     return 0;
@@ -323,10 +322,11 @@ void TcpTransport::startTransfer(Slice *slice) {
             slice->markFailed();
             return;
         }
-        auto hostname_port = parseHostNameWithPort(desc->name);
+
         auto endpoint_iterator =
-            resolver.resolve(boost::asio::ip::tcp::v4(), hostname_port.first,
-                             std::to_string(hostname_port.second));
+            resolver.resolve(boost::asio::ip::tcp::v4(), 
+                             metadata_->localRpcMeta().ip_or_host_name,
+                             std::to_string(metadata_->localRpcMeta().rpc_port));
         boost::asio::connect(socket, endpoint_iterator);
         auto session = std::make_shared<Session>(std::move(socket));
         session->on_finalize_ = [slice](TransferStatusEnum status) {

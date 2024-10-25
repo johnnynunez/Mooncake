@@ -221,4 +221,8 @@ GlobalConfig &globalConfig() {
     std::call_once(g_once_flag, []() { loadGlobalConfig(config); });
     return config;
 }
+
+uint16_t getDefaultHandshakePort() {
+    return globalConfig().handshake_port;
+}
 }  // namespace mooncake

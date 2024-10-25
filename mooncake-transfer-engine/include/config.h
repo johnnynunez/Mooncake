@@ -39,6 +39,8 @@ void dumpGlobalConfig();
 void updateGlobalConfig(ibv_device_attr &device_attr);
 
 GlobalConfig &globalConfig();
+
+uint16_t getDefaultHandshakePort();
 }  // namespace mooncake
 
 #endif  // CONFIG_H

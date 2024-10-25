@@ -27,7 +27,8 @@
 #define unlikely(x) __glibc_unlikely(x)
 
 namespace mooncake {
-const int LOCAL_SEGMENT_ID = 0;
+const static int LOCAL_SEGMENT_ID = 0;
+
 static inline int bindToSocket(int socket_id) {
     if (unlikely(numa_available() < 0)) {
         LOG(ERROR) << "The platform does not support NUMA";
@@ -60,10 +61,11 @@ static inline int64_t getCurrentTimeInNano() {
     return (int64_t{ts.tv_sec} * kNanosPerSecond + int64_t{ts.tv_nsec});
 }
 
+uint16_t getDefaultHandshakePort();
+
 static inline std::pair<std::string, uint16_t> parseHostNameWithPort(
     const std::string &server_name) {
-    const static uint16_t kDefaultServerPort = 12001;
-    uint16_t port = kDefaultServerPort;
+    uint16_t port = getDefaultHandshakePort();
     auto pos = server_name.find(':');
     if (pos == server_name.npos) return std::make_pair(server_name, port);
     auto trimmed_server_name = server_name.substr(0, pos);
