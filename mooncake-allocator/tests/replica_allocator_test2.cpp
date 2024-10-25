@@ -112,6 +112,21 @@ TEST_F(ReplicaAllocatorTest, GetOneReplica_Valid)
     EXPECT_EQ(get_ret.handles.size(), 1);
 }
 
+TEST_F(ReplicaAllocatorTest, GetOneReplica_InvalidKey)
+{
+    ObjectKey key = "test_key";
+    ReplicaInfo ret;
+    Version ver = 1;
+    size_t object_size = 1024;
+
+    allocator->addOneReplica(key, ret, ver, object_size);
+
+    ReplicaInfo get_ret;
+    ObjectKey invalid_key="test_key_invalid";
+    Version get_result = allocator->getOneReplica(invalid_key, get_ret, ver);
+    EXPECT_EQ(get_result, getError(ERRNO::INVALID_KEY));
+}
+
 TEST_F(ReplicaAllocatorTest, GetOneReplica_InvalidVersion)
 {
     ObjectKey key = "test_key";
