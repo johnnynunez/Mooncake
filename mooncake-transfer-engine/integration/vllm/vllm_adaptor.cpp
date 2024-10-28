@@ -23,7 +23,7 @@ int VLLMAdaptor::initialize(const char *local_hostname,
     auto hostname_port = parseHostNameWithPort(local_hostname);
     int ret = engine_->init(local_hostname, hostname_port.first.c_str(),
                             hostname_port.second);
-    if (!engine_) return -1;
+    if (ret) return -1;
 
     xport_ = nullptr;
     if (strcmp(protocol, "rdma") == 0) {
@@ -42,21 +42,20 @@ int VLLMAdaptor::initialize(const char *local_hostname,
 
     if (!xport_) return -1;
 
-    size_t capacity = kMaxBufferSize * kBufferCount;
-    managed_buffer_ = malloc(capacity);
+    managed_buffer_ = malloc(kDefaultBufferCapacity);
     if (!managed_buffer_) return -1;
 
     next_free_ = managed_buffer_;
-    for (size_t i = 0; i < kBufferCount; ++i) {
-        void **current =
-            (void **)((char *)managed_buffer_ + i * kMaxBufferSize);
-        void *next = i + 1 == kBufferCount
+    for (size_t i = 0; i < kSlabCount; ++i) {
+        void **current = (void **)((char *)managed_buffer_ + i * kSlabSize);
+        void *next = i + 1 == kSlabCount
                          ? nullptr
-                         : (char *)managed_buffer_ + (i + 1) * kMaxBufferSize;
+                         : (char *)managed_buffer_ + (i + 1) * kSlabSize;
         *current = next;
     }
 
-    ret = engine_->registerLocalMemory(managed_buffer_, capacity, "cpu:0");
+    ret = engine_->registerLocalMemory(managed_buffer_, kDefaultBufferCapacity,
+                                       "cpu:0");
     if (ret) return -1;
 
     return 0;
@@ -64,11 +63,10 @@ int VLLMAdaptor::initialize(const char *local_hostname,
 
 uintptr_t VLLMAdaptor::allocateManagedBuffer(size_t length) {
     std::lock_guard<std::mutex> guard(mutex_);
-    if (length > kMaxBufferSize) {
+    if (!next_free_ || length > kSlabSize) {
         void *buffer = malloc(length);
         if (!buffer) return 0;
-        int ret =
-            engine_->registerLocalMemory(managed_buffer_, length, "cpu:0");
+        int ret = engine_->registerLocalMemory(buffer, length, "cpu:0");
         if (ret) {
             free(buffer);
             return 0;
@@ -76,7 +74,6 @@ uintptr_t VLLMAdaptor::allocateManagedBuffer(size_t length) {
         buffer_list_.insert(buffer);
         return (uintptr_t)buffer;
     }
-    if (!next_free_) return 0;
     auto buffer = next_free_;
     next_free_ = *(void **)next_free_;
     return (uintptr_t)buffer;
@@ -85,15 +82,16 @@ uintptr_t VLLMAdaptor::allocateManagedBuffer(size_t length) {
 int VLLMAdaptor::freeManagedBuffer(uintptr_t buffer_addr, size_t length) {
     void *buffer = (void *)buffer_addr;
     std::lock_guard<std::mutex> guard(mutex_);
-    if (length > kMaxBufferSize) {
+    if (buffer_addr < (uint64_t)managed_buffer_ ||
+        buffer_addr >= (uint64_t)managed_buffer_ + kDefaultBufferCapacity) {
         engine_->unregisterLocalMemory(buffer);
         buffer_list_.erase(buffer);
         free(buffer);
         return 0;
     }
 
-    int i = ((uint64_t)buffer - (uint64_t)managed_buffer_) / kMaxBufferSize;
-    void *fixed_buffer = (char *)managed_buffer_ + i * kMaxBufferSize;
+    int i = ((uint64_t)buffer - (uint64_t)managed_buffer_) / kSlabSize;
+    void *fixed_buffer = (char *)managed_buffer_ + i * kSlabSize;
     *(void **)fixed_buffer = next_free_;
     *(void **)next_free_ = fixed_buffer;
     return 0;
@@ -101,13 +99,6 @@ int VLLMAdaptor::freeManagedBuffer(uintptr_t buffer_addr, size_t length) {
 
 int VLLMAdaptor::transferSync(const char *target_hostname, uintptr_t buffer,
                               uintptr_t peer_buffer_address, size_t length) {
-    if ((uintptr_t)buffer < (uintptr_t)managed_buffer_ ||
-        (uintptr_t)buffer >
-            (uintptr_t)managed_buffer_ + kBufferCount * kMaxBufferSize) {
-        LOG(ERROR) << "buffer must be managed";
-        return -1;
-    }
-
     Transport::SegmentHandle handle;
     if (handle_map_.count(target_hostname)) {
         handle = handle_map_[target_hostname];

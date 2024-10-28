@@ -15,8 +15,9 @@ using namespace mooncake;
 
 class VLLMAdaptor {
    public:
-    const static size_t kMaxBufferSize = 4 * 1024 * 1024;
-    const static size_t kBufferCount = 32;
+    const static size_t kDefaultBufferCapacity = 2ull * 1024 * 1024 * 1024;
+    const static size_t kSlabSize = 4ull * 1024 * 1024;
+    const static size_t kSlabCount = kDefaultBufferCapacity / kSlabSize;
 
     VLLMAdaptor();
 
