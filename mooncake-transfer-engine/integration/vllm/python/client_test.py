@@ -11,5 +11,8 @@ if __name__ == "__main__":
     mc.initialize("192.168.0.138:10002", "192.168.0.139:2379", "rdma", "erdma_0")
     ptr = mc.allocate_managed_buffer(length)
     ptr_dst = mq.recv_ptr()
+    print('start transfer!')
     mc.transfer_sync("192.168.0.138:10001", ptr, ptr_dst, length)
+    data = mc.read_bytes_from_buffer(ptr, length)
+    print(data)
     mc.free_managed_buffer(ptr, length)
