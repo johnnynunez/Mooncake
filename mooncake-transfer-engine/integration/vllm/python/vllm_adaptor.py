@@ -40,3 +40,8 @@ class MooncakeTransfer:
     def transfer_sync(self, target_hostname: str, buffer: int, peer_buffer_address: int, length: int) -> int:
         return self.mva_ins.transferSync(target_hostname, buffer, peer_buffer_address, length)
         
+    def write_bytes_to_buffer(self, buffer: int, user_data: str, length: int) -> int:
+        return self.mva_ins.writeBytesToBuffer(buffer, user_data, length)
+
+    def read_bytes_from_buffer(self, buffer: int, length: int) -> str:
+        return self.mva_ins.readBytesFromBuffer(buffer, length)
