@@ -378,7 +378,20 @@ int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
             return ERR_CONTEXT;
         }
 
+        ibv_port_attr port_attr;
+        if (ibv_query_port(context, port, &port_attr)) {
+            PLOG(WARNING) << "Fail to query port attributes on "
+                          << device_name << ":" << port;
+            if (ibv_close_device(context)) {
+                PLOG(ERROR) << "Fail to close device " << device_name;
+            }
+            ibv_free_device_list(devices);
+            return ERR_CONTEXT;
+        }
+
         updateGlobalConfig(device_attr);
+        if (gid_index >= port_attr.gid_tbl_len)
+            gid_index = port_attr.gid_tbl_len - 1;
 
         if (ibv_query_gid(context, port, gid_index, &gid_)) {
             PLOG(WARNING) << "Device " << device_name << " GID " << gid_index
