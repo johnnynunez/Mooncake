@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import vllm_adaptor
-from vllm_adaptor import MooncakeTransfer, MessageQueue
+from vllm_adaptor import MooncakeTransfer
+from mq_wrapper import MessageQueue
 from multiprocessing import Process, Queue
 
 if __name__ == "__main__":
