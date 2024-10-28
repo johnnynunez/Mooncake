@@ -9,7 +9,7 @@ if __name__ == "__main__":
     length = 1024
     mc = MooncakeTransfer()
     mq = MessageQueue()
-    mc.initialize("192.168.0.138:10001", "192.168.0.139:2379", "rdma", "erdma_0")
+    mc.initialize("192.168.0.137:10001", "192.168.0.139:2379", "rdma", "erdma_0")
     ptr = int(mc.allocate_managed_buffer(length))
     print(ptr)
     mq.send_ptr(ptr)

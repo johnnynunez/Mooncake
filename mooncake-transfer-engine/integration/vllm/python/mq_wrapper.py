@@ -16,6 +16,7 @@ class MessageQueue:
         def callback(ch, method, properties, body):
             print("step-2")
             self.ptr = int(body.decode())
+            ch.stop_consuming()
         self.channel.basic_consume(queue='ptr', on_message_callback=callback, auto_ack=True)
         print("step-1")
 
