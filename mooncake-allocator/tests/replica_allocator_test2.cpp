@@ -192,6 +192,31 @@ TEST_F(ReplicaAllocatorTest, RemoveOneReplica)
     EXPECT_EQ(removed_ret.handles.size(), 1);
 }
 
+TEST_F(ReplicaAllocatorTest, RemoveOneReplicaInvalidVersion)
+{
+    ObjectKey key = "test_key_remove";
+    ReplicaInfo ret;
+    size_t object_size = 1024;
+
+    Version ver = allocator->addOneReplica(key, ret, -1, object_size);
+    allocator->updateStatus(key, ReplicaStatus::COMPLETE, 0, ver);
+    for (auto &handle : ret.handles)
+    {
+        handle->status = BufStatus::COMPLETE;
+    }
+
+    ver = allocator->addOneReplica(key, ret, ver, -1);
+    allocator->updateStatus(key, ReplicaStatus::COMPLETE, 1, ver);
+    for (auto &handle : ret.handles)
+    {
+        handle->status = BufStatus::COMPLETE;
+    }
+
+    ReplicaInfo removed_ret;
+    re = allocator->removeOneReplica(key, removed_ret, ver+1);
+    EXPECT_EQ(re, getError(ERRNO::INVALID_VERSION));
+}
+
 TEST_F(ReplicaAllocatorTest, Unregister)
 {
     SegmentId segment_id = 1;
