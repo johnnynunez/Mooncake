@@ -24,8 +24,8 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 option(USE_CUDA "option for using gpu direct" OFF)
 option(USE_CXL "option for using cxl protocol" ON)
 
-option(WITH_P2P_STORE "build p2p store library and sample code" ON)
-option(WITH_ALLOCATOR "build allocator, component of managed store" ON)
+option(WITH_P2P_STORE "build p2p store library and sample code" OFF)
+option(WITH_ALLOCATOR "build allocator, component of managed store" OFF)
 option(WITH_RUST_EXAMPLE "build the Rust interface and sample code for the transfer engine" OFF)
 
 add_subdirectory(mooncake-transfer-engine)
