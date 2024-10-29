@@ -1,12 +1,14 @@
 # Mooncake Transfer Engine 
 
-Mooncake Transfer Engine 是一个围绕 Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。其中 Segment 代表一段可被远程读写的连续地址空间，实际后端可以是 DRAM 或 VRAM 提供的非持久化存储 RAM Segment，也可以是 NVMeof 提供的持久化存储 NVMeof Segment。BatchTransfer 则负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
+Mooncake Transfer Engine 是一个围绕 Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。
 
-![transfer_engine](fig/transfer_engine.png)
+- Segment 代表一段可被远程读写的连续地址空间，实际后端可以是 DRAM 或 VRAM 提供的非持久化存储 RAM Segment，也可以是 NVMeof 提供的持久化存储 NVMeof Segment。
+
+- BatchTransfer 则负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
+
+![transfer_engine](../../assets/transfer_engine.png)
 
 具体来说，如上图所示，每个特定的客户端对应一个 TransferEngine，其中不仅包含一个 RAM Segment，还集成了对于多线程多网卡高速传输的管理。RAM Segment 原则上就对应这个 TransferEngine 的全部虚拟地址空间，但实际上仅仅会注册其中的部分区域（被称为一个 Buffer）供外部 (GPUDirect) RDMA Read/Write。每一段 Buffer 可以分别设置权限（对应 RDMA rkey 等）和网卡亲和性（比如基于拓扑优先从哪张卡读写等）。
-
-# 核心用户接口
 
 Mooncake Transfer Engine 通过 `TransferEngine` 类对外提供接口（位于 `mooncake-transfer-engine/include/transfer_engine.h`），其中对应不同后端的具体的数据传输功能由 `Transport` 类实现，目前支持 `RdmaTransport` 和 `NVMeoFTransport`。
 
@@ -292,66 +294,24 @@ int init(std::string& server_name, std::string& connectable_name, uint64_t rpc_p
 
 回收分配的所有类型资源，同时也会删除掉全局 meta data server 上的信息。
 
-## 封装成的 C 接口
-```cpp
-// transfer_engine_c.h
-extern "C" {
-    // 将 TransferEngine 和 Transport 类的接口改写成 C，以便上层由其它语言编写的服务调用。
-    // 除了需要将 engine / transport 作为参数传入，其它均与对应的 C++ 接口等价。
+## 二次开发
+### 使用 C/C++ 接口二次开发
+在完成 Mooncake Store 编译后，可将编译好的静态库文件 `libtransfer_engine.a` 及 C 头文件 `transfer_engine_c.h`，移入到你自己的项目里。不需要引用 `src/transfer_engine` 下的其他文件。
 
-    typedef struct transfer_status transfer_status_t;
-    typedef void * transfer_engine_t;
-    typedef void * transport_t;
-
-    transfer_engine_t createTransferEngine(const char *metadata_uri);
-    int initTransferEngine(transfer_engine_t engine，
-                           const char* server_name);
-
-    transport_t installOrGetTransport(transfer_engine_t engine, 
-                                      const char *proto,
-                                      void **args);
-
-    segment_handle_t openSegment(transfer_engine_t engine,
-                                 const char *segment_name, 
-                                 transport_t *transport);
-
-    int closeSegment(transfer_engine_t engine, 
-                     segment_id_t segment_id);
-
-    void destroyTransferEngine(transfer_engine_t engine);
-
-    int registerLocalMemory(transfer_engine_t engine,
-                            void *addr,
-                            size_t size,
-                            const char* location,
-                            bool remote_accessible = false);
-
-    batch_id_t allocateBatchID(transport_t xport,
-                               size_t batch_size);
-
-    int submitTransfer(transport_t xport,
-                       batch_id_t batch_id,
-                       struct transfer_request *entries,
-                       size_t count);
-
-    int getTransferStatus(transport_t xport,
-                          batch_id_t batch_id,
-                          size_t task_id,
-                          struct transfer_status *status);
-
-    int freeBatchID(transport_t xport, batch_id_t batch_id);
-}
+在项目构建阶段，需要为你的应用配置如下选项：
 ```
-## 利用 TransferEngine 进行二次开发
-要利用 TransferEngine 进行二次开发，可使用编译好的静态库文件 `libtransfer_engine.a` 及 C 头文件 `transfer_engine_c.h`，不需要用到 `src/transfer_engine` 下的其他文件。
+-I/path/to/include
+-L/path/to/lib -ltransfer_engine
+-lnuma -lglog -libverbs -ljsoncpp -letcd-cpp-api -lprotobuf -lgrpc++ -lgrpc
+```
 
-### 参考实现：Transfer Engine Go
+### 使用 Golang 接口二次开发
+为了支撑 P2P Store 的运行需求，Transfer Engine 提供了 Golang 接口的封装，详见 `mooncake-p2p-store/src/p2pstore/transfer_engine.go`。
 
-TransferEngine 的 Go 封装见 `mooncake-p2p-store/src/p2pstore/transfer_engine.go`。
+编译项目时启用 `-DWITH_P2P_STORE` 选项，则可以一并编译 P2P Store 样例程序。
 
-### 参考实现：Transfer Engine Rust
-
-在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 cargo 等依赖，并在 cmake 命令中添加 -DWITH_RUST_EXAMPLE=ON 。
+### 使用 Rust接口二次开发
+在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 Rust SDK，并在 cmake 命令中添加 `-DWITH_RUST_EXAMPLE=ON`。
 
 ## 高级运行时选项
 对于高级用户，TransferEngine 提供了如下所示的高级运行时选项，均可通过 **环境变量（environment variable）** 方式传入。
@@ -359,7 +319,7 @@ TransferEngine 的 Go 封装见 `mooncake-p2p-store/src/p2pstore/transfer_engine
 - `MC_NUM_CQ_PER_CTX` 每个设备实例创建的 CQ 数量，默认值 1
 - `MC_NUM_COMP_CHANNELS_PER_CTX` 每个设备实例创建的 Completion Channel 数量，默认值 1
 - `MC_IB_PORT` 每个设备实例使用的 IB 端口号，默认值 1
-- `MC_GID_INDEX` 每个设备实例使用的 GID 序号，默认值 3（对于 IB/RoCEv2 这是有效值）
+- `MC_GID_INDEX` 每个设备实例使用的 GID 序号，默认值 3（或平台支持的最大值）
 - `MC_MAX_CQE_PER_CTX` 每个设备实例中 CQ 缓冲区大小，默认值 4096
 - `MC_MAX_EP_PER_CTX` 每个设备实例中活跃 EndPoint 数量上限，默认值 256
 - `MC_NUM_QP_PER_EP` 每个 EndPoint 中 QP 数量，数量越多则细粒度 I/O 性能越好，默认值 2
