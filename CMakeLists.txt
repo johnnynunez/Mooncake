@@ -29,6 +29,7 @@ option(WITH_ALLOCATOR "build allocator, component of managed store" OFF)
 option(WITH_RUST_EXAMPLE "build the Rust interface and sample code for the transfer engine" OFF)
 
 add_subdirectory(mooncake-transfer-engine)
+
 if (WITH_P2P_STORE)
   add_subdirectory(mooncake-p2p-store)
 endif()

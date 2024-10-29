@@ -1,5 +1,3 @@
-
-
 add_executable(replica_allocator_test replica_allocator_test.cpp)
 target_link_libraries(replica_allocator_test PUBLIC cache_allocator cachelib_memory_allocator gtest gtest_main pthread)
 
@@ -18,5 +16,3 @@ target_link_libraries(buffer_allocator_test PUBLIC cache_allocator cachelib_memo
 
 add_executable(rdma_object_store_test rdma_object_store_test.cpp)
 target_link_libraries(rdma_object_store_test PUBLIC cache_allocator cachelib_memory_allocator gtest gtest_main pthread)
-
-
