@@ -32,11 +32,22 @@ class MooncakeTransfer:
         return self.mva_ins.initialize(local_hostname, metadata_server, protocol, device_name)
 
     def allocate_managed_buffer(self, length: int) -> int:
-        return self.mva_ins.allocateManagedBuffer(length)
+        ret = self.mva_ins.allocateManagedBuffer(length)
+        if ret <= 0:
+            raise Exception("Allocation Return Error")
+        return ret
     
     def free_managed_buffer(self, buffer: int, length: int) -> int:
         return self.mva_ins.freeManagedBuffer(buffer, length)
     
     def transfer_sync(self, target_hostname: str, buffer: int, peer_buffer_address: int, length: int) -> int:
-        return self.mva_ins.transferSync(target_hostname, buffer, peer_buffer_address, length)
+        ret = self.mva_ins.transferSync(target_hostname, buffer, peer_buffer_address, length)
+        if ret < 0:
+            raise Exception("Transfer Return Error")
+        return ret
         
+    def write_bytes_to_buffer(self, buffer: int, user_data: bytes, length: int) -> int:
+        return self.mva_ins.writeBytesToBuffer(buffer, user_data, length)
+
+    def read_bytes_from_buffer(self, buffer: int, length: int) -> bytes:
+        return self.mva_ins.readBytesFromBuffer(buffer, length)

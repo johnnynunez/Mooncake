@@ -147,8 +147,6 @@ int VLLMAdaptor::transferSync(const char *target_hostname, uintptr_t buffer,
     }
 }
 
-#include <pybind11/pybind11.h>
-
 namespace py = pybind11;
 
 PYBIND11_MODULE(mooncake_vllm_adaptor, m) {
@@ -157,5 +155,7 @@ PYBIND11_MODULE(mooncake_vllm_adaptor, m) {
         .def("initialize", &VLLMAdaptor::initialize)
         .def("allocateManagedBuffer", &VLLMAdaptor::allocateManagedBuffer)
         .def("freeManagedBuffer", &VLLMAdaptor::freeManagedBuffer)
-        .def("transferSync", &VLLMAdaptor::transferSync);
+        .def("transferSync", &VLLMAdaptor::transferSync)
+        .def("writeBytesToBuffer", &VLLMAdaptor::writeBytesToBuffer)
+        .def("readBytesFromBuffer", &VLLMAdaptor::readBytesFromBuffer);
 }
