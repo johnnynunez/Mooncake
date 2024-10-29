@@ -40,11 +40,11 @@ class VLLMAdaptor {
         return 0;
     }
 
-    std::string readBytesFromBuffer(uintptr_t source_address, size_t length) {
+    pybind11::bytes readBytesFromBuffer(uintptr_t source_address, size_t length) {
         std::string ret;
         ret.resize(length);
         memcpy(&ret[0], (void *) source_address, length);
-        return ret;
+        return pybind11::bytes(ret.data(), ret.size());
     }
 
    private:

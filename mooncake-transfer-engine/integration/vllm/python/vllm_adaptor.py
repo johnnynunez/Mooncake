@@ -46,8 +46,8 @@ class MooncakeTransfer:
             raise Exception("Transfer Return Error")
         return ret
         
-    def write_bytes_to_buffer(self, buffer: int, user_data: str, length: int) -> int:
+    def write_bytes_to_buffer(self, buffer: int, user_data: bytes, length: int) -> int:
         return self.mva_ins.writeBytesToBuffer(buffer, user_data, length)
 
-    def read_bytes_from_buffer(self, buffer: int, length: int) -> str:
+    def read_bytes_from_buffer(self, buffer: int, length: int) -> bytes:
         return self.mva_ins.readBytesFromBuffer(buffer, length)
