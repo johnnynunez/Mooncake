@@ -41,10 +41,7 @@ class VLLMAdaptor {
     }
 
     pybind11::bytes readBytesFromBuffer(uintptr_t source_address, size_t length) {
-        std::string ret;
-        ret.resize(length);
-        memcpy(&ret[0], (void *) source_address, length);
-        return pybind11::bytes(ret.data(), ret.size());
+        return pybind11::bytes(static_cast<const char*>(reinterpret_cast<void*>(source_address)), length);
     }
 
    private:
