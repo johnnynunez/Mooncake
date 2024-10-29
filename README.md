@@ -37,3 +37,14 @@ Mooncake 项目遵循 TBD 开源协议，详见 [LICENSE]()。
 
 ## 贡献
 我们欢迎社区的贡献！如果你有任何建议或发现问题，请通过 GitHub Issues 提交，或直接提交 Pull Request。
+Mooncake P2P Store 完全不保证可靠性，如果 peer 都丢了那数据就是丢了。同时也是 client-only 架构，没有统一的 master，只有一个 etcd 负责全局元数据的同步。
+
+相应的代码存放在 `mooncake-p2p-store` 目录下。
+
+## 编译
+
+[Ubuntu编译](docs/ubuntu_compile.md)
+
+[Centos & ALinux编译](docs/alinux&centos_compile.md)
+
+如果编译成功，在项目 `build/mooncake-transfer-engine/tests` 目录下产生测试程序 `transfer_engine_test`，可结合[Mooncake Transfer Engine 概要](docs/transfer_engine.md)文档的描述进行测试。同时，可通过运行 `make build_p2p_store` 命令编译 P2P Store 组件。
