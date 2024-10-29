@@ -126,6 +126,20 @@ TEST_F(ReplicaAllocatorTest, GetOneReplica_Valid) {
     EXPECT_EQ(get_ret.handles.size(), 1);
 }
 
+TEST_F(ReplicaAllocatorTest, GetOneReplica_InvalidKey) {
+    ObjectKey key = "test_key";
+    ReplicaInfo ret;
+    Version ver = 1;
+    size_t object_size = 1024;
+
+    allocator->addOneReplica(key, ret, ver, object_size);
+
+    ReplicaInfo get_ret;
+    ObjectKey invalid_key = "test_key_invalid";
+    Version get_result = allocator->getOneReplica(invalid_key, get_ret, ver);
+    EXPECT_EQ(get_result, getError(ERRNO::INVALID_KEY));
+}
+
 TEST_F(ReplicaAllocatorTest, GetOneReplica_InvalidVersion) {
     ObjectKey key = "test_key";
     ReplicaInfo ret;
@@ -184,6 +198,28 @@ TEST_F(ReplicaAllocatorTest, RemoveOneReplica) {
     allocator->removeOneReplica(key, removed_ret, ver);
     EXPECT_EQ(removed_ret.status, ReplicaStatus::REMOVED);
     EXPECT_EQ(removed_ret.handles.size(), 1);
+}
+
+TEST_F(ReplicaAllocatorTest, RemoveOneReplicaInvalidVersion) {
+    ObjectKey key = "test_key_remove";
+    ReplicaInfo ret;
+    size_t object_size = 1024;
+
+    Version ver = allocator->addOneReplica(key, ret, -1, object_size);
+    allocator->updateStatus(key, ReplicaStatus::COMPLETE, 0, ver);
+    for (auto &handle : ret.handles) {
+        handle->status = BufStatus::COMPLETE;
+    }
+
+    ver = allocator->addOneReplica(key, ret, ver, -1);
+    allocator->updateStatus(key, ReplicaStatus::COMPLETE, 1, ver);
+    for (auto &handle : ret.handles) {
+        handle->status = BufStatus::COMPLETE;
+    }
+
+    ReplicaInfo removed_ret;
+    re = allocator->removeOneReplica(key, removed_ret, ver + 1);
+    EXPECT_EQ(re, getError(ERRNO::INVALID_VERSION));
 }
 
 TEST_F(ReplicaAllocatorTest, Unregister) {

@@ -339,7 +339,6 @@ int RdmaContext::compVector() {
     return (next_comp_vector_index_++) % context_->num_comp_vectors;
 }
 
-<<<<<<< HEAD
 int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
                                 int gid_index) {
     int num_devices = 0;
@@ -347,96 +346,6 @@ int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
     struct ibv_device **devices = ibv_get_device_list(&num_devices);
     if (!devices || num_devices <= 0) {
         PLOG(ERROR) << "ibv_get_device_list failed";
-=======
-        for (int i = 0; i < num_devices; ++i)
-        {
-            if (device_name != ibv_get_device_name(devices[i]))
-                continue;
-
-            context = ibv_open_device(devices[i]);
-            if (!context)
-            {
-                PLOG(ERROR) << "Failed to open device " << device_name;
-                ibv_free_device_list(devices);
-                return ERR_CONTEXT;
-            }
-
-            ibv_port_attr attr;
-            if (ibv_query_port(context, port, &attr))
-            {
-                PLOG(WARNING) << "Fail to query port " << port << " on " << device_name;
-                if (ibv_close_device(context))
-                {
-                    PLOG(ERROR) << "Fail to close device " << device_name;
-                }
-                ibv_free_device_list(devices);
-                return ERR_CONTEXT;
-            }
-
-            if (attr.state != IBV_PORT_ACTIVE)
-            {
-                LOG(WARNING) << "Device " << device_name << " port not active";
-                if (ibv_close_device(context))
-                {
-                    PLOG(ERROR) << "Fail to close device " << device_name;
-                }
-                ibv_free_device_list(devices);
-                return ERR_CONTEXT;
-            }
-
-            ibv_device_attr device_attr;
-            if (ibv_query_device(context, &device_attr))
-            {
-                PLOG(WARNING) << "Fail to query attributes on " << device_name;
-                if (ibv_close_device(context))
-                {
-                    PLOG(ERROR) << "Fail to close device " << device_name;
-                }
-                ibv_free_device_list(devices);
-                return ERR_CONTEXT;
-            }
-
-            ibv_port_attr port_attr;
-            if (ibv_query_port(context, port, &port_attr)) {
-                PLOG(WARNING) << "Fail to query port attributes on "
-                            << device_name << ":" << port;
-                if (ibv_close_device(context)) {
-                    PLOG(ERROR) << "Fail to close device " << device_name;
-                }
-                ibv_free_device_list(devices);
-                return ERR_CONTEXT;
-            }
-
-            updateGlobalConfig(device_attr);
-            if (gid_index >= port_attr.gid_tbl_len)
-                gid_index = port_attr.gid_tbl_len - 1;
-                
-            if (ibv_query_gid(context, port, gid_index, &gid_))
-            {
-                PLOG(WARNING) << "Device " << device_name
-                              << " GID " << gid_index << " not available";
-                if (ibv_close_device(context))
-                {
-                    PLOG(ERROR) << "Fail to close device " << device_name;
-                }
-                ibv_free_device_list(devices);
-                return ERR_CONTEXT;
-            }
-
-            context_ = context;
-            port_ = port;
-            lid_ = attr.lid;
-            active_mtu_ = attr.active_mtu;
-            active_speed_ = attr.active_speed;
-            gid_index_ = gid_index;
-
-            ibv_free_device_list(devices);
-            return 0;
-        }
-
-        ibv_free_device_list(devices);
-        LOG(ERROR) << "No matched device found: " << device_name;
->>>>>>> origin/v0.1
         return ERR_DEVICE_NOT_FOUND;
     }
 
