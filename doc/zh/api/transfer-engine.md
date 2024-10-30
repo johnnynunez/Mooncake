@@ -273,11 +273,11 @@ Value = {
 ## 构造函数与初始化
 
 ```cpp
-TransferEngine(std::unique_ptr<TransferEngineMetadataClient> metadata_client);
+TransferEngine(std::unique_ptr<TransferMetadata> metadata_client);
 TransferMetadata(const std::string &metadata_server);
 ```
 
-- metadata_client：TransferEngineMetadataClient 对象指针，该对象将 TransferEngine 框架与元数据服务器/etcd 等带外通信逻辑抽取出来，以方便用户将其部署到不同的环境中。metadata_server 表示 etcd 服务器的 IP 地址或主机名。
+- TransferMetadata 对象指针，该对象将 TransferEngine 框架与元数据服务器/etcd 等带外通信逻辑抽取出来，以方便用户将其部署到不同的环境中。metadata_server 表示 etcd 服务器的 IP 地址或主机名。
 
 为了便于异常处理，TransferEngine 在完成构造后需要调用init函数进行二次构造：
 ```cpp
