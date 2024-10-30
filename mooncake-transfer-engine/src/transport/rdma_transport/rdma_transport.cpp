@@ -68,33 +68,31 @@ int RdmaTransport::install(std::string &local_server_name,
 
     ret = initializeRdmaResources();
     if (ret) {
-        LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot "
+        LOG(ERROR) << "Transfer engine cannot be initialized: cannot "
                       "initialize RDMA resources";
         return -1;
     }
 
     ret = allocateLocalSegmentID(local_priority_matrix);
     if (ret) {
-        LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot "
+        LOG(ERROR) << "Transfer engine cannot be initialized: cannot "
                       "allocate local segment";
         return -1;
     }
 
     ret = startHandshakeDaemon(local_server_name);
     if (ret) {
-        LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot start "
+        LOG(ERROR) << "Transfer engine cannot be initialized: cannot start "
                       "handshake daemon";
-        LOG(ERROR) << "*** Try to set environment variable MC_HANDSHAKE_PORT "
-                      "to another value";
         return -1;
     }
 
     ret = metadata_->updateLocalSegmentDesc();
     if (ret) {
-        LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot "
+        LOG(ERROR) << "Transfer engine cannot be initialized: cannot "
                       "publish segments";
-        LOG(ERROR) << "*** Check the connectivity between this server and "
-                      "metadata server (etcd/memcached)";
+        LOG(ERROR) << "Check the connectivity between this server and "
+                      "etcd servers";
         return -1;
     }
 

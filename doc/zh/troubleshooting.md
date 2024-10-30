@@ -49,3 +49,5 @@
 若网络状态不稳定，部分请求会无法发送到位，显示 `Worker: Process failed for slice` 等错误。Transfer Engine 能通过重选路径等方式规避掉问题。在某些复杂情况下，如果连续输出大量此类错误，建议比照最后一个字段的字符串提示，搜索造成问题的原因。
 
 注意：大多数情况下输出的错误除第一次出现之外，都是 `work request flushed error`。这是因为第一次产生错误时，RDMA 驱动会将连接设置为不可用状态，因此处于提交队列的任务都被阻止执行，并报告后续错误。因此建议定位到第一次发生错误的地方并进行检查。
+
+此外，若出现 `Failed to get description of XXX` 错误，表明用户调用 `openSegment` 接口时输入的 Segment 名称无法在 etcd 数据库中找到。对于内存读写场景，Segment 名称需要严格匹配对方节点初始化时填写的 `local_hostname` 字段。
