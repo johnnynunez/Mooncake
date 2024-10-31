@@ -52,9 +52,16 @@ MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=0 MC_GID_INDEX
 
 # 4. Run on the decode side
 MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=1 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.9
+```
 
+ - **_Be sure to set up same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
+- MASTER_PORT is used for inter-node setup communication.
+
+```bash
 # 5. Start the proxy server on one node (Let's take the prefill node as an example)
-proxy_server.py
+python3 proxy_server.py
+```
+The implementation of `proxy_server.py`
 ```python
 import os
 
@@ -118,13 +125,10 @@ if __name__ == '__main__':
     app.run(host="0.0.0.0",port=8000)
 ```
 
-**_Be sure to change the IP address in the code first, then run the command:_**
+**_Be sure to change the IP address in the code_**
 
-```bash
-python3 ./proxy_server.py
-```
 
-# 6. Test on the proxy server with open-ai compatible request
+# 6. Test with open-ai compatible request
 ```
 curl -s http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
 "model": "Qwen/Qwen2.5-7B-Instruct",
@@ -133,3 +137,4 @@ curl -s http://localhost:8000/v1/completions -H "Content-Type: application/json"
 "temperature": 0
 }'
 ```
+- If you are not testing on the proxy server, please change the `localhost` to the IP address of the proxy server.
