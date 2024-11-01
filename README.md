@@ -28,7 +28,7 @@ To enable efficient prefill/decode disaggregation, Mooncake proposes the Transfe
 
 <h2 id="show-cases">🔥 Show Cases</h2>
 
-### Use Transfer Engine Standalone ([Guide](), [API Doc]())
+### Use Transfer Engine Standalone ([Intro](doc/zh/architecture.md), [API Doc](doc/zh/api/transfer-engine.md))
 
 Transfer Engine provide unified, batched and asynchronous data transfer APIs. It supports TCP, RDMA (tested over InfiniBand and RoCEv2 networks), NVIDIA GPUDirect-based RDMA and NVMe over Fabric (NVMe-of) protocols. 
 

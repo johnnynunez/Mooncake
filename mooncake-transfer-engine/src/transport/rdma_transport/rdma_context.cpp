@@ -31,6 +31,12 @@
 #include "transport/transport.h"
 
 namespace mooncake {
+static int isNullGid(union ibv_gid *gid)
+{
+	return !(gid->raw[8] | gid->raw[9] | gid->raw[10] | gid->raw[11] |
+		 gid->raw[12] | gid->raw[13] | gid->raw[14] | gid->raw[15]);
+}
+
 RdmaContext::RdmaContext(RdmaTransport &engine, const std::string &device_name)
     : device_name_(device_name),
       engine_(engine),
@@ -412,6 +418,10 @@ int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
             }
             ibv_free_device_list(devices);
             return ERR_CONTEXT;
+        }
+
+        if (isNullGid(&gid_)) {
+            LOG(WARNING) << "GID is null, potentially lead connection problem!";
         }
 
         context_ = context;
