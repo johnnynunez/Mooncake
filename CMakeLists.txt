@@ -30,6 +30,10 @@ option(WITH_RUST_EXAMPLE "build the Rust interface and sample code for the trans
 
 add_subdirectory(mooncake-transfer-engine)
 
+include_directories(mooncake-transfer-engine/include)
+
+add_subdirectory(mooncake-integration)
+
 if (WITH_P2P_STORE)
   add_subdirectory(mooncake-p2p-store)
 endif()
