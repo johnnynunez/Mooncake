@@ -54,8 +54,17 @@ MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=0 MC_GID_INDEX
 MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=1 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.9
 ```
 
- - **_Be sure to set up same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
-- MASTER_PORT is used for inter-node setup communication.
+ - **_Be sure to set up the same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
+- MASTER_PORT is used for inter-node torch setup communication.
+- WORLD_SIZE is the total number of nodes.
+- RANK is the node rank, please setup prefill node to 0 and decode node to 1.
+- MC_GID_INDEX is the gid of target rdma device.
+- MOONCAKE_CONFIG_PATH is the path to the mooncake.json configuration file.
+- VLLM_DISTRIBUTED_KV_ROLE is the role of the node, either 'producer' or 'consumer'.
+- The `--model` parameter specifies the model to use.
+  - Qwen/Qwen2.5-7B-Instruct requires 20GB+ GPU memory.
+- The `--port` parameter specifies the vllm service port to listen on.
+- The `--max-model-len` parameter specifies the maximum length of the model.
 
 ```bash
 # 5. Start the proxy server on one node (Let's take the prefill node as an example)
