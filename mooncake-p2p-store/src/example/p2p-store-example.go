@@ -41,7 +41,7 @@ func main() {
 	flag.StringVar(&localServerName, "local_server_name", "", "Local server name")
 	flag.StringVar(&deviceName, "device_name", "mlx5_2", "RNIC device name")
 	flag.StringVar(&nicPriorityMatrixPath, "nic_priority_matrix", "", "Path to NIC priority matrix file (Advanced)")
-	flag.IntVar(&fileSize, "file_size_mb", 512, "File size in MB")
+	flag.IntVar(&fileSize, "file_size_mb", 2048, "File size in MB")
 	flag.Parse()
 
 	fileSize = fileSize * 1024 * 1024
@@ -72,6 +72,7 @@ func doTrainer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 		os.Exit(1)
 	}
 
+	fmt.Println("After training, register new object:", name, "file size:", fileSize)
 	startTimestamp := time.Now()
 	addrList := []uintptr{uintptr(unsafe.Pointer(&addr[0]))}
 	sizeList := []uint64{uint64(fileSize)}
@@ -82,7 +83,7 @@ func doTrainer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 	}
 
 	phaseOneTimestamp := time.Now()
-	fmt.Println("Phase 1 duration ", phaseOneTimestamp.Sub(startTimestamp).Milliseconds())
+	fmt.Println("Register done, duration (ms):", phaseOneTimestamp.Sub(startTimestamp).Milliseconds())
 
 	checkpointInfoList, err := store.List(ctx, "foo")
 	if err != nil {
@@ -91,9 +92,8 @@ func doTrainer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 	}
 
 	fmt.Println(checkpointInfoList)
-	fmt.Println("========================= IDLE ========================= ")
+	fmt.Println("Idle for 10 seconds")
 	time.Sleep(20 * time.Second)
-	fmt.Println("========================= IDLE ========================= ")
 
 	err = store.Unregister(ctx, name)
 	if err != nil {
@@ -118,7 +118,6 @@ func trainer() {
 	}
 
 	doTrainer(ctx, store, "foo/bar")
-	doTrainer(ctx, store, "foo/bar2")
 
 	err = store.Close()
 	if err != nil {
@@ -149,6 +148,7 @@ func doInferencer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 		os.Exit(1)
 	}
 
+	fmt.Println("Expecting to retrieve from object", name)
 	startTimestamp := time.Now()
 	addrList := []uintptr{uintptr(unsafe.Pointer(&addr[0]))}
 	sizeList := []uint64{uint64(fileSize)}
@@ -159,8 +159,7 @@ func doInferencer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 	}
 
 	phaseOneTimestamp := time.Now()
-	fmt.Println("Phase 1 duration ", phaseOneTimestamp.Sub(startTimestamp).Milliseconds())
-	// Cloned
+	fmt.Println("GetReplica done, duration (ms):", phaseOneTimestamp.Sub(startTimestamp).Milliseconds())
 
 	err = store.DeleteReplica(ctx, name)
 	if err != nil {
@@ -168,18 +167,10 @@ func doInferencer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 		os.Exit(1)
 	}
 
-	phaseTwoTimestamp := time.Now()
-	fmt.Println("Phase 2 duration ", phaseTwoTimestamp.Sub(startTimestamp).Milliseconds())
-
 	if err := syscall.Munmap(addr); err != nil {
 		fmt.Fprintf(os.Stderr, "Munmap failed: %v\n", err)
 		os.Exit(1)
 	}
-
-	phaseThreeTimestamp := time.Now()
-	fmt.Println("Phase 3 duration ", phaseThreeTimestamp.Sub(startTimestamp).Milliseconds())
-
-	fmt.Println("ALL DONE")
 }
 
 func inferencer() {
@@ -193,11 +184,6 @@ func inferencer() {
 	}
 
 	doInferencer(ctx, store, "foo/bar")
-	fmt.Println("========================= IDLE ========================= ")
-	time.Sleep(20 * time.Second)
-	fmt.Println("========================= IDLE ========================= ")
-	doInferencer(ctx, store, "foo/bar2")
-
 	err = store.Close()
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "Shutdown failed: %v\n", err)

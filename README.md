@@ -44,6 +44,8 @@ Transfer Engine achieves high performance. With 40 GB of data (equivalent to the
 ### P2P Store  ([Intro](doc/zh/p2p-store.md), [API Doc](doc/zh/api/p2p-store.md))
 P2P Store is built on the Transfer Engine that supports sharing objects between peer nodes in a cluster. P2P Store is client-only architecture. The global metadata is maintained by the etcd services. **P2P Store has been used in the checkpoint transfer service of Moonshot AI.**
 
+![p2p-store.gif](image/p2p-store.gif)
+
 ### vLLM Integration ([Guide](doc/zh/vllm-integration.md))
 Integrating vLLM with Transfer Engine enables prefill/decode disaggregation, optimizing performance by separating the stages. Requests are processed in parallel, with prefill workers preparing data and decode workers generating tokens. This approach boosts throughput, reduces latency, and allows resource allocation tailored to each stage's demands. The outcome is a more efficient, scalable AI system capable of handling high volumes of requests with consistent performance.
 
