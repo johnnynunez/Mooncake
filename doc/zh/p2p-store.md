@@ -12,7 +12,7 @@ P2P Store 提供的是类似 Register 和 GetReplica 的接口。Register 相当
 2. **启动模拟训练节点。** 该节点将创建模拟模型文件，并向集群内公开。
    ```bash
    # This is 10.0.0.2
-   export MC_GID_INDEX=n
+   export MC_GID_INDEX=n # 应填入一个数字
    ./p2p-store-example --cmd=trainer \
                        --metadata_server=10.0.0.1:2379 \
                        --local_server_name=10.0.0.2:12345 \

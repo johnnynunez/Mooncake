@@ -2,7 +2,7 @@
 
 **[Transfer Engine](doc/zh/architecture.md#transfer-engine) 是一个围绕 Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。**
 
-Transfer Engine 通过 `TransferEngine` 类对外提供接口（位于 `mooncake-transfer-engine/include/transfer_engine.h`），其中对应不同后端的具体的数据传输功能由 `Transport` 类实现，目前支持 `RdmaTransport` 和 `NVMeoFTransport`。
+Transfer Engine 通过 `TransferEngine` 类对外提供接口（位于 `mooncake-transfer-engine/include/transfer_engine.h`），其中对应不同后端的具体的数据传输功能由 `Transport` 类实现，目前支持 `TcpTransport`,`RdmaTransport` 和 `NVMeoFTransport`。
 
 ## 数据传输
 
@@ -102,9 +102,15 @@ Transport* installOrGetTransport(const std::string& proto, void** args);
 ```
 在 `TransferEngine` 中注册 `Transport`。如果某个协议对应的 `Transport` 已存在，则返回该 `Transport`。
 
-- `proto`: `Transport` 使用的传输协议名称，目前支持 `rdma`, `nvmeof`。
+- `proto`: `Transport` 使用的传输协议名称，目前支持 `tcp`, `rdma`, `nvmeof`。
 - `args`：以变长数组形式呈现的 `Transport` 初始化需要的其他参数，数组内最后一个成员应当是 `nullptr`。
 - 返回值：若 `proto` 在确定范围内，返回对应 `proto` 的 `Transport`；否则返回空指针。
+
+#### TCP 传输模式
+对于 TCP 传输模式，注册 `Transport` 期间不需要传入 `args` 对象。
+```cpp
+engine->installOrGetTransport("tcp", nullptr);
+```
 
 #### RDMA 传输模式
 对于 RDMA 传输模式，注册 `Transport` 期间需通过 `args` 指定网卡优先级顺序。
@@ -302,7 +308,7 @@ int init(std::string& server_name, std::string& connectable_name, uint64_t rpc_p
 编译项目时启用 `-DWITH_P2P_STORE=ON` 选项，则可以一并编译 P2P Store 样例程序。
 
 ### 使用 Rust接口二次开发
-在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 Rust SDK，并在 cmake 命令中添加 `-DWITH_RUST_EXAMPLE=ON`。
+在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../../../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 Rust SDK，并在 cmake 命令中添加 `-DWITH_RUST_EXAMPLE=ON`。
 
 ## 高级运行时选项
 对于高级用户，TransferEngine 提供了如下所示的高级运行时选项，均可通过 **环境变量（environment variable）** 方式传入。

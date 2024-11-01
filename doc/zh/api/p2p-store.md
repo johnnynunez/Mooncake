@@ -8,9 +8,9 @@ Mooncake P2P Store 目前基于 Golang 实现了下列接口：
 func NewP2PStore(metadataUri string, localSegmentName string, nicPriorityMatrix string) (*P2PStore, error)
 ```
 创建 P2PStore 实例，该实例内部会启动一个 Transfer Engine 服务。
-- `metadataUri`：元数据服务器/etcd 服务所在主机名或 IP 地址。
-- `localSegmentName`：本地的 server name，保证在集群内唯一。
-- `nicPriorityMatrix`：网卡优先级顺序表，参见位于 Transfer Engine 文档的相关描述（`TransferEngine::installOrGetTransport`）。
+- `metadataUri`：元数据服务器/etcd服务所在主机名或 IP 地址。
+- `localSegmentName`：本地的服务器名称（主机名/IP地址：端口号），保证在集群内唯一。
+- `nicPriorityMatrix`：网卡优先级顺序表，参见位于 Transfer Engine API 文档的相关描述（`TransferEngine::installOrGetTransport`）。
 - 返回值：若成功则返回 `P2PStore` 实例指针，否则返回 `error`。
 
 ```go
