@@ -62,7 +62,7 @@ In order to install and use Mooncake, some preparation is required.
 
 In addition, to support more features of Mooncake Transfer Engine, we *recommand* you to install the following components:
 
-- CUDA 12.1 and above, including CUFILE library, if you want to build with `-DUSE_CUDA`. You may install them from [here](https://developer.nvidia.com/cuda-downloads). 
+- CUDA 12.1 and above, including NVIDIA GPUDirect Storage Support, if you want to build with `-DUSE_CUDA`. You may install them from [here](https://developer.nvidia.com/cuda-downloads). 
   ```bash
   # Adding CUDA to PATH
   export PATH=/usr/local/cuda/bin:$PATH
@@ -88,11 +88,9 @@ In addition, to support more features of Mooncake Transfer Engine, we *recommand
    ```bash
    mkdir build
    cd build
-   cmake ..
+   cmake .. # (optional) Specify build options like -D
    make -j
    ```
-
-> If you failed to perform data transfer in your platform, we recommend you to look at the [trobleshooting guide](doc/zh/troubleshooting.md).
 
 
 <h2 id="trace">📦 Open Source Trace</h2>
