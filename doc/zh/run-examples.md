@@ -1,4 +1,63 @@
-# 范例程序使用指南
+# 快速使用指南
+
+Mooncake 由 Transfer Engine、Managed Store、P2P Store 等组件组成，这些组件可按应用需求分别进行编译和使用。
+
+## 编译
+Mooncake 目前仅支持 Linux 操作系统，并且依赖以下软件：
+- Go 1.20+
+- GCC 9.4+
+- CMake 3.16+
+- etcd 3.2+
+
+1. 克隆源码仓库
+   ```bash
+   git clone https://github.com/kvcache-ai/mooncake-dev.git
+   ```
+2. 进入源码目录
+   ```bash
+   cd mooncake
+   ```
+
+3. 切换到目标分支，如 `v0.1`
+   ```bash
+   git checkout v0.1
+   ```
+
+   > The development branch often involves large changes, so do not use the clients compiled in the "development branch" for the production environment.
+
+5. 安装依赖库（需要 root 权限）
+   ```bash
+   bash dependencies.sh
+   ```
+
+5a. (optional) 配置 GPU 相关依赖
+
+   首先按照 https://docs.nvidia.com/cuda/cuda-installation-guide-linux/ 中的说明安装 cuda（需要勾选 nvidia-fs 选项, 以便于 cufile 的正常使用），之后：
+
+   1) 参考 https://docs.nvidia.com/cuda/gpudirect-rdma/ 的 3.7 节，安装 nvidia-peermem 以启用 gpu-direct RDMA:
+
+   2) 配置 `LIBRARY_PATH` 和 `LD_LIBRARY_PATH`，用于编译和运行时链接 cufile, cudart 等库：
+   ```bash
+   export $LIBRARY_PATH=$LIBRARY_PATH:/usr/local/cuda/lib64
+   export $LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+   ```
+
+6. 编译 Mooncake 组件
+   ```bash
+   mkdir build
+   cd build
+   cmake ..
+   make -j
+   ```
+
+### 高级编译选项
+Mooncake 支持在执行 `cmake` 命令期间添加下列高级编译选项：
+- `-DUSE_CUDA=[ON|OFF]`：编译 Transfer Engine 时启用或关闭 GPU Direct RDMA 功能的支持。仅支持 NVIDIA CUDA，需要事先安装相应的依赖库。（不包含在 `dependencies.sh` 脚本中）。默认关闭。
+- `-DUSE_CXL=[ON|OFF]`：编译 Transfer Engine 时启用或关闭 CXL 协议的支持。默认关闭。
+- `-DWITH_P2P_STORE=[ON|OFF]`：编译 P2P Store 及示例程序，默认开启。
+- `-DWITH_ALLOCATOR=[ON|OFF]`：编译 Managed Store 所用的中心分配器模块，默认开启。
+- `-DWITH_WITH_RUST_EXAMPLE=[ON|OFF]`：编译 Transfer Engine 时启用或关闭 Rust 语言支持，默认关闭。
+
 
 ## Transfer Engine Bench 使用方法
 编译 Transfer Engine 成功后，可在 `build/mooncake-transfer-engine/example` 目录下产生测试程序 `transfer_engine_bench`。该工具通过调用 Transfer Engine 接口，发起节点从目标节点的 DRAM 处反复读取/写入数据块，以展示 Transfer Engine 的基本用法，并可用于测量读写吞吐率。目前 Transfer Engine Bench 工具可用于 RDMA 协议（GPUDirect 正在测试） 及 TCP 协议。
@@ -45,7 +104,7 @@
    
    正常情况下，发起节点将开始进行传输操作，等待 10s 后回显“Test completed”信息，表明测试完成。
 
-   发起节点还可以配置下列测试参数：`--operation`（可为 `"read"` 或 `"write"`）、`batch_size`、`block_size`、`duration`、`threads` 等。
+   发起节点还可以配置下列测试参数：`--operation`（可为 `"read"` 或 `"write"`）、`batch_size`、`block_size`、`duration`、`threads`, `use_vram` 等。
 
 
 
