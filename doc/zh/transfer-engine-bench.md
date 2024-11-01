@@ -1,7 +1,7 @@
-# 范例程序使用指南
+# Transfer Engine Bench
+`mooncake-transfer-engine/example/transfer_engine_bench.cpp` 提供了一个样例程序，通过调用 Transfer Engine 接口，发起节点从目标节点的 DRAM 处反复读取/写入数据块，以展示 Transfer Engine 的基本用法，并可用于测量读写吞吐率。目前 Transfer Engine Bench 工具可用于 RDMA 及 TCP 协议。
 
-## Transfer Engine Bench 使用方法
-编译 Transfer Engine 成功后，可在 `build/mooncake-transfer-engine/example` 目录下产生测试程序 `transfer_engine_bench`。该工具通过调用 Transfer Engine 接口，发起节点从目标节点的 DRAM 处反复读取/写入数据块，以展示 Transfer Engine 的基本用法，并可用于测量读写吞吐率。目前 Transfer Engine Bench 工具可用于 RDMA 协议（GPUDirect 正在测试） 及 TCP 协议。
+编译 Transfer Engine 成功后，可在 `build/mooncake-transfer-engine/example` 目录下产生测试程序 `transfer_engine_bench`。
 
 1. **启动 `etcd` 服务。** 该服务用于 Mooncake 各类元数据的集中高可用管理，包括 Transfer Engine 的内部连接状态等。需确保发起节点和目标节点都能顺利通达该 etcd 服务，因此需要注意：
    - etcd 服务的监听 IP 不应为 127.0.0.1，需结合网络环境确定。在实验环境中，可使用 0.0.0.0。例如，可使用下列命令行启动合要求的服务：
@@ -47,32 +47,4 @@
 
    发起节点还可以配置下列测试参数：`--operation`（可为 `"read"` 或 `"write"`）、`batch_size`、`block_size`、`duration`、`threads` 等。
 
-
-
-## P2P Store 使用与测试方法
-按照上面步骤编译 P2P Store 成功后，可在 `build/mooncake-p2p-store` 目录下产生测试程序 `p2p-store-example`。该工具演示了 P2P Store 的使用方法，模拟了训练节点完成训练任务后，将模型数据迁移到大量推理节点的过程。目前仅支持 RDMA 协议。
-
-1. **启动 `etcd` 服务。** 这与 Transfer Engine Bench 所述的方法是一致的。
-   
-2. **启动模拟训练节点。** 该节点将创建模拟模型文件，并向集群内公开。
-   ```bash
-   # This is 10.0.0.2
-   export MC_GID_INDEX=n
-   ./p2p-store-example --cmd=trainer \
-                       --metadata_server=10.0.0.1:2379 \
-                       --local_server_name=10.0.0.2:12345 \
-                       --device_name=erdma_0
-   ```
-
-3. **启动模拟推理节点。** 该节点会从模拟训练节点或其他模拟推理节点拉取数据。
-   ```bash
-   # This is 10.0.0.3
-   export MC_GID_INDEX=n
-   ./p2p-store-example --cmd=inferencer \
-                       --metadata_server=10.0.0.1:2379 \
-                       --local_server_name=10.0.0.3:12346 \
-                       --device_name=erdma_1
-   ```
-   测试完毕显示“ALL DONE”。
-
-上述过程中，模拟推理节点检索数据来源由 P2P Store 内部逻辑实现，因此不需要用户提供训练节点的 IP。同样地，需要保证其他节点可使用本机主机名 `hostname(2)` 或创建节点期间填充的 `--local_server_name` 来访问这台机器。
+> 如果在执行期间发生异常，大多数情况是参数设置不正确所致，建议参考[故障排除文档](troubleshooting.md)先行排查。

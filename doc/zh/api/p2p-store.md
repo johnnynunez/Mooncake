@@ -1,8 +1,6 @@
-# Mooncake P2P Store
+# Mooncake P2P Store API
 
-和由 Master 统一管理空间分配并负责维护固定数量的多个副本的 Mooncake Managed Store 不同，Mooncake P2P Store 的定位是零时中转数据的转存。典型的场景比如 checkpoint 的分发。所以提供的是类似 Register 和 Get 的接口。
-Register 相当于 BT 中的做种将本地某个文件注册到全局元数据中去，此时并不会发生任何的数据传输仅仅是登记一个元数据。
-Mooncake P2P Store 完全不保证可靠性，如果 peer 都丢了那数据就是丢了。同时也是 client-only 架构，没有统一的 master，只有一个 etcd 负责全局元数据的同步。
+P2P Store 基于 [Transfer Engine](transfer-engine.md) 构建，支持在集群中的对等节点之间临时共享对象，典型的场景包括 Checkpoint 分发等。P2P Store 是纯客户端架构，没有统一的 Master 节点，全局元数据由 etcd 服务维护。P2P Store 现已用于 Moonshot AI 的检查点传输服务。
 
 Mooncake P2P Store 目前基于 Golang 实现了下列接口：
 
