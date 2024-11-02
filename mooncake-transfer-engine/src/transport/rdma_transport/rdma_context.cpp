@@ -31,10 +31,12 @@
 #include "transport/transport.h"
 
 namespace mooncake {
-static int isNullGid(union ibv_gid *gid)
-{
-	return !(gid->raw[8] | gid->raw[9] | gid->raw[10] | gid->raw[11] |
-		 gid->raw[12] | gid->raw[13] | gid->raw[14] | gid->raw[15]);
+static int isNullGid(union ibv_gid *gid) {
+    for (int i = 0; i < 16; ++i) {
+        if (gid->raw[i] != 0)
+            return 0;
+    }
+	return 1;
 }
 
 RdmaContext::RdmaContext(RdmaTransport &engine, const std::string &device_name)
