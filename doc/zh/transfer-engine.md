@@ -1,11 +1,11 @@
 # Transfer Engine
 
-## 概念
+## 概述
 Mooncake Transfer Engine 是一个围绕 Segment 和 BatchTransfer 两个核心抽象设计的高性能，零拷贝数据传输库。
 
-- **Segment** 代表一段可被远程读写的连续地址空间，既可以是 DRAM 或 VRAM 提供的非持久化存储 **RAM Segment**，也可以是 NVMeof 提供的持久化存储 **NVMeof Segment**。
+- [**Segment**](#segment) 代表一段可被远程读写的连续地址空间，既可以是 DRAM 或 VRAM 提供的非持久化存储 **RAM Segment**，也可以是 NVMeof 提供的持久化存储 **NVMeof Segment**。
 
-- **BatchTransfer** 封装了操作请求，具体负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
+- [**BatchTransfer**](#batchtransfer) 封装了操作请求，具体负责将一个 Segment 中非连续的一组数据空间的数据和另外一组 Segment 的对应空间进行数据同步，支持 Read/Write 两种方向，因此类似一个异步且更灵活的的 AllScatter/AllGather。
 
 ![transfer_engine](../../image/transfer-engine.png)
 
@@ -91,7 +91,7 @@ Transfer Engine 使用SIEVE算法来管理端点的逐出。如果由于链路�
    - `--local_server_name` 表示本机器地址，大多数情况下无需设置。如果不设置该选项，则该值等同于本机的主机名（即 `hostname(2)` ）。集群内的其它节点会使用此地址尝试与该节点进行带外通信，从而建立 RDMA 连接。
       > 注意：若带外通信失败则连接无法建立。因此，若有必要需修改集群所有节点的 `/etc/hosts` 文件，使得可以通过主机名定位到正确的节点。
    - `--device_name` 表示传输过程使用的 RDMA 网卡名称。
-      > 提示：高级用户还可通过 `--nic_priority_matrix` 传入网卡优先级矩阵 JSON 文件，详细参考 Transfer Engine 的开发者手册。
+      > 提示：高级用户还可通过 `--nic_priority_matrix` 传入网卡优先级矩阵 JSON 文件，详细参考 [Transfer Engine 的开发者手册](#transferengineinstallorgettransport)。
    - 在仅支持 TCP 的网络环境中，可使用 `--protocol=tcp` 参数，此时不需要指定 `--device_name` 参数。
 
 1. **启动发起节点。**
@@ -415,7 +415,7 @@ int init(std::string& server_name, std::string& connectable_name, uint64_t rpc_p
 编译项目时启用 `-DWITH_P2P_STORE=ON` 选项，则可以一并编译 P2P Store 样例程序。
 
 ### 使用 Rust接口二次开发
-在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的 benchmark，逻辑类似于 [transfer_engine_bench.cpp](../../../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 Rust SDK，并在 cmake 命令中添加 `-DWITH_RUST_EXAMPLE=ON`。
+在 `mooncake-transfer-engine/example/rust-example` 下给出了 TransferEngine 的 Rust 接口实现，并根据该接口实现了 Rust 版本的样例程序，逻辑类似于 [transfer_engine_bench.cpp](../../../mooncake-transfer-engine/example/transfer_engine_bench.cpp)。若想编译 rust-example，需安装 Rust SDK，并在 cmake 命令中添加 `-DWITH_RUST_EXAMPLE=ON`。
 
 ## 高级运行时选项
 对于高级用户，TransferEngine 提供了如下所示的高级运行时选项，均可通过 **环境变量（environment variable）** 方式传入。
