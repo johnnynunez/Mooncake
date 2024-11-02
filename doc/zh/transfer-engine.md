@@ -112,6 +112,9 @@ Transfer Engine 使用SIEVE算法来管理端点的逐出。如果由于链路�
 
 ### 运行示例及结果判读
 
+下面的视频显示了按上述操作正常运行的过程，其中右侧是 Target，左侧是 Initiator。测试结束后，Initiator 会报告测试时长（10 秒）、IOPS（379008 次请求/s）、吞吐率（19.87 GiB/s）等信息。这里的吞吐率超出了所用主机单卡支持的最大吞吐率。
+
+![transfer-engine-running](../../image/transfer-engine-running.gif)
 
 > 如果在执行期间发生异常，大多数情况是参数设置不正确所致，建议参考[故障排除文档](troubleshooting.md)先行排查。
 

@@ -33,6 +33,14 @@ P2P Store 提供的是类似 Register 和 GetReplica 的接口。Register 相当
 
 上述过程中，模拟推理节点检索数据来源由 P2P Store 内部逻辑实现，因此不需要用户提供训练节点的 IP。同样地，需要保证其他节点可使用本机主机名 `hostname(2)` 或创建节点期间填充的 `--local_server_name` 来访问这台机器。
 
+### 运行示例及结果判读
+
+下面的视频显示了按上述操作正常运行的过程，其中右侧是 Trainer，左侧是 Inferencer。传输数据量为 2 GiB。Trainer 首先使用 0.41s 完成 Register 操作，数据对集群所有节点可见；Inferencer 使用 0.64s 完成 GetReplica 操作，此时数据即可直接访问利用。
+
+![p2p-store](../../image/p2p-store.gif)
+
+> 如果在执行期间发生异常，大多数情况是参数设置不正确所致，建议参考[故障排除文档](troubleshooting.md)先行排查。
+
 ## P2P Store API
 
 P2P Store 基于 [Transfer Engine](transfer-engine.md) 构建，支持在集群中的对等节点之间临时共享对象，典型的场景包括 Checkpoint 分发等。P2P Store 是纯客户端架构，没有统一的 Master 节点，全局元数据由 etcd 服务维护。P2P Store 现已用于 Moonshot AI 的检查点传输服务。
