@@ -110,6 +110,9 @@ Transfer Engine 使用SIEVE算法来管理端点的逐出。如果由于链路�
 
    发起节点还可以配置下列测试参数：`--operation`（可为 `"read"` 或 `"write"`）、`batch_size`、`block_size`、`duration`、`threads` 等。
 
+### 运行示例及结果判读
+
+
 > 如果在执行期间发生异常，大多数情况是参数设置不正确所致，建议参考[故障排除文档](troubleshooting.md)先行排查。
 
 ## C/C++ API

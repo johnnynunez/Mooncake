@@ -201,6 +201,24 @@ int initiatorWorker(Transport *xport, SegmentID segment_id, int thread_id,
     return 0;
 }
 
+std::string formatDeviceNames(const std::string& device_names) {
+    std::stringstream ss(device_names);
+    std::string item;
+    std::vector<std::string> tokens;
+    while (getline(ss, item, ',')) {
+        tokens.push_back(item);
+    }
+
+    std::string formatted;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        formatted += "\"" + tokens[i] + "\"";
+        if (i < tokens.size() - 1) {
+            formatted += ",";
+        }
+    }
+    return formatted;
+}
+
 std::string loadNicPriorityMatrix() {
     if (!FLAGS_nic_priority_matrix.empty()) {
         std::ifstream file(FLAGS_nic_priority_matrix);
@@ -212,8 +230,10 @@ std::string loadNicPriorityMatrix() {
         }
     }
     // Build JSON Data
-    return "{\"cpu:0\": [[\"" + FLAGS_device_name +
-           "\"], []], \"cpu:1\": [[\"" + FLAGS_device_name + "\"], []]}";
+    auto device_names = formatDeviceNames(FLAGS_device_name);
+    return "{\"cpu:0\": [[" + device_names +
+           "], []], \"cpu:1\": [[" + device_names +
+           "], []]}";
 }
 
 int initiator() {
