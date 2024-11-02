@@ -59,9 +59,9 @@ Thanks to the high performance of Transfer Engine, P2P Stores can also distribut
 ![p2p-store.gif](image/p2p-store.gif)
 
 ### vLLM Integration ([Guide](doc/zh/vllm-integration.md))
-Prefill/decode disaggregation is an approach to optimize reasoning in Large Language Models (LLMs) by separating the **prefill** phase from the **decode** phase in order to accommodate differences in the demand for computational resources and model parallelism strategies in different phases. This feature is promising to integrate in vLLM mainline (see [PR PR 8498](https://github.com/vllm-project/vllm/pull/8498) for more details).
+Prefill/decode disaggregation is an approach to optimize reasoning in Large Language Models (LLMs) by separating the **prefill** phase from the **decode** phase in order to accommodate differences in the demand for computational resources and model parallelism strategies in different phases. This feature is promising to integrate in vLLM mainline (see [PR 8498](https://github.com/vllm-project/vllm/pull/8498) for more details).
 
-We have integrated Transfer Engine with vLLM based on [ PR 8498](https://github.com/vllm-project/vllm/pull/8498). We mainly replaced the NCCL-based `torch.distributed` interface with Transfer Engine, which supports more efficient use of RDMA devices.
+We have integrated Transfer Engine with vLLM based on [PR 8498](https://github.com/vllm-project/vllm/pull/8498). We mainly replaced the NCCL-based `torch.distributed` interface with Transfer Engine, which supports more efficient use of RDMA devices.
 
 In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation. 
 
