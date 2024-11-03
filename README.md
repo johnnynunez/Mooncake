@@ -54,19 +54,18 @@ P2P Store is built on the Transfer Engine and supports sharing temporary objects
 - **Efficient data distribution.** Designed to enhance the efficiency of large-scale data distribution, P2P Store *avoids bandwidth saturation* issues by allowing replicated nodes to share data directly. This reduces the CPU/RDMA NIC pressures of data providers (e.g., trainers).
 
 #### Performance
-Thanks to the high performance of Transfer Engine, P2P Stores can also distribute objects with full utilization of *hardware incoming bandwidth*.
+Thanks to the high performance of Transfer Engine, P2P Stores can also distribute objects with full utilization of *hardware incoming bandwidth* (e.g., A 25Gbps NIC was used in the following figure, and the throughput of get replica is about 3.1 GB/s).
 
 ![p2p-store.gif](image/p2p-store.gif)
 
 ### vLLM Integration ([Guide](doc/zh/vllm-integration.md))
-Prefill/decode disaggregation is an approach to optimize reasoning in Large Language Models (LLMs) by separating the **prefill** phase from the **decode** phase in order to accommodate differences in the demand for computational resources and model parallelism strategies in different phases. This feature is promising to integrate in vLLM mainline (see [PR 8498](https://github.com/vllm-project/vllm/pull/8498) for more details).
+To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase to improve server utilization. It uses `NCCL` as the network layer by default.
 
-We have integrated Transfer Engine with vLLM based on [PR 8498](https://github.com/vllm-project/vllm/pull/8498). We mainly replaced the NCCL-based `torch.distributed` interface with Transfer Engine, which supports more efficient use of RDMA devices.
-
+We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `NCCL`. Transfer Engine has simpler interface and more efficient use of RDMA devices.
 In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation. 
 
 #### Performance
-（TODO 性能比较，需要阿里测一下贴个 gif）
+（TODO 性能比较，需要阿里测一下并贴个 gif，比如能处理多少个 tokens/s，我记得大概60个）
 
 **More advanced features will coming soon, so stay tuned!**
 
