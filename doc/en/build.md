@@ -65,6 +65,15 @@ This document describes how to build Mooncake.
     git clone https://github.com/abseil/googletest.git
     ```
 
+1a(optional). if you want to use GPU,
+    First, follow the instructions in https://docs.nvidia.com/cuda/cuda-installation-guide-linux/ to install CUDA (ensure to select the `nvidia-fs` option to enable proper `cuFile` functionality). After that:
+    1) Refer to Section 3.7 in https://docs.nvidia.com/cuda/gpudirect-rdma/ to install `nvidia-peermem` for enabling GPU-Direct RDMA:
+    2) Configure `LIBRARY_PATH` and `LD_LIBRARY_PATH` for compile-time and runtime linking of `cuFile`, `cudart`, and other libraries:
+    ```bash
+    export LIBRARY_PATH=$LIBRARY_PATH:/usr/local/cuda/lib64
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+    ```
+
 2. Install grpc (v1.27.x)
     ```bash
     git clone https://github.com/grpc/grpc.git --depth 1 --branch v1.27.x
