@@ -21,8 +21,8 @@ set(CMAKE_BUILD_TYPE "Release")
 
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
-option(USE_CUDA "option for using gpu direct" ON)
-option(USE_CXL "option for using cxl protocol" ON)
+option(USE_CUDA "option for using gpu direct" OFF)
+option(USE_CXL "option for using cxl protocol" OFF)
 
 option(WITH_P2P_STORE "build p2p store library and sample code" OFF)
 option(WITH_ALLOCATOR "build allocator, component of managed store" OFF)

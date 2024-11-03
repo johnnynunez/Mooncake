@@ -1,10 +1,9 @@
 file(GLOB SOURCES "*.cpp")
-
+set(PYTHON_EXECUTABLE "python3")
 execute_process(
     COMMAND ${PYTHON_EXECUTABLE} -c "import sys; print(sys.path[-1])"
     OUTPUT_VARIABLE PYTHON_SYS_PATH
 )
-
 
 set(PYBIND11_FINDPYTHON ON)
 find_package(pybind11 CONFIG REQUIRED) 
