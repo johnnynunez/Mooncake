@@ -16,4 +16,3 @@ if (USE_CUDA)
   target_link_libraries(transfer_engine PUBLIC nvmeof_transport cuda cufile cudart rt)
 endif()
 
-#target_link_libraries(transfer_engine PUBLIC ibverbs glog gflags pthread jsoncpp numa memcached)

@@ -11,9 +11,9 @@ Mooncake aims to enhance the inference efficiency of large language models (LLMs
 
 ## Architectural Overview
 ![architecture](../../image/mooncake-store.png)
-- Mooncake provides object-level operations such as Get/Put/List/Del, and also supports dynamically adjusting replication strategies according to user requirements (Replicate operations);
+- Mooncake provides object-level operations such as `Get/Put/List/Del`, and also supports dynamically adjusting replication strategies according to user requirements (`Replicate` operations);
 - Mooncake supports data transfer based on storage media such as VRAM/DRAM/NVMe SSD, while aiming to achieve zero-copy and multi-network card pooling data transfer. The corresponding logic has been abstracted into the Transfer Engine subsystem, which is now fully open-sourced;
-- The Master node centrally manages the mapping relationships and space management policies of objects (Objects) to VRAM/DRAM/NVM buffers (Buffers). At the same time, the Master node drives Managed Pool Buffer nodes to achieve data transfer by calling relevant interfaces of the Transfer Engine;
+- The master node centrally manages the mapping relationships and space management policies of objects (Objects) to VRAM/DRAM/NVM buffers (Buffers). At the same time, the master node drives Managed Pool Buffer nodes to achieve data transfer by calling relevant interfaces of the Transfer Engine;
 - Managed Pool Buffer nodes mainly provide storage space, and all objects will eventually be written into the storage space allocated by such nodes according to specific rules.
 
 > Mooncake has currently open-sourced the Transfer Engine subsystem, and updates are forthcoming!

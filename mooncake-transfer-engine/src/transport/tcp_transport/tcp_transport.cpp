@@ -214,7 +214,7 @@ int TcpTransport::install(std::string &local_server_name,
         LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot "
                       "publish segments";
         LOG(ERROR) << "*** Check the connectivity between this server and "
-                      "metadata server (etcd/memcached)";
+                      "metadata server (etcd server)";
         return -1;
     }
 

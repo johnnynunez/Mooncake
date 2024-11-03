@@ -3,7 +3,7 @@
 ## Overview
 P2P Store is built on [Transfer Engine](transfer-engine.md) and supports the temporary sharing of objects between peer nodes in a cluster, with typical scenarios including checkpoint distribution, etc. P2P Store is a pure client architecture with no centralized master node; global metadata is maintained by the etcd service. P2P Store is now used in Moonshot AI's checkpoint transfer service.
 
-P2P Store provides interfaces similar to Register and GetReplica. Register is equivalent to seeding in BT, where a local file is registered with the global metadata without any data transfer occurring; it merely registers metadata. The GetReplica interface searches metadata and clones data from other machines that have called Register or Get (unless explicitly calling Unregister or DeleteReplica to stop pulling files from the local machine), and it can also act as a data source to improve the efficiency of data transfer for other nodes. This approach can increase the efficiency of large-scale data distribution and avoid the impact of single-machine export bandwidth saturation on distribution efficiency.
+P2P Store provides several interfaces like `Register` and `GetReplica`. A `Register` is equivalent to seeding in BitTorrent, where a local file is registered with the global metadata without any data transfer occurring; it merely registers metadata. A `GetReplica` searches metadata and clones data from other machines that have called Register or Get (unless explicitly calling `Unregister` or `DeleteReplica` to stop pulling files from the local machine), and it can also act as a data source to improve the efficiency of data transfer for other nodes. This approach can increase the efficiency of large-scale data distribution and avoid the impact of single-machine export bandwidth saturation on distribution efficiency.
 
 ## P2P Store Demonstration Program
 After compiling P2P Store successfully by following the compilation guide with `cmake .. -DWITH_P2P_STORE=ON && make -j`, a test program `p2p-store-example` will be produced in the `build/mooncake-p2p-store` directory. This tool demonstrates the usage of P2P Store, simulating the process of migrating model data from training nodes to a large number of inference nodes after the training task is completed. Currently, it only supports the RDMA protocol.
@@ -31,7 +31,7 @@ After compiling P2P Store successfully by following the compilation guide with `
    ```
    The test is completed with the display of "ALL DONE".
 
-In the above process, the simulated inference nodes search for data sources, which is implemented by the internal logic of P2P Store, so there is no need for users to provide the IP of the training node. Similarly, it is necessary to ensure that other nodes can access this machine using the local machine's hostname `hostname(2)` or the `--local_server_name` filled in during the creation of the node.
+In the above process, the simulated inference nodes search for data sources, which is done by P2P Store, so there is no need for users to provide the IP of the training node. Similarly, it is necessary to ensure that other nodes can access this machine using the local machine's hostname `hostname(2)` or the `--local_server_name` filled in during the creation of the node.
 
 ## P2P Store API
 
@@ -71,7 +71,7 @@ Registers a local file to the cluster, making it downloadable by other peers. En
 ```go
 func (store *P2PStore) Unregister(ctx context.Context, name string) error
 ```
-Stops the registration of a local file to the entire cluster.
+Remove the registration of a local file to the entire cluster. After calling this function, it is safe to modify/delete the memory region reserved for this file.
 - `ctx`: Golang Context reference.
 - `name`: The file registration name, ensuring uniqueness within the cluster.
 
@@ -92,7 +92,7 @@ Obtains a list of files registered in the cluster, with the ability to filter by
 ```go
 func (store *P2PStore) GetReplica(ctx context.Context, name string, addrList []uintptr, sizeList []uint64) error
 ```
-Pulls a copy of a file to a specified local memory area, while allowing other nodes to pull the file from this copy. Ensure that the data in the corresponding address range is not modified or unmapped before calling DeleteReplica. A file can only be pulled once on the same P2PStore instance.
+Pulls a copy of a file to a specified local memory area, while allowing other nodes to pull the file from this copy. Ensure that the data in the corresponding address range is not modified or unmapped before calling `DeleteReplica`. A file can only be pulled once on the same P2PStore instance.
 - `ctx`: Golang Context reference.
 - `name`: The file registration name, ensuring uniqueness within the cluster.
 - `addrList` and `sizeList`: These two arrays represent the memory range of the file, with `addrList` indicating the starting address and `sizeList` indicating the corresponding length. The file content corresponds logically to the order in the arrays.
@@ -100,6 +100,6 @@ Pulls a copy of a file to a specified local memory area, while allowing other no
 ```go
 func (store *P2PStore) DeleteReplica(ctx context.Context, name string) error
 ```
-Stops other nodes from pulling the file from the local node.
+Stops other nodes from pulling the file from the local node. After calling this function, it is safe to modify/delete the memory region reserved for this file.
 - `ctx`: Golang Context reference.
 - `name`: The file registration name, ensuring uniqueness within the cluster.

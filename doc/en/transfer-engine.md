@@ -9,7 +9,7 @@ Mooncake Transfer Engine is a high-performance, zero-copy data transfer library 
 
 ![transfer_engine](../../image/transfer-engine.png)
 
-As shown in the diagram, each specific client corresponds to a TransferEngine, which not only includes a RAM Segment but also integrates management for high-speed transfers across multiple threads and network cards. The RAM Segment, in principle, corresponds to the entire virtual address space of this TransferEngine, but in reality, only parts of it (known as a Buffer) are registered for external (GPUDirect) RDMA Read/Write. Each Buffer can have separate permissions (corresponding to RDMA rkey, etc.) and network card affinity (e.g., based on topology,优先从哪张卡读写等).
+As shown in the diagram, each specific client corresponds to a TransferEngine, which not only includes a RAM Segment but also integrates management for high-speed transfers across multiple threads and network cards. The RAM Segment, in principle, corresponds to the entire virtual address space of this TransferEngine, but in reality, only parts of it (known as a Buffer) are registered for (GPUDirect) RDMA Read/Write. Each Buffer can have separate permissions (corresponding to RDMA rkey, etc.) and network card affinity (e.g., preferred NICs for different types of memory).
 
 Mooncake Transfer Engine provides interfaces through the `TransferEngine` class (located in `mooncake-transfer-engine/include/transfer_engine.h`), where the specific data transfer functions for different backends are implemented by the `Transport` class, currently supporting `TcpTransport`, `RdmaTransport`, and `NVMeoFTransport`.
 
