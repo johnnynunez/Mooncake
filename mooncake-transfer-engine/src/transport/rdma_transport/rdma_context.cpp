@@ -422,9 +422,16 @@ int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
             return ERR_CONTEXT;
         }
 
+#ifndef CONFIG_SKIP_NULL_GID_CHECK
         if (isNullGid(&gid_)) {
-            LOG(WARNING) << "GID is null, potentially lead connection problem!";
+            LOG(WARNING) << "GID is NULL, please check your GID index by specifying MC_GID_INDEX";
+            if (ibv_close_device(context)) {
+                PLOG(ERROR) << "Fail to close device " << device_name;
+            }
+            ibv_free_device_list(devices);
+            return ERR_CONTEXT;
         }
+#endif // CONFIG_SKIP_NULL_GID_CHECK
 
         context_ = context;
         port_ = port;

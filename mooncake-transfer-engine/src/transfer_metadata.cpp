@@ -42,7 +42,7 @@ static inline std::string getFullMetadataKey(const std::string &segment_name) {
 
 struct TransferMetadataImpl {
     TransferMetadataImpl(const std::string &metadata_uri)
-        : client_(metadata_uri) {}
+        : client_(metadata_uri), metadata_uri_(metadata_uri) {}
 
     ~TransferMetadataImpl() {}
 
@@ -50,10 +50,9 @@ struct TransferMetadataImpl {
         Json::Reader reader;
         auto resp = client_.get(key);
         if (!resp.is_ok()) {
-            if (resp.error_code() != 100) {
-                LOG(ERROR) << "Error from etcd client: " << resp.error_code()
-                           << ", message: " << resp.error_message();
-            }
+            LOG(ERROR) << "Error from etcd client, etcd uri: " << metadata_uri_
+                       << " error: " << resp.error_code()
+                       << " message: " << resp.error_message();
             return false;
         }
         auto json_file = resp.value().as_string();
@@ -72,8 +71,9 @@ struct TransferMetadataImpl {
                       << ", value=" << json_file;
         auto resp = client_.put(key, json_file);
         if (!resp.is_ok()) {
-            LOG(ERROR) << "Error from etcd client: " << resp.error_code()
-                       << ", message: " << resp.error_message();
+            LOG(ERROR) << "Error from etcd client, etcd uri: " << metadata_uri_
+                       << " error: " << resp.error_code()
+                       << " message: " << resp.error_message();
             return false;
         }
         return true;
@@ -82,16 +82,16 @@ struct TransferMetadataImpl {
     bool remove(const std::string &key) {
         auto resp = client_.rm(key);
         if (!resp.is_ok()) {
-            if (resp.error_code() != 100) {
-                LOG(ERROR) << "Error from etcd client: " << resp.error_code()
-                           << ", message: " << resp.error_message();
-            }
+            LOG(ERROR) << "Error from etcd client, etcd uri: " << metadata_uri_
+                       << " error: " << resp.error_code()
+                       << " message: " << resp.error_message();
             return false;
         }
         return true;
     }
 
     etcd::SyncClient client_;
+    const std::string metadata_uri_;
 };
 
 TransferMetadata::TransferMetadata(const std::string &metadata_uri)
@@ -175,7 +175,7 @@ int TransferMetadata::updateSegmentDesc(const std::string &segment_name,
     }
 
     if (!impl_->set(getFullMetadataKey(segment_name), segmentJSON)) {
-        LOG(ERROR) << "Failed to put description of " << segment_name;
+        LOG(ERROR) << "Failed to put segment description: " << segment_name;
         return ERR_METADATA;
     }
 
@@ -184,7 +184,7 @@ int TransferMetadata::updateSegmentDesc(const std::string &segment_name,
 
 int TransferMetadata::removeSegmentDesc(const std::string &segment_name) {
     if (!impl_->remove(getFullMetadataKey(segment_name))) {
-        LOG(ERROR) << "Failed to remove description of " << segment_name;
+        LOG(ERROR) << "Failed to remove segment description: " << segment_name;
         return ERR_METADATA;
     }
     return 0;
@@ -194,7 +194,7 @@ std::shared_ptr<TransferMetadata::SegmentDesc> TransferMetadata::getSegmentDesc(
     const std::string &segment_name) {
     Json::Value segmentJSON;
     if (!impl_->get(getFullMetadataKey(segment_name), segmentJSON)) {
-        LOG(ERROR) << "Failed to get description of " << segment_name;
+        LOG(ERROR) << "Failed to get segment description: " << segment_name;
         return nullptr;
     }
 
@@ -454,7 +454,7 @@ int TransferMetadata::getRpcMetaEntry(const std::string &server_name,
         return ERR_METADATA;
     }
     desc.ip_or_host_name = rpcMetaJSON["ip_or_host_name"].asString();
-    desc.rpc_port = (uint16_t) rpcMetaJSON["rpc_port"].asUInt();
+    desc.rpc_port = (uint16_t)rpcMetaJSON["rpc_port"].asUInt();
     rpc_meta_map_[server_name] = desc;
     return 0;
 }
@@ -542,7 +542,7 @@ int TransferMetadata::startHandshakeDaemon(
     }
 
     if (bind(listen_fd, (sockaddr *)&bind_address, sizeof(sockaddr_in)) < 0) {
-        PLOG(ERROR) << "Failed to bind address";
+        PLOG(ERROR) << "Failed to bind address, rpc port: " << listen_port;
         close(listen_fd);
         return ERR_SOCKET;
     }
@@ -590,7 +590,8 @@ int TransferMetadata::startHandshakeDaemon(
             HandShakeDesc local_desc, peer_desc;
             int ret = decode(readString(conn_fd), peer_desc);
             if (ret) {
-                PLOG(ERROR) << "Failed to receive handshake message";
+                PLOG(ERROR) << "Failed to receive handshake message: malformed "
+                               "json format, check tcp connection";
                 close(conn_fd);
                 continue;
             }
@@ -598,7 +599,8 @@ int TransferMetadata::startHandshakeDaemon(
             on_receive_handshake(peer_desc, local_desc);
             ret = writeString(conn_fd, encode(local_desc));
             if (ret) {
-                PLOG(ERROR) << "Failed to send handshake message";
+                PLOG(ERROR) << "Failed to send handshake message: malformed "
+                               "json format, check tcp connection";
                 close(conn_fd);
                 continue;
             }
@@ -642,6 +644,9 @@ int TransferMetadata::sendHandshake(const std::string &peer_server_name,
             freeaddrinfo(result);
             return 0;
         }
+        if (ret == ERR_MALFORMED_JSON) {
+            return ret;
+        }
     }
 
     freeaddrinfo(result);
@@ -677,28 +682,33 @@ int TransferMetadata::doSendHandshake(struct addrinfo *addr,
     }
 
     if (connect(conn_fd, addr->ai_addr, addr->ai_addrlen)) {
-        PLOG(ERROR) << "Failed to connect " << toString(addr->ai_addr);
+        PLOG(ERROR) << "Failed to connect " << toString(addr->ai_addr)
+                    << " via socket";
         close(conn_fd);
         return ERR_SOCKET;
     }
 
     int ret = writeString(conn_fd, encode(local_desc));
     if (ret) {
-        LOG(ERROR) << "Failed to send handshake message";
+        LOG(ERROR) << "Failed to send handshake message: malformed json "
+                      "format, check tcp connection";
         close(conn_fd);
         return ret;
     }
 
     ret = decode(readString(conn_fd), peer_desc);
     if (ret) {
-        LOG(ERROR) << "Failed to receive handshake message";
+        LOG(ERROR) << "Failed to receive handshake message: malformed json "
+                      "format, check tcp connection";
         close(conn_fd);
         return ret;
     }
 
     if (!peer_desc.reply_msg.empty()) {
-        LOG(ERROR) << "Handshake request rejected by peer endpoint: "
-                   << peer_desc.reply_msg;
+        LOG(ERROR) << "Handshake request is rejected by peer endpoint "
+                   << peer_desc.local_nic_path
+                   << ", message: " << peer_desc.reply_msg
+                   << ". Please check peer's configuration.";
         close(conn_fd);
         return ERR_REJECT_HANDSHAKE;
     }

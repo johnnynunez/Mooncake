@@ -31,8 +31,7 @@ transfer_engine_t createTransferEngine(const char *metadata_uri) {
 int initTransferEngine(transfer_engine_t engine, const char *local_server_name,
                        const char *connectable_name, uint64_t rpc_port) {
     TransferEngine *native = (TransferEngine *)engine;
-    native->init(local_server_name, connectable_name, rpc_port);
-    return 0;
+    return native->init(local_server_name, connectable_name, rpc_port);
 }
 
 transport_t installOrGetTransport(transfer_engine_t engine, const char *proto,

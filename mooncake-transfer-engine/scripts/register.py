@@ -36,7 +36,7 @@ if __name__ == "__main__":
 
     value = {}
     value['server_name'] = local_server_name
-    value['protocol'] = "NVMeoF"
+    value['protocol'] = "nvmeof"
     value['buffers'] = []
     for file in files:
         buffer = {}

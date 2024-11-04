@@ -56,10 +56,10 @@ int RdmaTransport::install(std::string &local_server_name,
     int ret = metadata_->parseNicPriorityMatrix(
         nic_priority_matrix, local_priority_matrix, device_name_list_);
     if (ret) {
-        LOG(ERROR) << "*** Transfer engine cannot be initialized: cannot parse "
-                      "NIC priority matrix";
-        LOG(ERROR) << "*** nic_priority_matrix " << nic_priority_matrix;
-        return -1;
+        LOG(ERROR) << "Transfer engine cannot be initialized: cannot parse "
+                      "NIC priority matrix: "
+                   << nic_priority_matrix;
+        return ret;
     }
 
     int device_index = 0;
@@ -70,30 +70,29 @@ int RdmaTransport::install(std::string &local_server_name,
     if (ret) {
         LOG(ERROR) << "Transfer engine cannot be initialized: cannot "
                       "initialize RDMA resources";
-        return -1;
+        return ret;
     }
 
     ret = allocateLocalSegmentID(local_priority_matrix);
     if (ret) {
         LOG(ERROR) << "Transfer engine cannot be initialized: cannot "
                       "allocate local segment";
-        return -1;
+        return ret;
     }
 
     ret = startHandshakeDaemon(local_server_name);
     if (ret) {
         LOG(ERROR) << "Transfer engine cannot be initialized: cannot start "
                       "handshake daemon";
-        return -1;
+        return ret;
     }
 
     ret = metadata_->updateLocalSegmentDesc();
     if (ret) {
         LOG(ERROR) << "Transfer engine cannot be initialized: cannot "
-                      "publish segments";
-        LOG(ERROR) << "Check the connectivity between this server and "
-                      "etcd servers";
-        return -1;
+                      "publish segments. Check the connectivity between this "
+                      "server and etcd servers";
+        return ret;
     }
 
     return 0;
