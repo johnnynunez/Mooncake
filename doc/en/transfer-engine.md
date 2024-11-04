@@ -113,6 +113,11 @@ After successfully compiling Transfer Engine, the test program `transfer_engine_
 
 > If an exception occurs during execution, it is usually due to incorrect parameter settings. It is recommended to refer to the [troubleshooting document](troubleshooting.md) for preliminary troubleshooting.
 
+### Sample Run
+
+The following video shows a normal run as described above, with the Target on the right and the Initiator on the left, at the end of the test the Initiator reports the test duration (10 seconds), IOPS (379008 requests/s), and throughput (19.87 GiB/s). The throughput here exceeds the maximum throughput supported by a single card on the host computer used.
+
+![transfer-engine-running](../../image/transfer-engine-running.gif)
 
 ## Transfer Engine C/C++ API
 Transfer Engine provides interfaces through the `TransferEngine` class (located in `mooncake-transfer-engine/include/transfer_engine.h`), where the specific data transfer functions for different backends are implemented by the `Transport` class, currently supporting `TcpTransport`, `RdmaTransport` and `NVMeoFTransport`.
