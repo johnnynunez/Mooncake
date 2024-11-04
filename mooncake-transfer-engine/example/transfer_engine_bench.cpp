@@ -47,7 +47,7 @@ static std::string getHostname();
 
 DEFINE_string(local_server_name, getHostname(),
               "Local server name for segment discovery");
-DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
+DEFINE_string(metadata_server, "192.168.3.77:2379", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
@@ -60,7 +60,7 @@ DEFINE_string(device_name, "mlx5_2",
 DEFINE_string(nic_priority_matrix, "",
               "Path to RDMA NIC priority matrix file (Advanced)");
 
-DEFINE_string(segment_id, "optane20", "Segment ID to access data");
+DEFINE_string(segment_id, "192.168.3.76", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");

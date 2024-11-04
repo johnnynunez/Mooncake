@@ -1,19 +1,18 @@
-#include "cuda.h"
-#include "cuda_runtime.h"
-#include "transfer_engine_c.h"
-
 #include <stddef.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include "cuda.h"
+#include "cuda_runtime.h"
+#include "transfer_engine_c.h"
+
 #define WRITE 1
 #define READ 0
 
-int main(void)
-{
+int main(void) {
     char *metadata = "etcd_server:2379";
-    char *server_name = "optane10";
+    char *server_name = "node0";
     transfer_engine_t *engine = createTransferEngine(metadata);
     void **args = (void **)malloc(sizeof(void *));
     // args[0] = malloc(16);
@@ -24,8 +23,8 @@ int main(void)
     transport_t rdma_xport = installOrGetTransport(engine, "rdma", args);
     transport_t nvmeof_xport = installOrGetTransport(engine, "nvmeof", args);
 
-    segment_handle_t rdma_seg = openSegment(engine, "ram/optane11");
-    segment_handle_t nvmeof_seg = openSegment(engine, "nvmeof/optane11");
+    segment_handle_t rdma_seg = openSegment(engine, "ram/node1");
+    segment_handle_t nvmeof_seg = openSegment(engine, "nvmeof/node1");
 
     const size_t batch_size = 8;
     batch_id_t rdma_batch = allocateBatchID(rdma_xport, batch_size);
@@ -38,9 +37,9 @@ int main(void)
     // memset(buf, 1, 1024 * batch_size);
     registerLocalMemory(engine, buf, length, "", 0);
 
-    struct transfer_request rdma_transfers[batch_size], nvmeof_transfers[batch_size];
-    for (size_t i = 0; i < batch_size; i++)
-    {
+    struct transfer_request rdma_transfers[batch_size],
+        nvmeof_transfers[batch_size];
+    for (size_t i = 0; i < batch_size; i++) {
         rdma_transfers[i] = (struct transfer_request){
             .opcode = WRITE,
             .source = buf + i * 1024,
@@ -59,20 +58,20 @@ int main(void)
     submitTransfer(rdma_xport, rdma_batch, rdma_transfers, batch_size);
     submitTransfer(nvmeof_xport, nvmeof_batch, nvmeof_transfers, batch_size);
 
-    for (size_t i = 0; i < batch_size; i++)
-    {
+    for (size_t i = 0; i < batch_size; i++) {
         struct transfer_status status;
         int ret;
         // getTransferStatus(xport, batch, i, &status);
-        while ((ret = getTransferStatus(nvmeof_xport, nvmeof_batch, i, &status)) == 0)
-        {
+        while ((ret = getTransferStatus(nvmeof_xport, nvmeof_batch, i,
+                                        &status)) == 0) {
             // busy waiting for nvme
         };
-        while ((ret = getTransferStatus(rdma_xport, rdma_batch, i, &status)) == 0)
-        {
+        while ((ret = getTransferStatus(rdma_xport, rdma_batch, i, &status)) ==
+               0) {
             // busy waiting for rdma
         };
-        printf("transfer %ld: %zu bytes transferred, status = %d\n", i, status.transferred_bytes, status.status);
+        printf("transfer %ld: %zu bytes transferred, status = %d\n", i,
+               status.transferred_bytes, status.status);
     }
 
     unregisterLocalMemory(engine, buf);

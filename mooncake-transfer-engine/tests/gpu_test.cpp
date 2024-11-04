@@ -19,7 +19,7 @@ static CUcontext cuContext;
     } while (0)
 #endif
 
-DEFINE_string(metadata_server, "optane14:12345", "etcd server host address");
+DEFINE_string(metadata_server, "node1:12345", "etcd server host address");
 DEFINE_string(mode, "initiator",
               "Running mode: initiator or target. Initiator node read/write "
               "data blocks from target node");
@@ -32,7 +32,7 @@ DEFINE_string(operation, "write", "Operation type: read or write");
 DEFINE_string(nic_priority_matrix,
               "{\"cpu:0\": [[\"mlx5_0\"], []], \"cpu:1\": [[\"mlx5_0\"], []]}",
               "NIC priority matrix");
-DEFINE_string(segment_id, "optane14", "Segment ID to access data");
+DEFINE_string(segment_id, "node1", "Segment ID to access data");
 DEFINE_int32(batch_size, 128, "Batch size");
 DEFINE_int32(block_size, 4096, "Block size for each transfer request");
 DEFINE_int32(duration, 10, "Test duration in seconds");

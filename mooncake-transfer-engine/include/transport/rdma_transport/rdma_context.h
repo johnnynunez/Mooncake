@@ -79,7 +79,7 @@ class RdmaContext {
     // Device name, such as `mlx5_3`
     std::string deviceName() const { return device_name_; }
 
-    // NIC Path, such as `optane20@mlx5_3`
+    // NIC Path, such as `192.168.3.76@mlx5_3`
     std::string nicPath() const;
 
    public:

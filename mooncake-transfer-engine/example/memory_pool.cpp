@@ -38,7 +38,7 @@ static std::string getHostname() {
 
 DEFINE_string(local_server_name, getHostname(),
               "Local server name for segment discovery");
-DEFINE_string(metadata_server, "optane21:2379", "etcd server host address");
+DEFINE_string(metadata_server, "192.168.3.77:2379", "etcd server host address");
 DEFINE_string(device_name, "mlx5_2", "Device name to use");
 DEFINE_string(nic_priority_matrix, "",
               "Path to NIC priority matrix file (Advanced)");

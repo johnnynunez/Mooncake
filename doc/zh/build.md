@@ -70,6 +70,15 @@
     git clone https://github.com/abseil/googletest.git
     ```
 
+1. 如果你要编译 GPUDirect 支持模块，首先需按照 https://docs.nvidia.com/cuda/cuda-installation-guide-linux/ 的指引安装 CUDA (确保启用 `nvidia-fs` 以正确编译 `cuFile` 模块)。之后:
+    1) 按照 https://docs.nvidia.com/cuda/gpudirect-rdma/ 的第 3.7 节说明安装 `nvidia-peermem` 以启用 GPU-Direct RDMA
+    2) 配置 `LIBRARY_PATH` 和 `LD_LIBRARY_PATH` 以确保编译过程期间链入 `cuFile`, `cudart` 等库:
+    ```bash
+    export LIBRARY_PATH=$LIBRARY_PATH:/usr/local/cuda/lib64
+    export LD_LIBRARY_PATH=$LD_LIBRARY_PATH:/usr/local/cuda/lib64
+    ```
+
+
 2. 安装 grpc（v1.27.x）
 注意：编译时需要加上`-DgRPC_SSL_PROVIDER=package`
     ```bash
@@ -136,7 +145,7 @@
 
 ## 高级编译选项
 在执行 `cmake ..` 期间可以使用下列选项指定是否编译 Mooncake 的某些组件。
-- `-DUSE_CUDA=[ON|OFF]`: 启用 GPU Direct RDMA 支持
+- `-DUSE_CUDA=[ON|OFF]`: 启用 GPU Direct RDMA 及 NVMe-of 支持
 - `-DUSE_CXL=[ON|OFF]`: 启用 CXL 支持 
 - `-DWITH_P2P_STORE=[ON|OFF]`: 启用 Golang 支持并编译 P2P Store 组件
 - `-DWITH_ALLOCATOR=[ON|OFF]`: 编译全局分配器模块（beta）

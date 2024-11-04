@@ -51,37 +51,37 @@ def mount_nvme_device(device, mount_point):
     return mount_point
 
 if __name__ == "__main__":
-  if len(sys.argv) != 4:
-    print("Usage: python mount.py <segment_name> <file_path> <local_path>")
-    sys.exit(1)
+    if len(sys.argv) != 5:
+        print("Usage: python mount.py <etcd_server> <segment_name> <file_path> <local_path>")
+        sys.exit(1)
 
-  os.environ.pop("HTTP_PROXY", None)
-  os.environ.pop("HTTPS_PROXY", None)
-  os.environ.pop("http_proxy", None)
-  os.environ.pop("https_proxy", None)
-  segment_name = sys.argv[1]
-  file_path = sys.argv[2]
-  local_path = sys.argv[3]
+    os.environ.pop("HTTP_PROXY", None)
+    os.environ.pop("HTTPS_PROXY", None)
+    os.environ.pop("http_proxy", None)
+    os.environ.pop("https_proxy", None)
+    etcd_server = sys.argv[1]
+    segment_name = "nvmeof/" + sys.argv[2]
+    file_path = sys.argv[3]
+    local_path = sys.argv[4]
+    local_server_name = socket.gethostname()
 
-  local_server_name = "optane14"
+    etcd = etcd3.client(host=etcd_server, port=2379)
+    value, _ = etcd.get(segment_name)
 
-  etcd = etcd3.client(host='optane12', port=2379)
-  value, _ = etcd.get(segment_name)
+    if value is None:
+        print("Segment not found")
+        sys.exit(1)
 
-  if value is None:
-    print("Segment not found")
-    sys.exit(1)
+    segment = json.loads(value)
+    buffers = segment["buffers"]
+    print(buffers)
 
-  segment = json.loads(value)
-  buffers = segment["buffers"]
-  print(buffers)
+    buffer = next((b for b in buffers if b["file_path"] == file_path), None)
+    buffer['local_path_map'][local_server_name] = local_path
 
-  buffer = next((b for b in buffers if b["file_path"] == file_path), None)
-  buffer['local_path_map'][local_server_name] = local_path
+    etcd.put(segment_name, json.dumps(segment))
+    print(etcd.get(segment_name)[0])
 
-  etcd.put(segment_name, json.dumps(segment))
-  print(etcd.get(segment_name)[0])
-
-  # TODO: mount the buffer to local_path
+    # TODO: mount the buffer to local_path
 
 

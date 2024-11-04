@@ -27,7 +27,7 @@ namespace mooncake {
 // 2. Handshake information needs to be exchanged with remote RdmaEndPoint.
 //    - Local side calls the setupConnectionsByActive() function, passing in the
 //    peer_nic_path of the remote side
-//      peer_nic_path := peer_server_name@nic_name, e.g. optane20@mlx5_3,
+//      peer_nic_path := peer_server_name@nic_name, e.g. 192.168.3.76@mlx5_3,
 //      which can be obtained from RdmaContext::nicPath() on the remote side
 //    - Remote side calls the setupConnectionsByPassive() function in its RPC
 //    service.

@@ -10,7 +10,7 @@ This repository also hosts its technical report and the open sourced traces.
 
 <h2 id="updates">🔥 Updates</h2>
 
- - **Nov X, 2024**: We open sourced the Transfer Engine, the central component of Mooncake. We also provide two demonstrate applications of Transfer Engine: a P2P Store and vLLM integration.
+ - **Nov X, 2024**: We open sourced the Transfer Engine, the central component of Mooncake. We also provide two demonstrations of Transfer Engine: a P2P Store and vLLM integration.
  - **July 9, 2024**: We open sourced the trace as a <a href="https://github.com/kvcache-ai/Mooncake/blob/main/mooncake_trace.jsonl" target="_blank">jsonl file</a>!.
  - **June 27, 2024**: We present a series of Chinese blogs with more discussions on <a href="https://zhuanlan.zhihu.com/p/705754254">zhihu 1</a>, <a href="https://zhuanlan.zhihu.com/p/705910725">2</a>, <a href="https://zhuanlan.zhihu.com/p/706204757">3</a>, <a href="https://zhuanlan.zhihu.com/p/707997501">4</a>.
  - **June 26, 2024**: Initial technical report release.

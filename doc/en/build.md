@@ -65,7 +65,7 @@ This document describes how to build Mooncake.
     git clone https://github.com/abseil/googletest.git
     ```
 
-1a(optional). if you want to use GPU,
+1. (optional). if you want to use GPU,
     First, follow the instructions in https://docs.nvidia.com/cuda/cuda-installation-guide-linux/ to install CUDA (ensure to select the `nvidia-fs` option to enable proper `cuFile` functionality). After that:
     1) Refer to Section 3.7 in https://docs.nvidia.com/cuda/gpudirect-rdma/ to install `nvidia-peermem` for enabling GPU-Direct RDMA:
     2) Configure `LIBRARY_PATH` and `LD_LIBRARY_PATH` for compile-time and runtime linking of `cuFile`, `cudart`, and other libraries:
@@ -137,7 +137,7 @@ This document describes how to build Mooncake.
 
 ## Advanced Compile Options
 Mooncake supports the following advanced compile options:
-- `-DUSE_CUDA=[ON|OFF]`: Enable GPU Direct RDMA support. 
+- `-DUSE_CUDA=[ON|OFF]`: Enable GPU Direct RDMA & NVMe-of support. 
 - `-DUSE_CXL=[ON|OFF]`: Enable CXL protocols. 
 - `-DWITH_P2P_STORE=[ON|OFF]`: Enable Golang support and build P2P Store. 
 - `-DWITH_ALLOCATOR=[ON|OFF]`: Build central allocator managed store.
