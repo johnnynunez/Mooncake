@@ -110,6 +110,13 @@ In addition, to support more features of Mooncake Transfer Engine, we *recommand
    ```
 
 
+
+<h2 id="milestones"> 🛣️ Incoming Milestones</h2>
+
+- [x] First release of Mooncake and integrate with latest vLLM
+- [ ] Share KV caches across multiple serving engines
+- [ ] User and developer documentation
+
 <h2 id="trace">📦 Open Source Trace</h2>
 
 ```json
