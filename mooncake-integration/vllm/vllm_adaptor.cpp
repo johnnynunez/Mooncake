@@ -86,6 +86,7 @@ uintptr_t VLLMAdaptor::allocateManagedBuffer(size_t length) {
             return 0;
         }
         buffer_list_.insert(buffer);
+        // LOG(INFO) << (uintptr_t)buffer;
         return (uintptr_t)buffer;
     }
     auto buffer = next_free_;
@@ -107,7 +108,7 @@ int VLLMAdaptor::freeManagedBuffer(uintptr_t buffer_addr, size_t length) {
     int i = ((uint64_t)buffer - (uint64_t)managed_buffer_) / kSlabSize;
     void *fixed_buffer = (char *)managed_buffer_ + i * kSlabSize;
     *(void **)fixed_buffer = next_free_;
-    *(void **)next_free_ = fixed_buffer;
+    next_free_ = fixed_buffer;
     return 0;
 }
 
