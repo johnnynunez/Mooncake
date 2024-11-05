@@ -48,10 +48,10 @@ etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://loc
 export VLLM_PORT=51000  # Need to set this up for both Prefill and Decode instances on different nodes using same port
 
 # 3. Run on the prefill side
-MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=0 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=producer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct --port 8100 --max-model-len 10000 --gpu-memory-utilization 0.9
+MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=0 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=producer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8100 --max-model-len 10000 --gpu-memory-utilization 0.95
 
 # 4. Run on the decode side
-MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=1 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.9
+MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=1 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer VLLM_USE_MODELSCOPE=True python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.95
 ```
 
  - **_Be sure to set up the same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
@@ -62,7 +62,6 @@ MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=1 MC_GID_INDEX
 - MOONCAKE_CONFIG_PATH is the path to the mooncake.json configuration file.
 - VLLM_DISTRIBUTED_KV_ROLE is the role of the node, either 'producer' or 'consumer'.
 - The `--model` parameter specifies the model to use.
-  - Qwen/Qwen2.5-7B-Instruct requires 20GB+ GPU memory.
 - The `--port` parameter specifies the vllm service port to listen on.
 - The `--max-model-len` parameter specifies the maximum length of the model.
 
