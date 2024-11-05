@@ -14,15 +14,36 @@
 
 #include "vllm_adaptor.h"
 
-VLLMAdaptor::VLLMAdaptor() : next_free_(nullptr), managed_buffer_(nullptr) {}
+#include <cassert>
+
+VLLMAdaptor::VLLMAdaptor() {}
 
 VLLMAdaptor::~VLLMAdaptor() {
     for (auto &handle : handle_map_) engine_->closeSegment(handle.second);
     handle_map_.clear();
     engine_.reset();
-    free(managed_buffer_);
-    for (auto &entry : buffer_list_) free(entry);
+    for (auto &buffer : buffer_list_) free(buffer);
     buffer_list_.clear();
+    for (auto &buffer : large_buffer_list_) free(buffer);
+    large_buffer_list_.clear();
+}
+
+std::string formatDeviceNames(const std::string &device_names) {
+    std::stringstream ss(device_names);
+    std::string item;
+    std::vector<std::string> tokens;
+    while (getline(ss, item, ',')) {
+        tokens.push_back(item);
+    }
+
+    std::string formatted;
+    for (size_t i = 0; i < tokens.size(); ++i) {
+        formatted += "\"" + tokens[i] + "\"";
+        if (i < tokens.size() - 1) {
+            formatted += ",";
+        }
+    }
+    return formatted;
 }
 
 int VLLMAdaptor::initialize(const char *local_hostname,
@@ -41,8 +62,9 @@ int VLLMAdaptor::initialize(const char *local_hostname,
 
     xport_ = nullptr;
     if (strcmp(protocol, "rdma") == 0) {
+        auto device_names = formatDeviceNames(device_name);
         std::string nic_priority_matrix =
-            "{\"cpu:0\": [[\"" + std::string(device_name) + "\"], []]}";
+            "{\"cpu:0\": [[" + device_names + "], []]}";
         void **args = (void **)malloc(2 * sizeof(void *));
         args[0] = (void *)nic_priority_matrix.c_str();
         args[1] = nullptr;
@@ -55,60 +77,77 @@ int VLLMAdaptor::initialize(const char *local_hostname,
     }
 
     if (!xport_) return -1;
+    free_list_.resize(kSlabSizeKBTabLen);
+    doBuddyAllocate(kMaxClassId);
+    return 0;
+}
 
-    managed_buffer_ = malloc(kDefaultBufferCapacity);
-    if (!managed_buffer_) return -1;
-
-    next_free_ = managed_buffer_;
-    for (size_t i = 0; i < kSlabCount; ++i) {
-        void **current = (void **)((char *)managed_buffer_ + i * kSlabSize);
-        void *next = i + 1 == kSlabCount
-                         ? nullptr
-                         : (char *)managed_buffer_ + (i + 1) * kSlabSize;
-        *current = next;
+char *VLLMAdaptor::allocateRawBuffer(size_t capacity) {
+    auto buffer = malloc(capacity);
+    if (!buffer) return nullptr;
+    int ret = engine_->registerLocalMemory(buffer, capacity, "cpu:0");
+    if (ret) {
+        free(buffer);
+        return nullptr;
     }
+    return (char *)buffer;
+}
 
-    ret = engine_->registerLocalMemory(managed_buffer_, kDefaultBufferCapacity,
-                                       "cpu:0");
-    if (ret) return -1;
+int VLLMAdaptor::findClassId(size_t size) {
+    if (size > 1024ull * kSlabSizeKB[kMaxClassId]) return -1;
+    for (int i = kMaxClassId - 2; i >= 0; --i)
+        if (size > 1024ull * kSlabSizeKB[i]) return i + 1;
+    return 0;
+}
 
+int VLLMAdaptor::doBuddyAllocate(int class_id) {
+    if (class_id == kMaxClassId) {
+        auto buffer = allocateRawBuffer(kDefaultBufferCapacity);
+        buffer_list_.push_back(buffer);
+        for (size_t offset = 0; offset < kDefaultBufferCapacity;
+             offset += 1024ull * kSlabSizeKB[kMaxClassId])
+            free_list_[kMaxClassId].push(buffer + offset);
+        return 0;
+    }
+    if (free_list_[class_id + 1].empty()) {
+        int ret = doBuddyAllocate(class_id + 1);
+        if (ret) return ret;
+    }
+    assert(!free_list_[class_id + 1].empty());
+    char *buffer = free_list_[class_id + 1].top();
+    free_list_[class_id + 1].pop();
+    free_list_[class_id].push(buffer);
+    free_list_[class_id].push(buffer + kSlabSizeKB[class_id] * 1024);
     return 0;
 }
 
 uintptr_t VLLMAdaptor::allocateManagedBuffer(size_t length) {
     std::lock_guard<std::mutex> guard(mutex_);
-    if (!next_free_ || length > kSlabSize) {
-        void *buffer = malloc(length);
-        if (!buffer) return 0;
-        int ret = engine_->registerLocalMemory(buffer, length, "cpu:0");
-        if (ret) {
-            free(buffer);
-            return 0;
-        }
-        buffer_list_.insert(buffer);
-        // LOG(INFO) << (uintptr_t)buffer;
+    int class_id = findClassId(length);
+    if (class_id < 0) {
+        char *buffer = allocateRawBuffer(length);
+        if (buffer) large_buffer_list_.insert(buffer);
         return (uintptr_t)buffer;
     }
-    auto buffer = next_free_;
-    next_free_ = *(void **)next_free_;
+    if (free_list_[class_id].empty())
+        if (doBuddyAllocate(class_id)) return 0;
+    assert(!free_list_[class_id].empty());
+    char *buffer = free_list_[class_id].top();
+    free_list_[class_id].pop();
     return (uintptr_t)buffer;
 }
 
 int VLLMAdaptor::freeManagedBuffer(uintptr_t buffer_addr, size_t length) {
-    void *buffer = (void *)buffer_addr;
     std::lock_guard<std::mutex> guard(mutex_);
-    if (buffer_addr < (uint64_t)managed_buffer_ ||
-        buffer_addr >= (uint64_t)managed_buffer_ + kDefaultBufferCapacity) {
+    auto buffer = (char *)buffer_addr;
+    int class_id = findClassId(length);
+    if (class_id < 0) {
+        large_buffer_list_.erase(buffer);
         engine_->unregisterLocalMemory(buffer);
-        buffer_list_.erase(buffer);
         free(buffer);
         return 0;
     }
-
-    int i = ((uint64_t)buffer - (uint64_t)managed_buffer_) / kSlabSize;
-    void *fixed_buffer = (char *)managed_buffer_ + i * kSlabSize;
-    *(void **)fixed_buffer = next_free_;
-    next_free_ = fixed_buffer;
+    free_list_[class_id].push(buffer);
     return 0;
 }
 

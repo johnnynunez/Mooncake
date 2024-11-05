@@ -16,6 +16,8 @@
 #include <glog/logging.h>
 #include <pybind11/pybind11.h>
 #include <sys/time.h>
+#include <vector>
+#include <stack>
 
 #include <cstdlib>
 #include <fstream>
@@ -28,12 +30,16 @@
 
 using namespace mooncake;
 
+const static size_t kDefaultBufferCapacity = 2ull * 1024 * 1024 * 1024;
+const static size_t kSlabSizeKBTabLen = 16;
+const static size_t kMaxClassId = kSlabSizeKBTabLen - 1;
+const static size_t kSlabSizeKB[] = {
+    8,         16,        32,         64,        128,      256,
+    512,       1024,      2 * 1024,   4 * 1024,  8 * 1024, 16 * 1024,
+    32 * 1024, 64 * 1024, 128 * 1024, 256 * 1024};
+
 class VLLMAdaptor {
    public:
-    const static size_t kDefaultBufferCapacity = 2ull * 1024 * 1024 * 1024;
-    const static size_t kSlabSize = 4ull * 1024 * 1024;
-    const static size_t kSlabCount = kDefaultBufferCapacity / kSlabSize;
-
     VLLMAdaptor();
 
     ~VLLMAdaptor();
@@ -45,23 +51,36 @@ class VLLMAdaptor {
 
     int freeManagedBuffer(uintptr_t user_tensor, size_t length);
 
-    int transferSync(const char *target_hostname, uintptr_t buffer, uintptr_t peer_buffer_address, size_t length);
+    int transferSync(const char *target_hostname, uintptr_t buffer,
+                     uintptr_t peer_buffer_address, size_t length);
 
-    int writeBytesToBuffer(uintptr_t dest_address, char *src_ptr, size_t length) {
-        memcpy((void *) dest_address, (void *) src_ptr, length);
+    int writeBytesToBuffer(uintptr_t dest_address, char *src_ptr,
+                           size_t length) {
+        memcpy((void *)dest_address, (void *)src_ptr, length);
         return 0;
     }
 
-    pybind11::bytes readBytesFromBuffer(uintptr_t source_address, size_t length) {
-        return pybind11::bytes(static_cast<const char*>(reinterpret_cast<void*>(source_address)), length);
+    pybind11::bytes readBytesFromBuffer(uintptr_t source_address,
+                                        size_t length) {
+        return pybind11::bytes(
+            static_cast<const char *>(reinterpret_cast<void *>(source_address)),
+            length);
     }
+
+   private:
+    char *allocateRawBuffer(size_t capacity);
+
+    int findClassId(size_t size);
+
+    int doBuddyAllocate(int class_id);
 
    private:
     std::shared_ptr<TransferEngine> engine_;
     Transport *xport_;
-    void *next_free_;
-    void *managed_buffer_;
-    std::unordered_set<void *> buffer_list_;
+
     std::mutex mutex_;
+    std::vector<std::stack<char *>> free_list_;
+    std::vector<char *> buffer_list_;
+    std::unordered_set<char *> large_buffer_list_;
     std::unordered_map<std::string, Transport::SegmentHandle> handle_map_;
 };
