@@ -68,6 +68,7 @@ struct Session : public std::enable_shared_from_this<Session> {
 
    private:
     void writeHeader() {
+        // LOG(INFO) << "writeHeader";
         auto self(shared_from_this());
         boost::asio::async_write(
             socket_, boost::asio::buffer(&header_, sizeof(SessionHeader)),
@@ -85,6 +86,7 @@ struct Session : public std::enable_shared_from_this<Session> {
     }
 
     void readHeader() {
+        // LOG(INFO) << "readHeader";
         auto self(shared_from_this());
         boost::asio::async_read(
             socket_, boost::asio::buffer(&header_, sizeof(SessionHeader)),
@@ -104,6 +106,7 @@ struct Session : public std::enable_shared_from_this<Session> {
     }
 
     void writeBody() {
+        // LOG(INFO) << "writeBody";
         auto self(shared_from_this());
         uint64_t size = le64toh(header_.size);
         char *addr = local_buffer_;
@@ -132,6 +135,7 @@ struct Session : public std::enable_shared_from_this<Session> {
     }
 
     void readBody() {
+        // LOG(INFO) << "readBody";
         auto self(shared_from_this());
         uint64_t size = le64toh(header_.size);
         char *addr = local_buffer_;
@@ -275,10 +279,11 @@ int TcpTransport::getTransferStatus(BatchID batch_id, size_t task_id,
     uint64_t failed_slice_count = task.failed_slice_count;
     if (success_slice_count + failed_slice_count ==
         (uint64_t)task.slices.size()) {
-        if (failed_slice_count)
+        if (failed_slice_count) {
             status.s = TransferStatusEnum::FAILED;
-        else
+        } else {
             status.s = TransferStatusEnum::COMPLETED;
+        }
         task.is_finished = true;
     } else {
         status.s = TransferStatusEnum::WAITING;
@@ -337,10 +342,16 @@ void TcpTransport::startTransfer(Slice *slice) {
             return;
         }
 
+        TransferMetadata::RpcMetaDesc meta_entry;
+        if (metadata_->getRpcMetaEntry(desc->name, meta_entry)) {
+            slice->markFailed();
+            return;
+        }
+
         auto endpoint_iterator =
             resolver.resolve(boost::asio::ip::tcp::v4(), 
-                             metadata_->localRpcMeta().ip_or_host_name,
-                             std::to_string(metadata_->localRpcMeta().rpc_port));
+                             meta_entry.ip_or_host_name,
+                             std::to_string(meta_entry.rpc_port));
         boost::asio::connect(socket, endpoint_iterator);
         auto session = std::make_shared<Session>(std::move(socket));
         session->on_finalize_ = [slice](TransferStatusEnum status) {

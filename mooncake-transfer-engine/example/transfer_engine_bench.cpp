@@ -162,8 +162,10 @@ int initiatorWorker(Transport *xport, SegmentID segment_id, int thread_id,
                 LOG_ASSERT(!ret);
                 if (status.s == TransferStatusEnum::COMPLETED)
                     completed = true;
-                else if (status.s == TransferStatusEnum::FAILED)
+                else if (status.s == TransferStatusEnum::FAILED) {
+                    LOG(INFO) << "FAILED";
                     completed = true;
+                }
             }
         }
 
@@ -314,6 +316,7 @@ int target() {
     void *addr[NR_SOCKETS] = {nullptr};
     for (int i = 0; i < NR_SOCKETS; ++i) {
         addr[i] = allocateMemoryPool(ram_buffer_size, i);
+        memset(addr[i], 'x', ram_buffer_size);
         int rc = engine->registerLocalMemory(addr[i], ram_buffer_size,
                                              "cpu:" + std::to_string(i));
         LOG_ASSERT(!rc);
