@@ -1,5 +1,5 @@
-### vLLM Prefill/Decode Separation Demo
-Currently, we support mooncake-transfer-engine integration with the vLLM project based on https://github.com/vllm-project/vllm/pull/8498 to accelerate KVCache transfer for inter-node Prefill/Decode separation use-case. In the future, we will release a disaggregated KVStore and fully integrate it with vLLM Prefix Caching feature to support multi-instances KVCache Sharing.
+### vLLM Disaggregated Prefill/Decode Demo
+Currently, we support mooncake-transfer-engine integration with the vLLM project based on https://github.com/vllm-project/vllm/pull/8498 to accelerate KVCache transfer for inter-node disaggregated Prefill/Decode scenario ([Benchmark results](vllm_benchmark_results.md)). In the future, we will bypass PR 8498, release a disaggregated KVStore, and fully integrate it with the vLLM Prefix Caching feature to support multi-instance KVCache Sharing.
 
 #### Prepare configuration file to Run Example over RDMA
 
@@ -13,13 +13,13 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
   "device_name": "erdma_0"
 }
 ```
-- "local_url": The IP address and port of the Prefill node
+- "local_url": The IP address and port of the Prefill node.
   - The port in the URL is used to communicate with etcd server for metadata.
-- "remote_url": The IP address and port of the Decode node
+- "remote_url": The IP address and port of the Decode node.
   - The port in the URL is used to communicate with etcd server for metadata.
-- "metadata_server": The etcd server of mooncake transfer engine
+- "metadata_server": The etcd server of mooncake transfer engine.
 - "protocol": The protocol to be used for data transmission. ("rdma/tcp")
-- "device_name": The device to be used for data transmission, required when "protocol" set to "rdma"
+- "device_name": The device to be used for data transmission, required when "protocol" set to "rdma".
 
 
 #### Prepare configuration file to Run Example over TCP
@@ -38,7 +38,7 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 
 #### Run Example
 ```bash
-# Begin from root of your cloned repo!
+# Begin from `root` of your cloned repo!
 
 # 1. Start the etcd server
 etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://localhost:2379
@@ -48,24 +48,22 @@ etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://loc
 export VLLM_PORT=51000  # Need to set this up for both Prefill and Decode instances on different nodes using same port
 
 # 3. Run on the prefill side
-MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=0 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=producer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct --port 8100 --max-model-len 10000 --gpu-memory-utilization 0.9
+MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=producer VLLM_USE_MODELSCOPE=True python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8100 --max-model-len 10000 --gpu-memory-utilization 0.95
 
 # 4. Run on the decode side
-MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" WORLD_SIZE=2 RANK=1 MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.9
+MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" MC_GID_INDEX=1 MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer VLLM_USE_MODELSCOPE=True python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.95
 ```
 
  - **_Be sure to set up the same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
 - MASTER_PORT is used for inter-node torch setup communication.
-- WORLD_SIZE is the total number of nodes.
-- RANK is the node rank, please setup prefill node to 0 and decode node to 1.
-- MC_GID_INDEX is the gid of target rdma device.
+- MC_GID_INDEX is the gid of the target rdma device.
 - MOONCAKE_CONFIG_PATH is the path to the mooncake.json configuration file.
-- VLLM_DISTRIBUTED_KV_ROLE is the role of the node, either 'producer' or 'consumer'.
+- VLLM_DISTRIBUTED_KV_ROLE is the node's role, either 'producer' or 'consumer'.
+- VLLM_USE_MODELSCOPE is optional, if you have access to huggingface, please remove it.
 - The `--model` parameter specifies the model to use.
-  - Qwen/Qwen2.5-7B-Instruct requires 20GB+ GPU memory.
-- The `--port` parameter specifies the vllm service port to listen on.
+- The `--port` parameter specifies the vllm service port on which to listen.
 - The `--max-model-len` parameter specifies the maximum length of the model.
-
+- Currently, option `--tensor_parallel_size` \ `-tp` is not supported for inter-node disaggregated scenario due to the initialization process of `disagg_group` in conflict with the `process_group` of `torch.distributed`. This issue will be addressed in the next patch. Stay tuned.
 ```bash
 # 5. Start the proxy server on one node (Let's take the prefill node as an example)
 python3 proxy_server.py
