@@ -1,5 +1,5 @@
 ### vLLM Disaggregated Prefill/Decode Demo
-Currently, we support mooncake-transfer-engine integration with the vLLM project based on https://github.com/vllm-project/vllm/pull/8498 to accelerate KVCache transfer for inter-node disaggregated Prefill/Decode scenario ([Benchmark results](mooncake-integration/benchmark_results.md)). In the future, we will bypass PR 8498, release a disaggregated KVStore, and fully integrate it with the vLLM Prefix Caching feature to support multi-instance KVCache Sharing.
+Currently, we support mooncake-transfer-engine integration with the vLLM project based on https://github.com/vllm-project/vllm/pull/8498 to accelerate KVCache transfer for inter-node disaggregated Prefill/Decode scenario ([Benchmark results](benchmark_results.md)). In the future, we will bypass PR 8498, release a disaggregated KVStore, and fully integrate it with the vLLM Prefix Caching feature to support multi-instance KVCache Sharing.
 
 #### Prepare configuration file to Run Example over RDMA
 
