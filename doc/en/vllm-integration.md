@@ -63,7 +63,7 @@ MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" MC_GID_INDEX=1 MOONCAKE_CONFIG_P
 - The `--model` parameter specifies the model to use.
 - The `--port` parameter specifies the vllm service port on which to listen.
 - The `--max-model-len` parameter specifies the maximum length of the model.
-- Currently, option `--tensor_parallel_size` \ `-tp` is not supported for inter-node disaggregated scenario due to the initialization process of `disagg_group` in conflict with the `process_group` of `torch.distributed`. This issue will be addressed in the next patch. Stay tuned.
+- Currently, option `--tensor_parallel_size` \ `-tp` is not supported for inter-node disaggregated scenario due to the initialization process of `disagg_group` in conflict with the `process_group` of `torch.distributed`. This issue will be addressed in the next patch with the help of (https://github.com/vllm-project/vllm/pull/10072). Stay tuned.
 ```bash
 # 5. Start the proxy server on one node (Let's take the prefill node as an example)
 python3 proxy_server.py
