@@ -59,13 +59,25 @@ Thanks to the high performance of Transfer Engine, P2P Stores can also distribut
 ![p2p-store.gif](image/p2p-store.gif)
 
 ### vLLM Integration ([Guide](doc/en/vllm-integration.md))
-To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase to improve server utilization. It uses `NCCL` as the network layer by default.
+To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase. It uses `NCCL` and `gloo` as the network layer by default.
 
-We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `NCCL`. Transfer Engine has simpler interface and more efficient use of RDMA devices.
-In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation. 
+We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `NCCL` and `gloo`, to support inter-node KVCache transfer. Transfer Engine has simpler interface and more efficient use of RDMA devices. In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation.
 
 #### Performance
-（TODO 性能比较，需要阿里测一下并贴个 gif，比如能处理多少个 tokens/s，我记得大概60个）
+We have conducted a series of experiments to verify the performance changes of inter-node Disaggregated Prefill/Decode implementation with Mooncake Transfer Engine.
+
+- **Lower and more stable TPOT (Time per Output Token).** This may be because the decode instance gets a cleaner workload after P/D separation while the mixed workload affects the ITL in the original or chunked-prefill-based implementation.
+- **Unaffected Output Token Throughput.** The gap between inter-node Disaggregated Prefill/Decode implementation and non-disaggregated implementation is not significant.
+- **Higher TTFT (Time to First Token).** Since the transmission between nodes of the Disaggregated Prefill/Decode implementation is implemented through TCP/RDMA currently, it brings additional overhead. In the future, we expect to improve TTFT through GPUDirect RDMA and zero-copy.
+
+| Backend/Setting                                              | Successful Requests | Duration (s) | Total Input Tokens | Total Generated Tokens | Req Throughput (req/s) | Output Token Throughput (tok/s) | Total Token Throughput (tok/s) | Mean TTFT (ms) | Median TTFT (ms) | P99 TTFT (ms) | Mean TPOT (ms) | Median TPOT (ms) | P99 TPOT (ms) | Mean ITL (ms) | Median ITL (ms) | P99 ITL (ms) |
+|--------------------------------------------------------------|---------------------|--------------|--------------------|------------------------|------------------------|---------------------------------|-------------------------------|----------------|-----------------|--------------|---------------|------------------|--------------|--------------|----------------|-------------|
+| Non-disaggregated                                            | 200                 | 99.24        | 202314             | 1200                   | 2.02                   | 12.09                           | 2050.81                      | 461.52         | 282.00           | 1734.22      | 99.97         | 17.10            | 671.70       | 99.88         | 12.87           | 2059.38     |
+| Non-disaggregated with `--enable-chunked-prefill`            | 200                 | 99.19        | 202314             | 1200                   | 2.02                   | 12.10                           | 2051.66                      | 429.37         | 286.09           | 1166.17      | 56.57         | 34.80            | 135.60       | 56.55         | 12.61           | 157.11      |
+| Disaggregated P/D demo with MooncakeTransferEngine RDMA      | 200                 | 99.46        | 202314             | 1200                   | 2.01                   | 12.07                           | 2046.28                      | 1272.55        | 743.54           | 5156.62      | 52.74         | 12.46            | 524.23       | 52.60         | 12.05           | 1136.04     |
+| Disaggregated P/D demo with MooncakeTransferEngine TCP       | 200                 | 99.49        | 202314             | 1200                   | 2.01                   | 12.06                           | 2045.51                      | 1925.52        | 1011.58          | 8149.52      | 100.98        | 13.64            | 957.56       | 100.73        | 12.42           | 2536.78     |
+- input_len=1024, qps = 2
+- Click [here](doc/en/vllm_benchmark_results.md) to access detailed benchmark results.
 
 **More advanced features will coming soon, so stay tuned!**
 
