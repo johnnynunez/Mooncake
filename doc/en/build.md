@@ -31,6 +31,7 @@ This document describes how to build Mooncake.
 - grpc: 1.27.x
 - googletest: 1.12.x
 - gcc: 10.2.1
+- go: 1.19+
 
 ### Steps
 

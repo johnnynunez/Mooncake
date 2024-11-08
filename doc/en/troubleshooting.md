@@ -2,6 +2,13 @@
 
 This document lists common errors that may occur when using Mooncake Store and provides troubleshooting and resolution measures.
 
+> **CheckList**
+> - [ ] `connectable_name` is not the local machine's LAN/WAN address, such as the loopback address (`127.0.0.1`/`localhost`) and address of other machines.
+> - [ ] Incorrect MTU and GID configurations. Use the environment variables MC_MTU and MC_GID_INDEX.
+> - [ ] Incorrect RDMA device name and connection status is not active.
+> - [ ] etcd is not started normally and it is not bind with `0.0.0.0`.
+
+
 ## Metadata and Out-of-Band Communication
 1. At startup, a `TransferMetadata` object is constructed according to the incoming `metadata_server` parameter. During program execution, this object is used to communicate with the etcd server to maintain internal data required for connection.
 2. At startup, the current node is registered with the cluster according to the incoming `connectable_name` parameter and `rpc_port` parameter, and the TCP port specified by the `rpc_port` parameter is listened. Before other nodes send the first read/write request to the current node, they will use the above information, resolve DNS, and initiate a connection through socket's `connect()` method. 

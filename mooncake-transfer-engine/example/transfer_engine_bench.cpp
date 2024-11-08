@@ -106,10 +106,10 @@ static void freeMemoryPool(void *addr, size_t size) {
 
     if (attributes.type == cudaMemoryTypeDevice) {
         cudaFree(addr);
-    } else if (attributes.type == cudaMemoryTypeHost) {
+    } else if (attributes.type == cudaMemoryTypeHost || attributes.type == cudaMemoryTypeUnregistered) {
         numa_free(addr, size);
     } else {
-        LOG(ERROR) << "Unknown memory type";
+        LOG(ERROR) << "Unknown memory type, " << addr << " " << attributes.type;
     }
 #else
     numa_free(addr, size);
@@ -249,6 +249,8 @@ int initiator() {
 
 #ifdef USE_CUDA
     buffer_num = FLAGS_use_vram ? 1 : NR_SOCKETS;
+    if (FLAGS_use_vram)
+        LOG(INFO) << "VRAM is used";
     for (int i = 0; i < buffer_num; ++i) {
         addr[i] = allocateMemoryPool(ram_buffer_size, i, FLAGS_use_vram);
         string name_prefix = FLAGS_use_vram ? "gpu:" : "cpu:";

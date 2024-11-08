@@ -2,6 +2,12 @@
 
 本文档列举了使用 Mooncake Store 期间容易出现的错误及排查应对措施。
 
+> **容易出错的地方**
+> - [ ] `connectable_name` 填写的不是本机的 LAN/WAN 地址：错误示例如填写 Loopback 地址（127.0.0.1/localhost）、填写主机名、填写其他机器的 LAN/WAN 地址等
+> - [ ] MTU 和 GID 配置：使用 MC_MTU 和 MC_GID_INDEX 环境变量
+> - [ ] RDMA 模式下的设备名称、设备连接状态
+> - [ ] etcd 是否正常启动，是否对外开放端口
+
 ## 元数据及带外通信
 1. 启动时需要按照传入的 `metadata_server` 参数构造 `TransferMetadata` 对象，在程序执行期间，会使用该对象与 etcd 服务器通信，维护连接建立及维持所需的各种内部数据。
 2. 启动时需要按照传入的 `connectable_name` 参数和 `rpc_port` 参数向集群注册当前节点，并开启本机 `rpc_port` 参数指定的 TCP 端口供交换元数据使用。其他节点第一次向当前节点发出读写请求前，会使用上述信息，经 DNS 解析后通过 TCP 协议的 `connect()` 方法向其发起连接，连接成功后才传递元数据。
