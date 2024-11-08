@@ -92,8 +92,8 @@ func doTrainer(ctx context.Context, store *p2pstore.P2PStore, name string) {
 	}
 
 	fmt.Println(checkpointInfoList)
-	fmt.Println("Idle for 10 seconds")
-	time.Sleep(20 * time.Second)
+	fmt.Println("Idle for 100 seconds")
+	time.Sleep(100 * time.Second)
 
 	err = store.Unregister(ctx, name)
 	if err != nil {
