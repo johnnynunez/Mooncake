@@ -308,6 +308,9 @@ int RdmaTransport::onSetupRdmaConnections(const HandShakeDesc &peer_desc,
     auto local_nic_name = getNicNameFromNicPath(peer_desc.peer_nic_path);
     if (local_nic_name.empty()) return ERR_INVALID_ARGUMENT;
     auto context = context_list_[device_name_to_index_map_[local_nic_name]];
+#ifdef CONFIG_ERDMA
+    if (context->deleteEndpoint(peer_desc.local_nic_path)) return ERR_ENDPOINT;
+#endif
     auto endpoint = context->endpoint(peer_desc.local_nic_path);
     if (!endpoint) return ERR_ENDPOINT;
     return endpoint->setupConnectionsByPassive(peer_desc, local_desc);
