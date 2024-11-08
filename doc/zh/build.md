@@ -148,5 +148,4 @@
 - `-DUSE_CUDA=[ON|OFF]`: 启用 GPU Direct RDMA 及 NVMe-of 支持
 - `-DUSE_CXL=[ON|OFF]`: 启用 CXL 支持 
 - `-DWITH_P2P_STORE=[ON|OFF]`: 启用 Golang 支持并编译 P2P Store 组件
-- `-DWITH_ALLOCATOR=[ON|OFF]`: 编译全局分配器模块（beta）
 - `-DWITH_WITH_RUST_EXAMPLE=[ON|OFF]`: 启用 Rust 支持

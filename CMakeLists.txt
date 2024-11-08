@@ -19,13 +19,15 @@ set(CMAKE_BUILD_TYPE "Release")
 #set(CMAKE_CXX_FLAGS "-O0 -g -Wall")
 #set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fsanitize=address")
 
+# Necessary if you are using Alibaba Cloud eRDMA
+add_definitions(-DCONFIG_ERDMA)
+
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 option(USE_CUDA "option for using gpu direct" OFF)
 option(USE_CXL "option for using cxl protocol" OFF)
 
 option(WITH_P2P_STORE "build p2p store library and sample code" OFF)
-option(WITH_ALLOCATOR "build allocator, component of managed store" OFF)
 option(WITH_RUST_EXAMPLE "build the Rust interface and sample code for the transfer engine" OFF)
 
 if (USE_CUDA)

@@ -140,5 +140,4 @@ Mooncake supports the following advanced compile options:
 - `-DUSE_CUDA=[ON|OFF]`: Enable GPU Direct RDMA & NVMe-of support. 
 - `-DUSE_CXL=[ON|OFF]`: Enable CXL protocols. 
 - `-DWITH_P2P_STORE=[ON|OFF]`: Enable Golang support and build P2P Store. 
-- `-DWITH_ALLOCATOR=[ON|OFF]`: Build central allocator managed store.
 - `-DWITH_WITH_RUST_EXAMPLE=[ON|OFF]`: Enable Rust language support.
