@@ -30,7 +30,7 @@ To enable efficient prefill/decode disaggregation, Mooncake proposes the Transfe
 
 ### Use Transfer Engine Standalone ([Guide](doc/en/transfer-engine.md))
 
-Transfer Engine is a high-performance data transfer framework. Transfer Engine provides a unified interface to transfer data from DRAM, VRAM or NVMe, while the technical details related to hardware have been obscured. Transfer Engine supports TCP, RDMA (InfiniBand/RoCEv2/eRDMA/NVIDIA GPUDirect) and NVMe over Fabric (NVMe-of) protocols.
+Transfer Engine is a high-performance data transfer framework. Transfer Engine provides a unified interface to transfer data from DRAM, VRAM or NVMe, while the technical details related to hardware are hidden. Transfer Engine supports TCP, RDMA (InfiniBand/RoCEv2/eRDMA/NVIDIA GPUDirect) and NVMe over Fabric (NVMe-of) protocols.
 
 #### Highlights
 - **Efficient use of multiple RDMA NIC devices.** Transfer Engine supports the use of multiple RDMA NIC devices to achieve the *aggregation of transfer bandwidth*.
@@ -59,9 +59,9 @@ Thanks to the high performance of Transfer Engine, P2P Stores can also distribut
 ![p2p-store.gif](image/p2p-store.gif)
 
 ### vLLM Integration ([Guide](doc/en/vllm-integration.md))
-To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase. It uses `nccl` and `gloo` as the network layer by default.
+To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase in different processes. The vLLM uses `nccl` and `gloo` as the transport layer by default. **However, the current implementation does not support decoupling both phases in different machines.**
 
-We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `nccl` and `gloo`, to support inter-node KVCache transfer. Transfer Engine has simpler interface and more efficient use of RDMA devices. In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation.
+We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `nccl` and `gloo`, to support **inter-node KVCache transfer**. Transfer Engine provides simpler interface and more efficient use of RDMA devices. In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation.
 
 #### Performance
 By supporting Topology Aware Path Selection and multi-card bandwidth aggregation, TTFT of vLLM with Transfer Engine is up to 33% lower than traditional TCP-based transports.
