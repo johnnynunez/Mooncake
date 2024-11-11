@@ -69,8 +69,8 @@ In the future, we will further improve TTFT through GPUDirect RDMA and zero-copy
 
 | Backend/Setting                                         | Output Token Throughput (tok/s) | Total Token Throughput (tok/s) | Mean TTFT (ms) | Median TTFT (ms) | P99 TTFT (ms)|
 |---------------------------------------------------------|---------------------------------|--------------------------------|----------------|------------------|---------------|
-| Disaggregated P/D demo with MooncakeTransferEngine RDMA | 12.07                           | 2046.28                        | 1272.55        | 743.54           | 5156.62       |
-| Disaggregated P/D demo with MooncakeTransferEngine TCP  | 12.06                           | 2045.51                        | 1925.52        | 1011.58          | 8149.52       |
+| Transfer Engine (RDMA) | 12.07                           | 2046.78                        | 1165.25        | 678.74           | 4576.57       |
+| TCP  | 12.06                           | 2045.51                        | 1925.52        | 1011.58          | 8149.52       |
 
 - Click [here](doc/en/vllm_benchmark_results.md) to access detailed benchmark results.
 
