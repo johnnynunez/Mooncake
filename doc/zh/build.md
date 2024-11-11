@@ -9,6 +9,19 @@
 - cmake: 3.16.x
 - gcc: 9.4+
 
+### 安装vLLM
+
+1. 从指定rep中克隆vLLM
+```bash
+$ git clone git@github.com:alogfans/vllm.git
+```
+2. 从源码安装vLLM
+```bash
+$ cd vllm
+$ pip install -e .
+```
+
+
 ### 编译步骤
 1. 通过系统源下载安装依赖，并从官方镜像下载并编译安装 `etcd-cpp-apiv3`
    ```bash
