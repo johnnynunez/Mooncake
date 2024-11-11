@@ -104,9 +104,8 @@ class RDMATransportTest : public ::testing::Test {
     void SetUp() override {
         static int offset = 0;
         LOG(INFO) << "HERE \n";
-        // 初始化 glog
         google::InitGoogleLogging("RDMATransportTest");
-        FLAGS_logtostderr = 1;  // 将日志输出到标准错误
+        FLAGS_logtostderr = 1; 
         metadata_client =
             std::make_shared<TransferMetadata>(FLAGS_metadata_server);
         LOG_ASSERT(metadata_client);
@@ -131,7 +130,6 @@ class RDMATransportTest : public ::testing::Test {
     }
 
     void TearDown() override {
-        // 清理 glog
         google::ShutdownGoogleLogging();
         engine->unregisterLocalMemory(addr);
         freeMemoryPool(addr, ram_buffer_size);
