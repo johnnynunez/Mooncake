@@ -53,12 +53,12 @@ VLLM_HOST_IP="192.168.0.137" VLLM_PORT="51000" MASTER_ADDR="192.168.0.137" MASTE
 
  - **_Be sure to set up the same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
 
-- VLLM_HOST_IP and VLLM_PORT are used for vLLM's internal communication in distributed environments.
-- MASTER_ADDR and MASTER_PORT are used to specify the IP address and port of the master node in a distributed setup.
-- MC_GID_INDEX is the gid of the target rdma device.
-- MOONCAKE_CONFIG_PATH is the path to the mooncake.json configuration file.
-- VLLM_DISTRIBUTED_KV_ROLE is the node's role, either 'producer' or 'consumer'.
-- VLLM_USE_MODELSCOPE is optional, if you have access to huggingface, please remove it.
+- `VLLM_HOST_IP` and `VLLM_PORT` are used for vLLM's internal communication in distributed environments.
+- `MASTER_ADDR` and `MASTER_PORT` are used to specify the IP address and port of the master node in a distributed setup.
+- `MC_GID_INDEX` is the gid of the target rdma device.
+- `MOONCAKE_CONFIG_PATH` is the path to the mooncake.json configuration file.
+- `VLLM_DISTRIBUTED_KV_ROLE` is the node's role, either 'producer' or 'consumer'.
+- `VLLM_USE_MODELSCOPE` is optional, if you have access to huggingface, please remove it.
 - The `--model` parameter specifies the model to use.
 - The `--port` parameter specifies the vllm service port on which to listen.
 - The `--max-model-len` parameter specifies the maximum length of the model.
