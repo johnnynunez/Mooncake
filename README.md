@@ -24,7 +24,14 @@ Mooncake features a KVCache-centric disaggregated architecture that separates th
 
 The core of Mooncake is its KVCache-centric scheduler, which balances maximizing overall effective throughput while meeting latency-related Service Level Objectives (SLOs) requirements. Unlike traditional studies that assume all requests will be processed, Mooncake faces challenges due to highly overloaded scenarios. To mitigate these, we developed a prediction-based early rejection policy. Experiments show that Mooncake excels in long-context scenarios. Compared to the baseline method, Mooncake can achieve up to a 525% increase in throughput in certain simulated scenarios while adhering to SLOs. Under real workloads, Mooncake’s innovative architecture enables <a href="https://kimi.ai/">Kimi</a> to handle 75% more requests.
 
-To enable efficient prefill/decode disaggregation, Mooncake proposes the Transfer Engine, which supports rapid, reliable and flexible data transfer over TCP, RDMA, NVIDIA GPUDirect-based RDMA and and NVMe over Fabric (NVMe-of) protocols. Comparing with Gloo (used by Distributed PyTorch) and TCP, Mooncake Transfer Engine has the lowest I/O latency.
+<h2 id="components">🔥 Components</h2>
+
+![components](image/components.png)
+
+- The bottom part of Mooncake is **Transfer Engine**, which supports rapid, reliable and flexible data transfer over TCP, RDMA, NVIDIA GPUDirect-based RDMA and and NVMe over Fabric (NVMe-of) protocols. Comparing with gloo (used by Distributed PyTorch) and TCP, Mooncake Transfer Engine has the lowest I/O latency.
+- Based on **Transfer Engine**, we implemented the **P2P Store** library, supports sharing temporary objects (e.g., checkpoint files) among nodes in a cluster. It avoids bandwidth saturation on a single machine.
+- Additionally, we modified vLLM so that **Transfer Engine** is integrated. It makes prefill-decode disaggregation more efficient by utilizing RDMA devices. 
+- In the future, we plan to build **Mooncake Store** on the basis of **Transfer Engine**, which supports pooled KVCache for more flexible P/D disaggregation.
 
 <h2 id="show-cases">🔥 Show Cases</h2>
 
@@ -59,9 +66,9 @@ Thanks to the high performance of Transfer Engine, P2P Stores can also distribut
 ![p2p-store.gif](image/p2p-store.gif)
 
 ### vLLM Integration ([Guide](doc/en/vllm-integration.md))
-To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase in different processes. The vLLM uses `nccl` and `gloo` as the transport layer by default, but currently it does not support decoupling both phases in different machines.
+To optmize LLM inference, the vLLM's community is working at supporting [disaggregated prefilling (PR 8498)](https://github.com/vllm-project/vllm/pull/8498). This feature allows separating the **prefill** phase from the **decode** phase in different processes. The vLLM uses `nccl` and `gloo` as the transport layer by default, but currently it cannot efficiently decouple both phases in different machines.
 
-We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `nccl` and `gloo`, to support **inter-node KVCache transfer**. Transfer Engine provides simpler interface and more efficient use of RDMA devices. In the future, we plan to build Mooncake Managed Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation.
+We have implemented vLLM integration, which uses Transfer Engine as the network layer instead of `nccl` and `gloo`, to support **inter-node KVCache transfer**. Transfer Engine provides simpler interface and more efficient use of RDMA devices. In the future, we plan to build Mooncake Store on the basis of Transfer Engine, which supports pooled prefill/decode disaggregation.
 
 #### Performance
 By supporting Topology Aware Path Selection and multi-card bandwidth aggregation, TTFT of vLLM with Transfer Engine is up to 33% lower than traditional TCP-based transports.
