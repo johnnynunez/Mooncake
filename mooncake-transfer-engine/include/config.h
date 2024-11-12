@@ -28,7 +28,7 @@ struct GlobalConfig {
     size_t num_cq_per_ctx = 1;
     size_t num_comp_channels_per_ctx = 1;
     uint8_t port = 1;
-    int gid_index = 3;
+    int gid_index = 0;
     size_t max_cqe = 4096;
     int max_ep_per_ctx = 256;
     size_t num_qp_per_ep = 2;

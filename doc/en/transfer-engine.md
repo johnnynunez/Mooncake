@@ -110,7 +110,8 @@ After successfully compiling Transfer Engine, the test program `transfer_engine_
                             --device_name=erdma_0
     ```
    The meanings of the various parameters are as follows:
-   - The default value of the environment variable `MC_GID_INDEX` is 3, which is the GID Index used by most IB/RoCE networks. For Alibaba eRDMA, it needs to be set to 1.
+   - The default value of the parameter corresponding to the environment variable `MC_GID_INDEX` is 0, which means that the Transfer Engine selects a GID that is most likely to be connected.
+     If the connection is hung, the user still needs to set the value of such a environment variable manually.
    - `--mode=target` indicates the start of the target node. The target node does not initiate read/write requests; it passively supplies or writes data as required by the initiator node.
       > Note: In actual applications, there is no need to distinguish between target nodes and initiator nodes; each node can freely initiate read/write requests to other nodes in the cluster.
    - `--metadata_server` is the address of the metadata server (the full address of the etcd service).

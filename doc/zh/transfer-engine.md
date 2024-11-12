@@ -84,7 +84,8 @@ Transfer Engine 使用SIEVE算法来管理端点的逐出。如果由于链路�
                             --device_name=erdma_0
     ```
    各个参数的含义如下：
-   - 环境变量 `MC_GID_INDEX` 的默认值为 3，是大多数 IB/RoCE 网络所用的 GID Index。对于阿里 eRDMA，需要设置为 1。
+   - 环境变量 `MC_GID_INDEX` 对应参数的默认值为 0，表示由 Transfer Engine 选取一个最可能连通的 GID。
+     如果连接被挂起，用户仍需手工设置改环境变量的值。
    - `--mode=target` 表示启动目标节点。目标节点不发起读写请求，只是被动按发起节点的要求供给或写入数据。
       > 注意：实际应用中可不区分目标节点和发起节点，每个节点可以向集群内其他节点自由发起读写请求。
    - `--metadata_server` 为元数据服务器地址（etcd 服务的完整地址）。

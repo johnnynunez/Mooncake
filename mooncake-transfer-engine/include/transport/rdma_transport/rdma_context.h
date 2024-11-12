@@ -121,6 +121,8 @@ class RdmaContext {
 
     int joinNonblockingPollList(int event_fd, int data_fd);
 
+    int getBestGidIndex(struct ibv_context *context, ibv_port_attr &port_attr, uint8_t port);
+
    public:
     int submitPostSend(const std::vector<Transport::Slice *> &slice_list);
 

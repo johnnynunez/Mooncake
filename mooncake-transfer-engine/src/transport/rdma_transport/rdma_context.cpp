@@ -129,7 +129,7 @@ int RdmaContext::construct(size_t num_cq_list, size_t num_comp_channels,
     }
 
     LOG(INFO) << "RDMA device: " << context_->device->name << ", LID: " << lid_
-              << ", GID: (" << gid_index_ << ") " << gid();
+              << ", GID: (GID_Index " << gid_index_ << ") " << gid();
 
     return 0;
 }
@@ -347,6 +347,36 @@ int RdmaContext::compVector() {
     return (next_comp_vector_index_++) % context_->num_comp_vectors;
 }
 
+static inline int ipv6_addr_v4mapped(const struct in6_addr *a)
+{
+	return ((a->s6_addr32[0] | a->s6_addr32[1]) |
+			(a->s6_addr32[2] ^ htonl(0x0000ffff))) == 0UL ||
+			/* IPv4 encoded multicast addresses */
+			(a->s6_addr32[0] == htonl(0xff0e0000) &&
+			((a->s6_addr32[1] |
+			(a->s6_addr32[2] ^ htonl(0x0000ffff))) == 0UL));
+}
+
+int RdmaContext::getBestGidIndex(struct ibv_context *context, ibv_port_attr &port_attr, uint8_t port) {
+	int gid_index = 0, i;
+	union ibv_gid temp_gid, temp_gid_rival;
+	int is_ipv4, is_ipv4_rival;
+
+    if (ibv_query_gid(context, port, gid_index, &temp_gid))
+        return -1;
+    is_ipv4 = ipv6_addr_v4mapped((struct in6_addr *)temp_gid.raw);
+
+	for (i = 1; i < port_attr.gid_tbl_len; i++) {
+		if (ibv_query_gid(context, port, i, &temp_gid_rival)) {
+			return -1;
+		}
+		is_ipv4_rival = ipv6_addr_v4mapped((struct in6_addr *)temp_gid_rival.raw);
+		if (is_ipv4_rival && !is_ipv4)
+			gid_index = i;
+	}
+	return gid_index;
+}
+
 int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
                                 int gid_index) {
     int num_devices = 0;
@@ -409,8 +439,12 @@ int RdmaContext::openRdmaDevice(const std::string &device_name, uint8_t port,
         }
 
         updateGlobalConfig(device_attr);
-        if (gid_index >= port_attr.gid_tbl_len)
-            gid_index = port_attr.gid_tbl_len - 1;
+        if (gid_index == 0)
+        {
+            int ret = getBestGidIndex(context, port_attr, port);
+            if (ret >= 0)
+                gid_index = ret;
+        }
 
         if (ibv_query_gid(context, port, gid_index, &gid_)) {
             PLOG(WARNING) << "Device " << device_name << " GID " << gid_index
