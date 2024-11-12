@@ -1,2 +1,9 @@
 add_executable(rdma_transport_test rdma_transport_test.cpp)
 target_link_libraries(rdma_transport_test PUBLIC transfer_engine)
+
+add_executable(transport_uint_test transport_uint_test.cpp)
+target_link_libraries(transport_uint_test PUBLIC transfer_engine  gtest gtest_main )
+
+
+add_executable(rdma_transport_test2 rdma_transport_test2.cpp)
+target_link_libraries(rdma_transport_test2 PUBLIC transfer_engine  gtest gtest_main )
