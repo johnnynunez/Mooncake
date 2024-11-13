@@ -32,18 +32,27 @@ if __name__ == "__main__":
     files = sys.argv[3:]
     local_server_name = socket.gethostname()
 
-    etcd = etcd3.client(host=etcd_server, port=2379)
+    etcd_host = sys.argv[1]
+    files = sys.argv[2:]
+
+    server_name = socket.gethostname()
+    print(server_name)
+    segment_name = "mooncake/nvmeof/" + server_name
+    print(segment_name)
+
+    etcd = etcd3.client(host=etcd_host, port=2379)
 
     value = {}
-    value['server_name'] = local_server_name
+    value['server_name'] = server_name
     value['protocol'] = "nvmeof"
     value['buffers'] = []
     for file in files:
-        buffer = {}
-        buffer['length'] = os.path.getsize(file)
-        buffer['file_path'] = file
-        buffer['local_path_map'] = {}
-        value['buffers'].append(buffer)
+      # TODO: check file path existence
+      buffer = {}
+      buffer['length'] = os.path.getsize(file)
+      buffer['file_path'] = file
+      buffer['local_path_map'] = {}
+      value['buffers'].append(buffer)
     
     print(json.dumps(value))
     etcd.put(segment_name, json.dumps(value))

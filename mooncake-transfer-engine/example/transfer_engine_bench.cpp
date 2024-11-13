@@ -236,8 +236,6 @@ int initiator() {
         xport = engine->installOrGetTransport("rdma", args);
     } else if (FLAGS_protocol == "tcp") {
         xport = engine->installOrGetTransport("tcp", nullptr);
-    } else if (FLAGS_protocol == "nvmeof") {
-        xport = engine->installOrGetTransport("nvmeof", nullptr);
     } else {
         LOG(ERROR) << "Unsupported protocol";
     }
@@ -322,8 +320,6 @@ int target() {
         engine->installOrGetTransport("rdma", args);
     } else if (FLAGS_protocol == "tcp") {
         engine->installOrGetTransport("tcp", nullptr);
-    } else if (FLAGS_protocol == "nvmeof") {
-        engine->installOrGetTransport("nvmeof", nullptr);
     } else {
         LOG(ERROR) << "Unsupported protocol";
     }

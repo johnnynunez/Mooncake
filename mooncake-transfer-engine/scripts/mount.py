@@ -52,25 +52,22 @@ def mount_nvme_device(device, mount_point):
 
 if __name__ == "__main__":
     if len(sys.argv) != 5:
-        print("Usage: python mount.py <etcd_server> <segment_name> <file_path> <local_path>")
+        print("Usage: python mount.py <etcd_host> <segment_name> <file_path> <local_path>")
         sys.exit(1)
 
     os.environ.pop("HTTP_PROXY", None)
     os.environ.pop("HTTPS_PROXY", None)
     os.environ.pop("http_proxy", None)
     os.environ.pop("https_proxy", None)
-    etcd_server = sys.argv[1]
-    segment_name = "nvmeof/" + sys.argv[2]
+    etcd_host = sys.argv[1]
+    segment_name = sys.argv[2]
     file_path = sys.argv[3]
     local_path = sys.argv[4]
+
     local_server_name = socket.gethostname()
 
-    etcd = etcd3.client(host=etcd_server, port=2379)
+    etcd = etcd3.client(host=etcd_host, port=2379)
     value, _ = etcd.get(segment_name)
-
-    if value is None:
-        print("Segment not found")
-        sys.exit(1)
 
     segment = json.loads(value)
     buffers = segment["buffers"]
@@ -82,6 +79,8 @@ if __name__ == "__main__":
     etcd.put(segment_name, json.dumps(segment))
     print(etcd.get(segment_name)[0])
 
-    # TODO: mount the buffer to local_path
+    etcd.put(segment_name, json.dumps(segment))
+    print(etcd.get(segment_name)[0])
 
+  # TODO: mount the buffer to local_path, currently users should mount buffers manually
 
