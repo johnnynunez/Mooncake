@@ -8,7 +8,7 @@ Mooncake is the serving platform for  <a href="https://kimi.ai/"><img src="image
 Now the core of Mooncake - Transfer Engine is open-sourced!
 This repository also hosts its technical report and the open sourced traces. 
 
-<h2 id="updates">🔥 Updates</h2>
+<h2 id="updates">🔄 Updates</h2>
 
  - **Nov X, 2024**: We open sourced the Transfer Engine, the central component of Mooncake. We also provide two demonstrations of Transfer Engine: a P2P Store and vLLM integration.
  - **July 9, 2024**: We open sourced the trace as a <a href="https://github.com/kvcache-ai/Mooncake/blob/main/mooncake_trace.jsonl" target="_blank">jsonl file</a>!.
@@ -24,7 +24,7 @@ Mooncake features a KVCache-centric disaggregated architecture that separates th
 
 The core of Mooncake is its KVCache-centric scheduler, which balances maximizing overall effective throughput while meeting latency-related Service Level Objectives (SLOs) requirements. Unlike traditional studies that assume all requests will be processed, Mooncake faces challenges due to highly overloaded scenarios. To mitigate these, we developed a prediction-based early rejection policy. Experiments show that Mooncake excels in long-context scenarios. Compared to the baseline method, Mooncake can achieve up to a 525% increase in throughput in certain simulated scenarios while adhering to SLOs. Under real workloads, Mooncake’s innovative architecture enables <a href="https://kimi.ai/">Kimi</a> to handle 75% more requests.
 
-<h2 id="components">🔥 Components</h2>
+<h2 id="components">🧩 Components</h2>
 
 ![components](image/components.png)
 
