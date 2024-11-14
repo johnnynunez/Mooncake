@@ -1,6 +1,9 @@
-### vLLM Disaggregated Prefill/Decode Demo
+## vLLM Disaggregated Prefill/Decode Demo
 Currently, we support mooncake-transfer-engine integration with the vLLM project based on [PR 8498](https://github.com/vllm-project/vllm/pull/8498) (vllm version: v0.6.2) to accelerate KVCache transfer for inter-node disaggregated Prefill/Decode scenario ([Benchmark results](vllm_benchmark_results.md)). In the future, we will bypass PR 8498, release a disaggregated KVStore, and fully integrate it with the vLLM Prefix Caching feature to support multi-instance KVCache Sharing.
 
+![vllm-integration-demo.gif](image/vllm-integration-demo.gif)
+
+### Configuration
 #### Prepare configuration file to Run Example over RDMA
 
 - Prepare a _**mooncake.json**_ file for both Prefill and Decode instances
@@ -19,7 +22,7 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
   - The port in the URL is used to communicate with etcd server for metadata.
 - "metadata_server": The etcd server of mooncake transfer engine.
 - "protocol": The protocol to be used for data transmission. ("rdma/tcp")
-- "device_name": The device to be used for data transmission, required when "protocol" set to "rdma".
+- "device_name": The device to be used for data transmission, required when "protocol" is set to "rdma". If multiple NIC devices are used, they can be separated by commas such as "erdma_0,erdma_1". Please note that there are no spaces between them.
 
 
 #### Prepare configuration file to Run Example over TCP
@@ -36,7 +39,8 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 ```
 
 
-#### Run Example
+### Run Example
+ - Please change the IP addresses and ports in the following guide according to your env.
 ```bash
 # Begin from `root` of your cloned repo!
 
@@ -44,10 +48,10 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://localhost:2379
 # You may need to terminate other etcd processes before running the above command
 
-# 2. Run on the prefill side
+# 2. Run on the prefilling side (producer role)
 VLLM_HOST_IP="192.168.0.137" VLLM_PORT="51000" MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=producer VLLM_USE_MODELSCOPE=True python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8100 --max-model-len 10000 --gpu-memory-utilization 0.95
 
-# 3. Run on the decode side
+# 3. Run on the decoding side (consumer role)
 VLLM_HOST_IP="192.168.0.137" VLLM_PORT="51000" MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer VLLM_USE_MODELSCOPE=True python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.95
 ```
 
@@ -130,16 +134,15 @@ if __name__ == '__main__':
     app.run(host="0.0.0.0",port=8000)
 ```
 
-**_Be sure to change the IP address in the code_**
+**_Be sure to change the IP address in the code._**
 
 
-# 6. Test with open-ai compatible request
+### Test with open-ai compatible request
 ```
 curl -s http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
-"model": "Qwen/Qwen2.5-7B-Instruct",
-"prompt": "San Francisco is a",
-"max_tokens": 1000,
-"temperature": 0
+  "model": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",
+  "prompt": "San Francisco is a",
+  "max_tokens": 1000
 }'
 ```
 - If you are not testing on the proxy server, please change the `localhost` to the IP address of the proxy server.
