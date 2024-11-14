@@ -1,10 +1,12 @@
-## vLLM Disaggregated Prefill/Decode Demo
+# vLLM Disaggregated Prefill/Decode Demo
+
+## Overview
 Currently, we support mooncake-transfer-engine integration with the vLLM project based on [PR 8498](https://github.com/vllm-project/vllm/pull/8498) (vllm version: v0.6.2) to accelerate KVCache transfer for inter-node disaggregated Prefill/Decode scenario ([Benchmark results](vllm_benchmark_results.md)). In the future, we will bypass PR 8498, release a disaggregated KVStore, and fully integrate it with the vLLM Prefix Caching feature to support multi-instance KVCache Sharing.
 
-![vllm-integration-demo.gif](image/vllm-integration-demo.gif)
+![vllm-integration-demo](../../image/vllm-integration-demo.gif)
 
-### Configuration
-#### Prepare configuration file to Run Example over RDMA
+## Configuration
+### Prepare configuration file to Run Example over RDMA
 
 - Prepare a _**mooncake.json**_ file for both Prefill and Decode instances
 ```json
@@ -25,7 +27,7 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 - "device_name": The device to be used for data transmission, required when "protocol" is set to "rdma". If multiple NIC devices are used, they can be separated by commas such as "erdma_0,erdma_1". Please note that there are no spaces between them.
 
 
-#### Prepare configuration file to Run Example over TCP
+### Prepare configuration file to Run Example over TCP
 
 - Prepare a _**mooncake.json**_ file for both Prefill and Decode instances
 ```json
@@ -39,7 +41,7 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 ```
 
 
-### Run Example
+## Run Example
  - Please change the IP addresses and ports in the following guide according to your env.
 ```bash
 # Begin from `root` of your cloned repo!
@@ -55,10 +57,9 @@ VLLM_HOST_IP="192.168.0.137" VLLM_PORT="51000" MASTER_ADDR="192.168.0.137" MASTE
 VLLM_HOST_IP="192.168.0.137" VLLM_PORT="51000" MASTER_ADDR="192.168.0.137" MASTER_PORT="54324" MOONCAKE_CONFIG_PATH=./mooncake.json VLLM_DISTRIBUTED_KV_ROLE=consumer VLLM_USE_MODELSCOPE=True python3 -m vllm.entrypoints.openai.api_server --model Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4 --port 8200 --max-model-len 10000 --gpu-memory-utilization 0.95
 ```
 
- - **_Be sure to set up the same MASTER_ADDR and same MASTER_PORT on each node (either prefill instance IP or decode instance IP is ok)._**
-
 - `VLLM_HOST_IP` and `VLLM_PORT` are used for vLLM's internal communication in distributed environments.
 - `MASTER_ADDR` and `MASTER_PORT` are used to specify the IP address and port of the master node in a distributed setup.
+  - **_Be sure to set up the same `MASTER_ADDR` and same `MASTER_PORT` on each node (either prefill instance IP or decode instance IP is ok)._**
 - `MOONCAKE_CONFIG_PATH` is the path to the mooncake.json configuration file.
 - `VLLM_DISTRIBUTED_KV_ROLE` is the node's role, either 'producer' or 'consumer'.
 - `VLLM_USE_MODELSCOPE` is optional, if you have access to huggingface, please remove it.
@@ -137,7 +138,7 @@ if __name__ == '__main__':
 **_Be sure to change the IP address in the code._**
 
 
-### Test with open-ai compatible request
+## Test with open-ai compatible request
 ```
 curl -s http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
   "model": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",
