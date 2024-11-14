@@ -28,8 +28,6 @@
 
 #include "transfer_metadata.h"
 
-// #define USE_LOCAL_DESC
-
 namespace mooncake {
 class TransferMetadata;
 /// By default, these functions return 0 (or non-null pointer) on success and

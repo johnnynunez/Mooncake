@@ -19,6 +19,7 @@
 
 #include <algorithm>
 #include <cassert>
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 #include <iomanip>
@@ -81,19 +82,11 @@ int NVMeoFTransport::getTransferStatus(BatchID batch_id, size_t task_id,
     // 1. get task -> id map
     TransferStatus transfer_status = {.s = Transport::PENDING,
                                       .transferred_bytes = 0};
-#ifdef USE_LOCAL_DESC
-    auto [slice_id, slice_num] = nvmeof_desc.task_to_slices[task_id];
-
-    assert(slice_id == task_id);
-    assert(slice_num == 1);
-#endif
-
     auto [slice_id, slice_num] = nvmeof_desc.task_to_slices[task_id];
     for (size_t i = slice_id; i < slice_id + slice_num; ++i) {
         // LOG(INFO) << "task " << task_id << " i " << i << " upper bound " <<
         // slice_num;
-        auto event =
-            desc_pool_->getTransferStatus(nvmeof_desc.desc_idx_, slice_id);
+        auto event = desc_pool_->getTransferStatus(nvmeof_desc.desc_idx_, slice_id);
         transfer_status.s = from_cufile_transfer_status(event.status);
         // TODO(FIXME): what to do if multi slices have different status?
         if (transfer_status.s == COMPLETED) {
@@ -120,37 +113,22 @@ int NVMeoFTransport::submitTransfer(
     size_t task_id = batch_desc.task_list.size();
     size_t slice_id = desc_pool_->getSliceNum(nvmeof_desc.desc_idx_);
     batch_desc.task_list.resize(task_id + entries.size());
-    std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>>
-        segment_desc_map;
+    std::unordered_map<SegmentID, std::shared_ptr<SegmentDesc>> segment_desc_map;
     // segment_desc_map[LOCAL_SEGMENT_ID] =
     // getSegmentDescByID(LOCAL_SEGMENT_ID);
     for (auto &request : entries) {
         TransferTask &task = batch_desc.task_list[task_id];
         auto target_id = request.target_id;
+
         if (!segment_desc_map.count(target_id)) {
-#ifndef USE_LOCAL_DESC
             segment_desc_map[target_id] =
                 metadata_->getSegmentDescByID(target_id);
             assert(segment_desc_map[target_id] != nullptr);
-#else
-            LOG_ASSERT(target_id == LOCAL_SEGMENT_ID);
-            auto local_seg_desc = std::make_shared<SegmentDesc>();
-            local_seg_desc->name = local_server_name_;
-            local_seg_desc->protocol = "nvmeof";
-            TransferMetadata::NVMeoFBufferDesc local_buffer;
-            local_buffer.length = 32 * 1024 * 1024 * 1024ULL;
-            local_buffer.file_path = "/mnt/data/dsf/mooncake-test.img";
-            local_buffer.local_path_map[local_server_name_] =
-                local_buffer.file_path;
-            local_seg_desc->nvmeof_buffers.push_back(local_buffer);
-            LOG_ASSERT(local_seg_desc->nvmeof_buffers.size() == 1);
-            segment_desc_map[target_id] = std::move(local_seg_desc);
-#endif
         }
 
         auto &desc = segment_desc_map.at(target_id);
         // LOG(INFO) << "desc " << desc->name << " " << desc->protocol;
-        assert(desc->protocol == "NVMeoF" || desc->protocol == "nvmeof");
+        assert(desc->protocol == "nvmeof");
         // TODO: solving iterator invalidation due to vector resize
         // Handle File Offset
         uint32_t buffer_id = 0;
@@ -158,13 +136,6 @@ int NVMeoFTransport::submitTransfer(
         uint64_t segment_end = request.target_offset + request.length;
         uint64_t current_offset = 0;
         for (auto &buffer_desc : desc->nvmeof_buffers) {
-            // LOG(INFO) << "buffer " << buffer_desc.file_path << " " <<
-            // buffer_desc.length; for (auto &local_path :
-            // buffer_desc.local_path_map)
-            // {
-            //     LOG(INFO) << "local path " << local_path.first << " " <<
-            //     local_path.second;
-            // }
             bool is_overlap = overlap(
                 (void *)segment_start, request.length, (void *)current_offset,
                 buffer_desc
@@ -176,14 +147,8 @@ int NVMeoFTransport::submitTransfer(
                 uint64_t slice_end =
                     std::min(segment_end, current_offset + buffer_desc.length);
                 // 3. init slice and put into TransferTask
-#ifndef USE_LOCAL_DESC
                 const char *file_path =
                     buffer_desc.local_path_map[local_server_name_].c_str();
-                LOG(INFO) << "local name " << local_server_name_
-                          << " file path " << file_path;
-#else
-                const char *file_path = "/mnt/data/dsf/mooncake-test.img";
-#endif
                 void *source_addr =
                     (char *)request.source + slice_start - segment_start;
                 uint64_t file_offset = slice_start - current_offset;
@@ -216,15 +181,10 @@ int NVMeoFTransport::submitTransfer(
         nvmeof_desc.task_to_slices.push_back({slice_id, task.slices.size()});
         ++task_id;
         slice_id += task.slices.size();
-#ifdef USE_LOCAL_DESC
-        LOG_ASSERT(task.slices.size() == 1);
-        LOG_ASSERT(slice_id == task_id);
-#endif
     }
 
     desc_pool_->submitBatch(nvmeof_desc.desc_idx_);
     // LOG(INFO) << "submit nr " << slice_id << " start " << start_slice_id;
-    // LOG(INFO) << "After submit";
     return 0;
 }
 
@@ -243,12 +203,6 @@ int NVMeoFTransport::freeBatchID(BatchID batch_id) {
 int NVMeoFTransport::install(std::string &local_server_name,
                              std::shared_ptr<TransferMetadata> meta,
                              void **args) {
-#ifdef USE_LOCAL_DESC
-    assert(args != NULL);
-    const char *file_path = (char *)args[0];
-    this->segment_to_context_[{LOCAL_SEGMENT_ID, 0}] =
-        std::make_shared<CuFileContext>(file_path);
-#endif
     return Transport::install(local_server_name, meta, args);
 }
 
@@ -290,9 +244,7 @@ void NVMeoFTransport::addSliceToCUFileBatch(
     uint64_t desc_id, TransferRequest::OpCode op, CUfileHandle_t fh) {
     CUfileIOParams_t params;
     params.mode = CUFILE_BATCH;
-    params.opcode =
-        op == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
-    // params.cookie = (void *)task_id;
+    params.opcode = op == Transport::TransferRequest::READ ? CUFILE_READ : CUFILE_WRITE;
     params.cookie = (void *)0;
     params.u.batch.devPtr_base = source_addr;
     params.u.batch.devPtr_offset = 0;

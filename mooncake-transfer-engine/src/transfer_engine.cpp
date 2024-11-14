@@ -79,9 +79,6 @@ int TransferEngine::uninstallTransport(const char *proto) {
 }
 
 Transport::SegmentHandle TransferEngine::openSegment(const char *segment_name) {
-#ifdef USE_LOCAL_DESC
-    return 0;
-#else
     if (!segment_name)
         return ERR_INVALID_ARGUMENT;
     std::string trimmed_segment_name = segment_name;
@@ -90,7 +87,6 @@ Transport::SegmentHandle TransferEngine::openSegment(const char *segment_name) {
     if (trimmed_segment_name.empty())
         return ERR_INVALID_ARGUMENT;
     return metadata_->getSegmentID(trimmed_segment_name);
-#endif
 }
 
 int TransferEngine::closeSegment(Transport::SegmentHandle seg_id) {
