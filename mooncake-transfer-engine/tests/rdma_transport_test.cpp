@@ -12,6 +12,13 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+
+// How to run:
+// etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://10.0.0.1:2379
+// ./rdma_transport_test --mode=target  --metadata_server=127.0.0.1:2379  --local_server_name=127.0.0.2:12345 --device_name=erdma_0
+// ./rdma_transport_test --metadata_server=127.0.0.1:2379 --segment_id=127.0.0.2:12345 --local_server_name=127.0.0.3:12346 --device_name=erdma_1
+
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <sys/time.h>
