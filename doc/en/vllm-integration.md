@@ -7,15 +7,14 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 
 ## Installation
 
-### Premilinary
-
 1. Clone vLLM from an indicated rep.
 ```bash
-$ git clone git@github.com:alogfans/vllm.git
+$ git clone git@github.com:kvcache-ai/vllm.git
 ```
 2. Build vLLM from source
 ```bash
 $ cd vllm
+$ git checkout mooncake-integration
 $ pip install -e .
 ```
 
@@ -152,7 +151,7 @@ if __name__ == '__main__':
 **_Be sure to change the IP address in the code._**
 
 
-## Test with open-ai compatible request
+## Test with openai compatible request
 ```
 curl -s http://localhost:8000/v1/completions -H "Content-Type: application/json" -d '{
   "model": "Qwen/Qwen2.5-7B-Instruct-GPTQ-Int4",
