@@ -67,6 +67,11 @@ class VLLMAdaptor {
             length);
     }
 
+    // FOR EXPERIMENT ONLY
+    int expRegisterMemory(char *buffer, size_t capacity);
+
+    int expUnregisterMemory(char *buffer); // must be called before VLLMAdaptor::~VLLMAdaptor()
+
    private:
     char *allocateRawBuffer(size_t capacity);
 

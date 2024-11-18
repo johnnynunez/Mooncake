@@ -187,6 +187,14 @@ int VLLMAdaptor::transferSync(const char *target_hostname, uintptr_t buffer,
     }
 }
 
+int VLLMAdaptor::expRegisterMemory(char *buffer, size_t capacity) {
+    return engine_->registerLocalMemory(buffer, capacity, "cpu:0");
+}
+
+int VLLMAdaptor::expUnregisterMemory(char *buffer) {
+    return engine_->unregisterLocalMemory(buffer);
+}
+
 namespace py = pybind11;
 
 PYBIND11_MODULE(mooncake_vllm_adaptor, m) {
@@ -197,5 +205,7 @@ PYBIND11_MODULE(mooncake_vllm_adaptor, m) {
         .def("freeManagedBuffer", &VLLMAdaptor::freeManagedBuffer)
         .def("transferSync", &VLLMAdaptor::transferSync)
         .def("writeBytesToBuffer", &VLLMAdaptor::writeBytesToBuffer)
-        .def("readBytesFromBuffer", &VLLMAdaptor::readBytesFromBuffer);
+        .def("readBytesFromBuffer", &VLLMAdaptor::readBytesFromBuffer)
+        .def("expRegisterMemory", &VLLMAdaptor::expRegisterMemory)
+        .def("expUnregisterMemory", &VLLMAdaptor::expUnregisterMemory);
 }
