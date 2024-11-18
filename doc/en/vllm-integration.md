@@ -5,6 +5,20 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 
 ![vllm-integration-demo](../../image/vllm-integration-demo.gif)
 
+## Installation
+
+### Premilinary
+
+1. Clone vLLM from an indicated rep.
+```bash
+$ git clone git@github.com:alogfans/vllm.git
+```
+2. Build vLLM from source
+```bash
+$ cd vllm
+$ pip install -e .
+```
+
 ## Configuration
 ### Prepare configuration file to Run Example over RDMA
 

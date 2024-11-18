@@ -33,18 +33,6 @@ This document describes how to build Mooncake.
 - gcc: 10.2.1
 - go: 1.19+
 
-### Premilinary
-
-1. Clone vLLM from an indicated rep.
-```bash
-$ git clone git@github.com:alogfans/vllm.git
-```
-2. Build vLLM from source
-```bash
-$ cd vllm
-$ pip install -e .
-```
-
 ### Steps
 
 1. Install dependencies from system software repository:
