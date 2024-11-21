@@ -187,11 +187,13 @@ int VLLMAdaptor::transferSync(const char *target_hostname, uintptr_t buffer,
     }
 }
 
-int VLLMAdaptor::expRegisterMemory(char *buffer, size_t capacity) {
+int VLLMAdaptor::expRegisterMemory(uintptr_t buffer_addr, size_t capacity) {
+    char *buffer = reinterpret_cast<char *>(buffer_addr);
     return engine_->registerLocalMemory(buffer, capacity, "cpu:0");
 }
 
-int VLLMAdaptor::expUnregisterMemory(char *buffer) {
+int VLLMAdaptor::expUnregisterMemory(uintptr_t buffer_addr) {
+    char *buffer = reinterpret_cast<char *>(buffer_addr);
     return engine_->unregisterLocalMemory(buffer);
 }
 
