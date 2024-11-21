@@ -15,10 +15,11 @@ git clone git@github.com:kvcache-ai/vllm.git
 ```bash
 cd vllm
 git checkout mooncake-integration
+pip3 uninstall vllm -y
 pip3 install vllm==0.6.2
 python python_only_dev.py
 ```
- - Once you have finished editing or want to install another vLLM wheel, you should exit the development environment using `python python_only_dev.py --quit-dev`
+ - **Once you have finished editing or want to install another vLLM wheel, you should exit the development environment using `python python_only_dev.py --quit-dev`**
 ## Configuration
 ### Prepare configuration file to Run Example over RDMA
 
