@@ -11,12 +11,14 @@
 ```bash
 $ git clone git@github.com:kvcache-ai/vllm.git
 ```
-2. 从源码构建 vLLM。
+2. 从源码构建 vLLM (仅Python部分)。
 ```bash
-$ cd vllm
-$ git checkout mooncake-integration
-$ pip install -e .
+cd vllm
+git checkout mooncake-integration
+pip3 install vllm==0.6.2
+python python_only_dev.py
 ```
+ - 一旦完成测试或想要安装另一个版本的 vLLM，您应该先使用 `python python_only_dev.py --quit-dev` 退出开发环境。
 
 ## 配置
 ### 使用 RDMA 运行示例所需配置文件
