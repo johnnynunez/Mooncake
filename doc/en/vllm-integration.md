@@ -6,7 +6,10 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 ![vllm-integration-demo](../../image/vllm-integration-demo.gif)
 
 ## Installation
+### Prerequisite
+Please install the Mooncake Transfer Engine according to the [instructions](build.md) first.
 
+### Install an experimental version of vLLM
 1. Clone vLLM from an indicated repo.
 ```bash
 git clone git@github.com:kvcache-ai/vllm.git

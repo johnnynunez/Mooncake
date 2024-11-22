@@ -6,7 +6,10 @@
 ![vllm-integration-demo](../../image/vllm-integration-demo.gif)
 
 ## 安装
+### 准备工作
+请先参照 [编译指南](build.md) 安装 Mooncake Transfer Engine。
 
+### 安装特定版本vLLM
 1. 从指定的仓库克隆 vLLM。
 ```bash
 $ git clone git@github.com:kvcache-ai/vllm.git
