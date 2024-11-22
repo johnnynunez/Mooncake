@@ -10,3 +10,6 @@ target_link_libraries(rdma_transport_test2 PUBLIC transfer_engine  gtest gtest_m
 
 add_executable(tcp_transport_test tcp_transport_test.cpp)
 target_link_libraries(tcp_transport_test PUBLIC transfer_engine  gtest gtest_main )
+
+add_executable(transfer_metadata_test transfer_metadata_test.cpp)
+target_link_libraries(transfer_metadata_test PUBLIC transfer_engine gtest gtest_main)
