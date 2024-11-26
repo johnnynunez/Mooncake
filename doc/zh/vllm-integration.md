@@ -14,18 +14,8 @@
 ```bash
 git clone git@github.com:kvcache-ai/vllm.git
 ```
-#### 2. 编译与安装
-##### 2.1 从源码编译构建（包括C++及CUDA代码）
-```bash
-cd vllm
-git checkout mooncake-integration
-pip3 uninstall vllm -y
-pip3 install -e .
-```
- - **如果编译失败，请尝试通过如下命令 `pip3 install cmake --upgrade` 升级您的cmake版本。**
- - 如果遇到任何无法解决的问题，请参照[vLLM官方的编译指南](https://docs.vllm.ai/en/v0.6.4.post1/getting_started/installation.html#install-the-latest-code)。
-
-##### 2.2 从源码构建 vLLM (仅Python部分)
+#### 2. 编译与安装（从如下两种可选方式中选择一种）
+##### 2.1 从源码构建 vLLM (仅Python部分)
 ```bash
 cd vllm
 git checkout mooncake-integration
@@ -35,6 +25,16 @@ pip3 uninstall torchvision -y
 python3 python_only_dev.py
 ```
  - **一旦完成测试或想要安装另一个版本的 vLLM，您应该先使用 `python python_only_dev.py --quit-dev` 退出开发环境。**
+
+##### 2.2 从源码编译构建（包括C++及CUDA代码）
+```bash
+cd vllm
+git checkout mooncake-integration
+pip3 uninstall vllm -y
+pip3 install -e .
+```
+ - **如果编译失败，请尝试通过如下命令 `pip3 install cmake --upgrade` 升级您的cmake版本。**
+ - 如果遇到任何无法解决的问题，请参照[vLLM官方的编译指南](https://docs.vllm.ai/en/v0.6.4.post1/getting_started/installation.html#install-the-latest-code)。
 
 ## 配置
 ### 使用 RDMA 运行示例所需配置文件
