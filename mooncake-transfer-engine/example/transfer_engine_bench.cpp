@@ -133,6 +133,10 @@ int initiatorWorker(Transport *xport, SegmentID segment_id, int thread_id,
     }
 
     auto segment_desc = xport->meta()->getSegmentDescByID(segment_id);
+    if (!segment_desc) {
+        LOG(ERROR) << "Unable to get target segment ID, please recheck";
+        exit(EXIT_FAILURE);
+    }
     uint64_t remote_base =
         (uint64_t)segment_desc->buffers[thread_id % NR_SOCKETS].addr;
 
