@@ -1,3 +1,17 @@
+// Copyright 2024 KVCache.AI
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -18,17 +32,12 @@ namespace mooncake {
 class TransportTest : public ::testing::Test {
    protected:
     void SetUp() override {
-        
         google::InitGoogleLogging("TransportTest");
-        FLAGS_logtostderr = 1;  
+        FLAGS_logtostderr = 1;
     }
 
-    void TearDown() override {
-        google::ShutdownGoogleLogging();
-    }
+    void TearDown() override { google::ShutdownGoogleLogging(); }
 };
-
-
 
 static int CreateTempFile() {
     char temp_filename[] = "/tmp/testfileXXXXXX";
@@ -36,21 +45,21 @@ static int CreateTempFile() {
     if (fd == -1) {
         return -1;
     }
-    unlink(temp_filename);  
+    unlink(temp_filename);
     return fd;
 }
 
-
-int CreateTempFileWithContent(const char *content) {
+int CreateTempFileWithContent(const char* content) {
     char temp_filename[] = "/tmp/testfileXXXXXX";
     int fd = mkstemp(temp_filename);
     if (fd == -1) {
         return -1;
     }
-    unlink(temp_filename); 
+    unlink(temp_filename);
 
-    write(fd, content, strlen(content));
-    lseek(fd, 0, SEEK_SET); 
+    ssize_t nbytes = write(fd, content, strlen(content));
+    (void)nbytes;
+    lseek(fd, 0, SEEK_SET);
 
     return fd;
 }
@@ -78,13 +87,13 @@ TEST_F(TransportTest, WriteSuccess) {
     EXPECT_EQ(result, testDataLen);
 
     char buffer[256] = {0};
-    lseek(fd, 0, SEEK_SET);  
+    ssize_t nbytes = lseek(fd, 0, SEEK_SET);
+    (void)nbytes;
     read(fd, buffer, testDataLen);
     EXPECT_STREQ(buffer, testData);
 
     close(fd);
 }
-
 
 TEST_F(TransportTest, WriteInvalidFD) {
     const char* testData = "Hello, World!";
@@ -92,7 +101,7 @@ TEST_F(TransportTest, WriteInvalidFD) {
 
     ssize_t result = writeFully(-1, testData, testDataLen);
     ASSERT_EQ(result, -1);
-    ASSERT_EQ(errno, EBADF);  
+    ASSERT_EQ(errno, EBADF);
 }
 
 TEST_F(TransportTest, PartialWrite) {
@@ -107,15 +116,15 @@ TEST_F(TransportTest, PartialWrite) {
     ASSERT_EQ(result, testDataLen / 2);
 
     char buffer[256] = {0};
-    lseek(fd, 0, SEEK_SET); 
-    read(fd, buffer, result);
+    lseek(fd, 0, SEEK_SET);
+    ssize_t nbytes = read(fd, buffer, result);
+    (void)nbytes;
     ASSERT_EQ(strncmp(buffer, testData, result), 0);
     close(fd);
 }
 
-
 TEST_F(TransportTest, ReadSuccess) {
-    const char *testData = "Hello, World!";
+    const char* testData = "Hello, World!";
     int fd = CreateTempFileWithContent(testData);
     ASSERT_NE(fd, -1) << "Failed to create temporary file";
 
@@ -132,12 +141,11 @@ TEST_F(TransportTest, ReadInvalidFD) {
     char buffer[256] = {0};
     ssize_t bytesRead = readFully(-1, buffer, sizeof(buffer));
     EXPECT_EQ(bytesRead, -1);
-    EXPECT_EQ(errno, EBADF); 
+    EXPECT_EQ(errno, EBADF);
 }
 
-
 TEST_F(TransportTest, PartialRead) {
-    const char *testData = "Hello, World!";
+    const char* testData = "Hello, World!";
     int fd = CreateTempFileWithContent(testData);
     ASSERT_NE(fd, -1) << "Failed to create temporary file";
 
@@ -150,7 +158,6 @@ TEST_F(TransportTest, PartialRead) {
 
     close(fd);
 }
-
 
 TEST_F(TransportTest, ReadEmptyFile) {
     int fd = CreateTempFileWithContent("");

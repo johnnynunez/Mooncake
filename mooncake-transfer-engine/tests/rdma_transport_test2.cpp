@@ -1,3 +1,17 @@
+// Copyright 2024 KVCache.AI
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 #include <gflags/gflags.h>
 #include <glog/logging.h>
 #include <gtest/gtest.h>
@@ -100,19 +114,21 @@ class RDMATransportTest : public ::testing::Test {
     mooncake::Transport::SegmentID segment_id;
     std::shared_ptr<TransferMetadata::SegmentDesc> segment_desc;
     uint64_t remote_base;
+
    protected:
     void SetUp() override {
         static int offset = 0;
         LOG(INFO) << "HERE \n";
         google::InitGoogleLogging("RDMATransportTest");
-        FLAGS_logtostderr = 1; 
+        FLAGS_logtostderr = 1;
         metadata_client =
             std::make_shared<TransferMetadata>(FLAGS_metadata_server);
         LOG_ASSERT(metadata_client);
         engine = std::make_unique<TransferEngine>(metadata_client);
         hostname_port = parseHostNameWithPort(FLAGS_local_server_name);
         engine->init(FLAGS_local_server_name.c_str(),
-                     hostname_port.first.c_str(), hostname_port.second + offset++);
+                     hostname_port.first.c_str(),
+                     hostname_port.second + offset++);
         xport = nullptr;
         nic_priority_matrix = loadNicPriorityMatrix();
         args = (void **)malloc(2 * sizeof(void *));

@@ -12,12 +12,14 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-
 // How to run:
-// etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls http://10.0.0.1:2379
-// ./rdma_transport_test --mode=target  --metadata_server=127.0.0.1:2379  --local_server_name=127.0.0.2:12345 --device_name=erdma_0
-// ./rdma_transport_test --metadata_server=127.0.0.1:2379 --segment_id=127.0.0.2:12345 --local_server_name=127.0.0.3:12346 --device_name=erdma_1
-
+// etcd --listen-client-urls http://0.0.0.0:2379 --advertise-client-urls
+// http://10.0.0.1:2379
+// ./rdma_transport_test --mode=target  --metadata_server=127.0.0.1:2379
+//   --local_server_name=127.0.0.2:12345 --device_name=erdma_0
+// ./rdma_transport_test --metadata_server=127.0.0.1:2379
+//   --segment_id=127.0.0.2:12345 --local_server_name=127.0.0.3:12346
+//   --device_name=erdma_1
 
 #include <gflags/gflags.h>
 #include <glog/logging.h>
@@ -129,7 +131,7 @@ int initiatorWorker(Transport *xport, SegmentID segment_id, int thread_id,
         LOG(INFO) << "Stage 1: Write Data";
         for (size_t offset = 0; offset < kDataLength; ++offset)
             *((char *)(addr) + offset) = 'a' + lrand48() % 26;
-        
+
         LOG(INFO) << "Write Data: " << std::string((char *)(addr), 16) << "...";
 
         auto batch_id = xport->allocateBatchID(1);
@@ -188,8 +190,10 @@ int initiatorWorker(Transport *xport, SegmentID segment_id, int thread_id,
         LOG_ASSERT(!ret);
     }
 
-    int ret = memcmp((uint8_t *)(addr), (uint8_t *)(addr) + kDataLength, kDataLength);
-    LOG(INFO) << "Read Data: " << std::string((char *)(addr) + kDataLength, 16) << "...";
+    int ret =
+        memcmp((uint8_t *)(addr), (uint8_t *)(addr) + kDataLength, kDataLength);
+    LOG(INFO) << "Read Data: " << std::string((char *)(addr) + kDataLength, 16)
+              << "...";
     LOG(INFO) << "Compare: " << (ret == 0 ? "OK" : "FAILED");
 
     return 0;
