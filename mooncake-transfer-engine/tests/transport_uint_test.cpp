@@ -89,7 +89,8 @@ TEST_F(TransportTest, WriteSuccess) {
     char buffer[256] = {0};
     ssize_t nbytes = lseek(fd, 0, SEEK_SET);
     (void)nbytes;
-    read(fd, buffer, testDataLen);
+    nbytes = read(fd, buffer, testDataLen);
+    (void)nbytes;
     EXPECT_STREQ(buffer, testData);
 
     close(fd);
