@@ -10,19 +10,32 @@ Currently, we support mooncake-transfer-engine integration with the vLLM project
 Please install the Mooncake Transfer Engine according to the [instructions](build.md) first.
 
 ### Install an experimental version of vLLM
-1. Clone vLLM from an indicated repo.
+#### 1. Clone vLLM from an indicated repo
 ```bash
 git clone git@github.com:kvcache-ai/vllm.git
 ```
-2. vLLM Python-only build (without compilation)
+#### 2. Build
+##### 2.1 Build from source
+```bash
+cd vllm
+git checkout mooncake-integration
+pip3 uninstall vllm -y
+pip3 install -e .
+```
+ - **If the build fails, try upgrading the version of cmake through `pip3 install cmake --upgrade`.**
+ - If you encounter any problems that you cannot solve, please refer to the [vLLM official compilation guide](https://docs.vllm.ai/en/v0.6.4.post1/getting_started/installation.html#install-the-latest-code).
+
+##### 2.2 vLLM Python-only build (without compilation)
 ```bash
 cd vllm
 git checkout mooncake-integration
 pip3 uninstall vllm -y
 pip3 install vllm==0.6.2
-python python_only_dev.py
+pip3 uninstall torchvision -y
+python3 python_only_dev.py
 ```
- - **Once you have finished editing or want to install another vLLM wheel, you should exit the development environment using `python python_only_dev.py --quit-dev`**
+ - **Once you have finished editing or want to install another vLLM wheel, you should exit the development environment using `python3 python_only_dev.py --quit-dev`**
+
 ## Configuration
 ### Prepare configuration file to Run Example over RDMA
 
