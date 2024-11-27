@@ -40,20 +40,20 @@ pip3 install -e .
 ### 使用 RDMA 运行示例所需配置文件
 
 - 为预填充和解码实例准备一个 mooncake.json 文件
-- **在解码实例侧，你无须更改配置文件里的`local_url` 与 `remote_url`，使用完同相同的配置文件即可。**
+- **在解码实例侧，你无须更改配置文件里的`prefill_url` 与 `decode_url`，使用完同相同的配置文件即可。**
 
 ```json
 {
-  "local_url": "192.168.0.137:13003",
-  "remote_url": "192.168.0.139:13003",
+  "prefill_url": "192.168.0.137:13003",
+  "decode_url": "192.168.0.139:13003",
   "metadata_server": "192.168.0.139:2379",
   "protocol": "rdma",
   "device_name": "erdma_0"
 }
 ```
-- "local_url": 预填充节点的 IP 地址和端口。
+- "prefill_url": 预填充节点的 IP 地址和端口。
   - URL 中的端口用于与 etcd 服务器通信以获取元数据。
-- "remote_url": 解码节点的 IP 地址和端口。
+- "decode_url": 解码节点的 IP 地址和端口。
   - URL 中的端口用于与 etcd 服务器通信以获取元数据。
 - "metadata_server": mooncake 传输引擎的 etcd 服务器。
 - "protocol": 数据传输协议("rdma/tcp")。
@@ -65,8 +65,8 @@ pip3 install -e .
 - 为预填充和解码实例准备一个 mooncake.json 文件
 ```json
 {
-  "local_url": "192.168.0.137:13003",
-  "remote_url": "192.168.0.139:13003",
+  "prefill_url": "192.168.0.137:13003",
+  "decode_url": "192.168.0.139:13003",
   "metadata_server": "192.168.0.139:2379",
   "protocol": "tcp",
   "device_name": ""
