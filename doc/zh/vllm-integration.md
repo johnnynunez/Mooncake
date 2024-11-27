@@ -40,6 +40,8 @@ pip3 install -e .
 ### 使用 RDMA 运行示例所需配置文件
 
 - 为预填充和解码实例准备一个 mooncake.json 文件
+- **在解码实例侧，你无须更改配置文件里的`local_url` 与 `remote_url`，使用完同相同的配置文件即可。**
+
 ```json
 {
   "local_url": "192.168.0.137:13003",

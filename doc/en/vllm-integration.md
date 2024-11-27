@@ -40,6 +40,8 @@ pip3 install -e .
 ### Prepare configuration file to Run Example over RDMA
 
 - Prepare a _**mooncake.json**_ file for both Prefill and Decode instances
+- **You don't need to change the `local_url` and `remote_url` of the config file in the decode side, please use the identical config file.**
+
 ```json
 {
   "local_url": "192.168.0.137:13003",
